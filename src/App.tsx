@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Navbar from './components/layout/Navbar'
 import LandingPage from './pages/LandingPage'
-import SignInPage from './pages/SignInPage'
+import AuthPage from './pages/AuthPage'
 import GetStartedPage from './pages/GetStartedPage'
 import CheckoutPage from './pages/CheckoutPage'
 import { ROUTES } from './lib/routes'
@@ -14,7 +14,8 @@ export default function App() {
         <Navbar />
         <Routes>
           <Route path={ROUTES.home} element={<LandingPage />} />
-          <Route path={ROUTES.signIn} element={<SignInPage />} />
+          <Route path={ROUTES.signIn} element={<AuthPage mode="sign-in" />} />
+          <Route path={ROUTES.signUp} element={<AuthPage mode="sign-up" />} />
           <Route path={ROUTES.getStarted} element={<GetStartedPage />} />
           <Route path={ROUTES.checkout} element={<CheckoutPage />} />
         </Routes>
