@@ -86,66 +86,68 @@ export default function Hero() {
           </button>
         </div>
 
-        {tab === 'upload' ? (
-          <div
-            onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`rounded-xl border-2 border-dashed cursor-pointer flex flex-col items-center justify-center gap-3 py-14 transition-colors ${
-              dragging
-                ? 'border-forest-mid bg-forest-mid/5'
-                : 'border-border hover:border-forest-mid/50'
-            }`}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".docx,.pdf,.tex,.odt"
-              className="hidden"
-              onChange={handleFileChange}
-            />
-            <Upload size={28} className="text-muted" strokeWidth={1.5} />
-            {file ? (
-              <p className="text-sm font-medium text-ink">{file.name}</p>
-            ) : (
-              <>
-                <p className="text-sm font-medium text-ink">
-                  Drop your thesis, or click to browse
-                </p>
-                <p className="text-xs text-muted">
-                  Up to 50MB. Your file is encrypted in transit.
-                </p>
-              </>
-            )}
-            <div className="flex gap-2 mt-1">
-              {['.docx', '.pdf', '.tex', '.odt'].map((ext) => (
-                <span
-                  key={ext}
-                  className="text-xs border border-border rounded px-2 py-0.5 text-muted"
-                >
-                  {ext}
-                </span>
-              ))}
+        <div className="h-52">
+          {tab === 'upload' ? (
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`h-full rounded-xl border-2 border-dashed cursor-pointer flex flex-col items-center justify-center gap-3 transition-colors ${
+                dragging
+                  ? 'border-forest-mid bg-forest-mid/5'
+                  : 'border-border hover:border-forest-mid/50'
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".docx,.pdf,.tex,.odt"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+              <Upload size={28} className="text-muted" strokeWidth={1.5} />
+              {file ? (
+                <p className="text-sm font-medium text-ink">{file.name}</p>
+              ) : (
+                <>
+                  <p className="text-sm font-medium text-ink">
+                    Drop your thesis, or click to browse
+                  </p>
+                  <p className="text-xs text-muted">
+                    Up to 50MB. Your file is encrypted in transit.
+                  </p>
+                </>
+              )}
+              <div className="flex gap-2 mt-1">
+                {['.docx', '.pdf', '.tex', '.odt'].map((ext) => (
+                  <span
+                    key={ext}
+                    className="text-xs border border-border rounded px-2 py-0.5 text-muted"
+                  >
+                    {ext}
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-border py-6 px-4 flex flex-col gap-3">
-            <label className="text-xs font-medium text-muted uppercase tracking-wider">
-              Document URL
-            </label>
-            <input
-              type="url"
-              placeholder="https://docs.google.com/..."
-              value={pasteUrl}
-              onChange={(e) => setPasteUrl(e.target.value)}
-              className="w-full text-sm border border-border rounded-lg px-3 py-2.5 bg-[#F0EEE8] focus:outline-none focus:ring-2 focus:ring-forest-mid/30"
-            />
-            <p className="text-xs text-muted">
-              Google Docs, OneDrive, or Dropbox links are supported.
-            </p>
-          </div>
-        )}
+          ) : (
+            <div className="h-full rounded-xl border border-border px-4 flex flex-col justify-center gap-3">
+              <label className="text-xs font-medium text-muted uppercase tracking-wider">
+                Document URL
+              </label>
+              <input
+                type="url"
+                placeholder="https://docs.google.com/..."
+                value={pasteUrl}
+                onChange={(e) => setPasteUrl(e.target.value)}
+                className="w-full text-sm border border-border rounded-lg px-3 py-2.5 bg-[#F0EEE8] focus:outline-none focus:ring-2 focus:ring-forest-mid/30"
+              />
+              <p className="text-xs text-muted">
+                Google Docs, OneDrive, or Dropbox links are supported.
+              </p>
+            </div>
+          )}
+        </div>
 
         <div className="flex items-center justify-between mt-4">
           <span className="text-xs text-muted">Free first page, no card required</span>
