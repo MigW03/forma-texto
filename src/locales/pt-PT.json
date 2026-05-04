@@ -148,8 +148,16 @@
     }
   },
   "getStarted": {
-    "title": "Vamos começar",
-    "subtitle": "Fluxo de envio / pagamento em breve."
+    "title": "Novo serviço",
+    "subtitle": "Do que a sua tese precisa hoje?",
+    "backToDashboard": "Voltar para documentos",
+    "stepService": "Escolha um serviço",
+    "stepDocument": "Adicione o seu documento",
+    "guidelineLabel": "Escolha uma norma",
+    "freeBadge": "Grátis",
+    "firstPage": "primeira página",
+    "perThesis": "por tese",
+    "submit": "Enviar documento"
   },
   "checkout": {
     "title": "Pagamento",
