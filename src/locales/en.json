@@ -1,0 +1,148 @@
+{
+  "nav": {
+    "signIn": "Sign in",
+    "getStarted": "Get started",
+    "newService": "New service"
+  },
+  "languageSwitcher": {
+    "label": "Language",
+    "english": "English",
+    "portugueseBR": "Português (Brasil)",
+    "portuguesePT": "Português (Portugal)"
+  },
+  "hero": {
+    "tagline": "Made for thesis writers",
+    "title1": "Make your thesis",
+    "title2": "committee‑ready.",
+    "description": "FormaTexto proofreads in academic tone and formats your manuscript to your school's official guidelines. Two services, no learning curve, no rewrites you didn't ask for.",
+    "guidelinesList": "ABNT, APA, MLA, Chicago",
+    "yourTextStays": "Your text stays your text",
+    "uploadTab": "Upload file",
+    "linkTab": "Paste link",
+    "dropPrompt": "Drop your thesis, or click to browse",
+    "fileLimit": "Up to 50MB. Your file is encrypted in transit.",
+    "documentUrl": "Document URL",
+    "linksSupported": "Google Docs, OneDrive, or Dropbox links are supported.",
+    "freeFirstPage": "Free first page, no card required",
+    "startEditing": "Start editing"
+  },
+  "services": {
+    "kicker": "Two services",
+    "title1": "Pick what your thesis needs",
+    "title2": "today.",
+    "proofreading": {
+      "label": "Proofreading",
+      "title1": "Grammar and clarity in",
+      "title2": "academic tone.",
+      "description": "We catch typos, awkward phrasing, and tense slips. Suggestions stay scholarly: no overconfident rewrites, no voice changes you didn't ask for.",
+      "stats": {
+        "corrections": "corrections",
+        "tone": "tone refinement",
+        "rewrites": "rewrites"
+      },
+      "cta": "Correct my thesis"
+    },
+    "formatting": {
+      "label": "Formatting",
+      "title1": "Match your school's",
+      "title2": "guideline.",
+      "description": "Margins, headings, citations, references. We restructure your document to the standard your committee expects.",
+      "cta": "Format my thesis"
+    },
+    "guidelines": {
+      "abnt": { "name": "ABNT NBR 14724", "description": "Brazilian academic standard" },
+      "apa": { "name": "APA 7th edition", "description": "Social sciences, psychology" },
+      "mla": { "name": "MLA 9th edition", "description": "Humanities, literature" },
+      "chicago": { "name": "Chicago 17th edition", "description": "History, arts" }
+    }
+  },
+  "pricing": {
+    "kicker": "Pricing",
+    "title1": "Pay once,",
+    "title2": "per thesis.",
+    "free": {
+      "label": "Free trial",
+      "subtitle": "First page on us.",
+      "features": [
+        "One free page, either service",
+        "No credit card required",
+        "Side-by-side preview"
+      ],
+      "cta": "Try one page"
+    },
+    "paid": {
+      "label": "Per thesis",
+      "perDocument": "/ document",
+      "subtitle": "One payment, full thesis.",
+      "features": [
+        "Up to 200 pages",
+        "Both services included",
+        "Three guideline switches",
+        "Export .docx, .pdf, .tex"
+      ],
+      "cta": "Submit my thesis"
+    }
+  },
+  "auth": {
+    "signIn": {
+      "title": "Welcome back",
+      "subtitle": "Sign in to continue to FormaTexto.",
+      "submit": "Sign in"
+    },
+    "signUp": {
+      "title": "Create your account",
+      "subtitle": "Start with one free page, no card required.",
+      "submit": "Create account"
+    },
+    "google": "Continue with Google",
+    "or": "or",
+    "fullName": "Full name",
+    "fullNamePlaceholder": "Ada Lovelace",
+    "email": "Email",
+    "emailPlaceholder": "you@university.edu",
+    "password": "Password",
+    "passwordPlaceholderSignUp": "At least 8 characters",
+    "passwordPlaceholderSignIn": "••••••••",
+    "forgotPassword": "Forgot password?",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "alreadyHave": "Already have an account?",
+    "dontHave": "Don't have an account?",
+    "switchToSignIn": "Sign in",
+    "switchToSignUp": "Sign up"
+  },
+  "dashboard": {
+    "title": "My documents",
+    "subtitleNoActive": "No active documents",
+    "subtitleActive_one": "{{count}} document being worked on",
+    "subtitleActive_other": "{{count}} documents being worked on",
+    "newService": "New service",
+    "emptyTitle": "No documents yet",
+    "emptySubtitle": "Submit your first document to get started.",
+    "service": {
+      "proofreading": "Proofreading",
+      "formatting": "Formatting"
+    },
+    "status": {
+      "inQueue": "In queue",
+      "processing": "Processing",
+      "ready": "Ready for review",
+      "delivered": "Delivered"
+    },
+    "time": {
+      "justNow": "Just now",
+      "hoursAgo_one": "{{count}} hour ago",
+      "hoursAgo_other": "{{count}} hours ago",
+      "daysAgo_one": "{{count}} day ago",
+      "daysAgo_other": "{{count}} days ago"
+    }
+  },
+  "getStarted": {
+    "title": "Get started",
+    "subtitle": "Upload / payment flow coming soon."
+  },
+  "checkout": {
+    "title": "Checkout",
+    "subtitle": "Payment flow coming soon."
+  }
+}
