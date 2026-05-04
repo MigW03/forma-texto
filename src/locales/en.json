@@ -2,7 +2,8 @@
   "nav": {
     "signIn": "Sign in",
     "getStarted": "Get started",
-    "newService": "New service"
+    "newService": "New service",
+    "signOut": "Sign out"
   },
   "languageSwitcher": {
     "label": "Language",
@@ -109,7 +110,16 @@
     "alreadyHave": "Already have an account?",
     "dontHave": "Don't have an account?",
     "switchToSignIn": "Sign in",
-    "switchToSignUp": "Sign up"
+    "switchToSignUp": "Sign up",
+    "checkEmailTitle": "Check your inbox",
+    "checkEmail": "We sent a confirmation link to your email. Click it to activate your account.",
+    "resetSent": "Password reset link sent. Check your inbox.",
+    "resetPassword": {
+      "title": "Reset your password",
+      "subtitle": "We'll send a reset link to your email.",
+      "submit": "Send reset link",
+      "back": "Back to sign in"
+    }
   },
   "dashboard": {
     "title": "My documents",
