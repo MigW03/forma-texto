@@ -179,7 +179,7 @@ function EmptyState() {
   )
 }
 
-function formatTime(t: (key: string, opts?: object) => string, time: TimeAgo): string {
+function formatTime(t: (key: string, opts?: Record<string, unknown>) => string, time: TimeAgo): string {
   if (time.kind === 'justNow') return t('dashboard.time.justNow')
   if (time.kind === 'hours') return t('dashboard.time.hoursAgo', { count: time.count })
   return t('dashboard.time.daysAgo', { count: time.count })

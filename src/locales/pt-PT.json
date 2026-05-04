@@ -2,7 +2,8 @@
   "nav": {
     "signIn": "Iniciar sessão",
     "getStarted": "Começar",
-    "newService": "Novo serviço"
+    "newService": "Novo serviço",
+    "signOut": "Terminar sessão"
   },
   "languageSwitcher": {
     "label": "Idioma",
@@ -109,7 +110,16 @@
     "alreadyHave": "Já tem conta?",
     "dontHave": "Ainda não tem conta?",
     "switchToSignIn": "Iniciar sessão",
-    "switchToSignUp": "Criar conta"
+    "switchToSignUp": "Criar conta",
+    "checkEmailTitle": "Verifique a sua caixa de entrada",
+    "checkEmail": "Enviámos um link de confirmação para o seu e-mail. Clique nele para ativar a sua conta.",
+    "resetSent": "Link de redefinição enviado. Verifique a sua caixa de entrada.",
+    "resetPassword": {
+      "title": "Redefinir palavra-passe",
+      "subtitle": "Enviaremos um link de redefinição para o seu e-mail.",
+      "submit": "Enviar ligação",
+      "back": "Voltar para o início de sessão"
+    }
   },
   "dashboard": {
     "title": "Os meus documentos",

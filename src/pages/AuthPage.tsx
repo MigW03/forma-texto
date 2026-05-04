@@ -1,7 +1,9 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { supabase } from '../lib/supabase'
+import { useAuth } from '../lib/auth-context'
 import { ROUTES } from '../lib/routes'
 
 interface AuthPageProps {
@@ -13,18 +15,72 @@ export default function AuthPage({ mode }: AuthPageProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [checkEmail, setCheckEmail] = useState(false)
   const { t } = useTranslation()
+  const navigate = useNavigate()
+  const { user } = useAuth()
 
   const isSignUp = mode === 'sign-up'
   const ns = isSignUp ? 'auth.signUp' : 'auth.signIn'
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (user) navigate(ROUTES.dashboard, { replace: true })
+  }, [user, navigate])
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // TODO: wire up auth provider (Supabase, Clerk, etc.)
+    setLoading(true)
+    setError(null)
+
+    if (isSignUp) {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { full_name: name } },
+      })
+
+      setLoading(false)
+
+      if (error) {
+        setError(error.message)
+      } else if (data.session) {
+        navigate(ROUTES.dashboard, { replace: true })
+      } else {
+        setCheckEmail(true)
+      }
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+
+      setLoading(false)
+
+      if (error) {
+        setError(error.message)
+      } else {
+        navigate(ROUTES.dashboard, { replace: true })
+      }
+    }
   }
 
-  const handleGoogle = () => {
-    // TODO: trigger OAuth Google flow
+  const handleGoogle = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}${ROUTES.dashboard}` },
+    })
+  }
+
+  if (checkEmail) {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md">
+          <div className="bg-white rounded-2xl border border-border shadow-sm p-8 text-center">
+            <h2 className="text-xl font-semibold text-ink mb-2">{t('auth.checkEmailTitle')}</h2>
+            <p className="text-sm text-muted">{t('auth.checkEmail')}</p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -60,6 +116,12 @@ export default function AuthPage({ mode }: AuthPageProps) {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            {error && (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                {error}
+              </p>
+            )}
+
             {isSignUp && (
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-medium text-muted uppercase tracking-wider">
@@ -99,7 +161,7 @@ export default function AuthPage({ mode }: AuthPageProps) {
                 </label>
                 {!isSignUp && (
                   <Link
-                    to="#"
+                    to={ROUTES.forgotPassword}
                     className="text-xs text-muted hover:text-ink transition-colors"
                   >
                     {t('auth.forgotPassword')}
@@ -134,9 +196,10 @@ export default function AuthPage({ mode }: AuthPageProps) {
 
             <button
               type="submit"
-              className="w-full mt-2 bg-forest text-white text-sm font-medium py-3 rounded-xl hover:bg-forest-mid transition-colors"
+              disabled={loading}
+              className="w-full mt-2 bg-forest text-white text-sm font-medium py-3 rounded-xl hover:bg-forest-mid transition-colors disabled:opacity-60"
             >
-              {t(`${ns}.submit`)}
+              {loading ? '…' : t(`${ns}.submit`)}
             </button>
           </form>
         </div>

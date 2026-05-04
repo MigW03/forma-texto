@@ -2,7 +2,8 @@
   "nav": {
     "signIn": "Entrar",
     "getStarted": "Começar",
-    "newService": "Novo serviço"
+    "newService": "Novo serviço",
+    "signOut": "Sair"
   },
   "languageSwitcher": {
     "label": "Idioma",
@@ -109,7 +110,16 @@
     "alreadyHave": "Já tem uma conta?",
     "dontHave": "Ainda não tem uma conta?",
     "switchToSignIn": "Entrar",
-    "switchToSignUp": "Criar conta"
+    "switchToSignUp": "Criar conta",
+    "checkEmailTitle": "Verifique seu e-mail",
+    "checkEmail": "Enviamos um link de confirmação para seu e-mail. Clique nele para ativar sua conta.",
+    "resetSent": "Link de redefinição enviado. Verifique sua caixa de entrada.",
+    "resetPassword": {
+      "title": "Redefinir senha",
+      "subtitle": "Enviaremos um link de redefinição para seu e-mail.",
+      "submit": "Enviar link",
+      "back": "Voltar para o login"
+    }
   },
   "dashboard": {
     "title": "Meus documentos",
