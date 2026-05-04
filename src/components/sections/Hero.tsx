@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { Upload, Link } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { ROUTES } from '../../lib/routes'
 
 type Tab = 'upload' | 'link'
@@ -12,6 +13,7 @@ export default function Hero() {
   const [pasteUrl, setPasteUrl] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
+  const { t } = useTranslation()
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
@@ -26,7 +28,6 @@ export default function Hero() {
   }
 
   const handleStartEditing = () => {
-    // Future: validate then route to auth/checkout if not signed in
     navigate(ROUTES.getStarted)
   }
 
@@ -37,28 +38,26 @@ export default function Hero() {
         <div className="flex items-center gap-2 mb-6">
           <span className="w-2 h-2 rounded-full bg-forest-light inline-block" />
           <span className="text-xs font-medium tracking-widest text-muted uppercase">
-            Made for thesis writers
+            {t('hero.tagline')}
           </span>
         </div>
 
         <h1 className="text-5xl lg:text-6xl font-semibold text-ink leading-tight tracking-tight mb-4">
-          Make your thesis
+          {t('hero.title1')}
           <br />
           <em className="font-serif font-normal not-italic text-forest-mid italic">
-            committee‑ready.
+            {t('hero.title2')}
           </em>
         </h1>
 
         <p className="text-base text-muted leading-relaxed max-w-md mb-8">
-          FormaTexto proofreads in academic tone and formats your manuscript to
-          your school's official guidelines. Two services, no learning curve, no
-          rewrites you didn't ask for.
+          {t('hero.description')}
         </p>
 
         <div className="flex items-center gap-2 text-xs text-muted">
-          <span>ABNT, APA, MLA, Chicago</span>
+          <span>{t('hero.guidelinesList')}</span>
           <span className="w-1 h-1 rounded-full bg-muted inline-block" />
-          <span>Your text stays your text</span>
+          <span>{t('hero.yourTextStays')}</span>
         </div>
       </div>
 
@@ -73,7 +72,7 @@ export default function Hero() {
             }`}
           >
             <Upload size={14} />
-            Upload file
+            {t('hero.uploadTab')}
           </button>
           <button
             onClick={() => setTab('link')}
@@ -82,7 +81,7 @@ export default function Hero() {
             }`}
           >
             <Link size={14} />
-            Paste link
+            {t('hero.linkTab')}
           </button>
         </div>
 
@@ -112,10 +111,10 @@ export default function Hero() {
               ) : (
                 <>
                   <p className="text-sm font-medium text-ink">
-                    Drop your thesis, or click to browse
+                    {t('hero.dropPrompt')}
                   </p>
                   <p className="text-xs text-muted">
-                    Up to 50MB. Your file is encrypted in transit.
+                    {t('hero.fileLimit')}
                   </p>
                 </>
               )}
@@ -133,7 +132,7 @@ export default function Hero() {
           ) : (
             <div className="h-full rounded-xl border border-border px-4 flex flex-col justify-center gap-3">
               <label className="text-xs font-medium text-muted uppercase tracking-wider">
-                Document URL
+                {t('hero.documentUrl')}
               </label>
               <input
                 type="url"
@@ -143,19 +142,19 @@ export default function Hero() {
                 className="w-full text-sm border border-border rounded-lg px-3 py-2.5 bg-[#F0EEE8] focus:outline-none focus:ring-2 focus:ring-forest-mid/30"
               />
               <p className="text-xs text-muted">
-                Google Docs, OneDrive, or Dropbox links are supported.
+                {t('hero.linksSupported')}
               </p>
             </div>
           )}
         </div>
 
         <div className="flex items-center justify-between mt-4">
-          <span className="text-xs text-muted">Free first page, no card required</span>
+          <span className="text-xs text-muted">{t('hero.freeFirstPage')}</span>
           <button
             onClick={handleStartEditing}
             className="flex items-center gap-1.5 bg-forest text-white text-sm font-medium px-5 py-2.5 rounded-lg hover:bg-forest-mid transition-colors"
           >
-            Start editing
+            {t('hero.startEditing')}
             <span className="text-xs">→</span>
           </button>
         </div>

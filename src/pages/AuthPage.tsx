@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { ROUTES } from '../lib/routes'
 
 interface AuthPageProps {
@@ -12,8 +13,10 @@ export default function AuthPage({ mode }: AuthPageProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
+  const { t } = useTranslation()
 
   const isSignUp = mode === 'sign-up'
+  const ns = isSignUp ? 'auth.signUp' : 'auth.signIn'
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -31,12 +34,10 @@ export default function AuthPage({ mode }: AuthPageProps) {
         <div className="bg-white rounded-2xl border border-border shadow-sm p-8">
           <div className="mb-8">
             <h1 className="text-2xl font-semibold text-ink mb-1">
-              {isSignUp ? 'Create your account' : 'Welcome back'}
+              {t(`${ns}.title`)}
             </h1>
             <p className="text-sm text-muted">
-              {isSignUp
-                ? 'Start with one free page, no card required.'
-                : 'Sign in to continue to FormaTexto.'}
+              {t(`${ns}.subtitle`)}
             </p>
           </div>
 
@@ -47,13 +48,13 @@ export default function AuthPage({ mode }: AuthPageProps) {
             className="w-full flex items-center justify-center gap-3 border border-border rounded-xl py-3 text-sm font-medium text-ink hover:bg-sand transition-colors mb-6"
           >
             <GoogleIcon />
-            Continue with Google
+            {t('auth.google')}
           </button>
 
           {/* Divider */}
           <div className="flex items-center gap-3 mb-6">
             <div className="flex-1 h-px bg-border" />
-            <span className="text-xs text-muted">or</span>
+            <span className="text-xs text-muted">{t('auth.or')}</span>
             <div className="flex-1 h-px bg-border" />
           </div>
 
@@ -62,12 +63,12 @@ export default function AuthPage({ mode }: AuthPageProps) {
             {isSignUp && (
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-medium text-muted uppercase tracking-wider">
-                  Full name
+                  {t('auth.fullName')}
                 </label>
                 <input
                   type="text"
                   autoComplete="name"
-                  placeholder="Ada Lovelace"
+                  placeholder={t('auth.fullNamePlaceholder')}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   required
@@ -78,12 +79,12 @@ export default function AuthPage({ mode }: AuthPageProps) {
 
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-muted uppercase tracking-wider">
-                Email
+                {t('auth.email')}
               </label>
               <input
                 type="email"
                 autoComplete="email"
-                placeholder="you@university.edu"
+                placeholder={t('auth.emailPlaceholder')}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -94,14 +95,14 @@ export default function AuthPage({ mode }: AuthPageProps) {
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-medium text-muted uppercase tracking-wider">
-                  Password
+                  {t('auth.password')}
                 </label>
                 {!isSignUp && (
                   <Link
                     to="#"
                     className="text-xs text-muted hover:text-ink transition-colors"
                   >
-                    Forgot password?
+                    {t('auth.forgotPassword')}
                   </Link>
                 )}
               </div>
@@ -109,7 +110,11 @@ export default function AuthPage({ mode }: AuthPageProps) {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   autoComplete={isSignUp ? 'new-password' : 'current-password'}
-                  placeholder={isSignUp ? 'At least 8 characters' : '••••••••'}
+                  placeholder={
+                    isSignUp
+                      ? t('auth.passwordPlaceholderSignUp')
+                      : t('auth.passwordPlaceholderSignIn')
+                  }
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -120,7 +125,7 @@ export default function AuthPage({ mode }: AuthPageProps) {
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-ink transition-colors"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
                 >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
@@ -131,19 +136,19 @@ export default function AuthPage({ mode }: AuthPageProps) {
               type="submit"
               className="w-full mt-2 bg-forest text-white text-sm font-medium py-3 rounded-xl hover:bg-forest-mid transition-colors"
             >
-              {isSignUp ? 'Create account' : 'Sign in'}
+              {t(`${ns}.submit`)}
             </button>
           </form>
         </div>
 
         {/* Switch mode */}
         <p className="text-center text-sm text-muted mt-6">
-          {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
+          {isSignUp ? t('auth.alreadyHave') : t('auth.dontHave')}{' '}
           <Link
             to={isSignUp ? ROUTES.signIn : ROUTES.signUp}
             className="text-ink font-medium hover:underline"
           >
-            {isSignUp ? 'Sign in' : 'Sign up'}
+            {isSignUp ? t('auth.switchToSignIn') : t('auth.switchToSignUp')}
           </Link>
         </p>
       </div>

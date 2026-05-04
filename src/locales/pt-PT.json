@@ -1,0 +1,148 @@
+{
+  "nav": {
+    "signIn": "Iniciar sessão",
+    "getStarted": "Começar",
+    "newService": "Novo serviço"
+  },
+  "languageSwitcher": {
+    "label": "Idioma",
+    "english": "English",
+    "portugueseBR": "Português (Brasil)",
+    "portuguesePT": "Português (Portugal)"
+  },
+  "hero": {
+    "tagline": "Feito para quem escreve uma tese",
+    "title1": "Tenha a sua tese",
+    "title2": "pronta para o júri.",
+    "description": "O FormaTexto faz a revisão em tom académico e formata o seu manuscrito segundo as normas oficiais da sua instituição. Dois serviços, sem curva de aprendizagem, sem reescritas que não pediu.",
+    "guidelinesList": "ABNT, APA, MLA, Chicago",
+    "yourTextStays": "O seu texto continua seu",
+    "uploadTab": "Enviar ficheiro",
+    "linkTab": "Colar ligação",
+    "dropPrompt": "Largue a sua tese aqui, ou clique para escolher",
+    "fileLimit": "Até 50MB. O ficheiro é encriptado durante o envio.",
+    "documentUrl": "URL do documento",
+    "linksSupported": "Suportamos ligações do Google Docs, OneDrive ou Dropbox.",
+    "freeFirstPage": "Primeira página grátis, sem cartão",
+    "startEditing": "Começar a editar"
+  },
+  "services": {
+    "kicker": "Dois serviços",
+    "title1": "Escolha o que a sua tese precisa",
+    "title2": "hoje.",
+    "proofreading": {
+      "label": "Revisão",
+      "title1": "Gramática e clareza em",
+      "title2": "tom académico.",
+      "description": "Identificamos gralhas, frases desajeitadas e falhas de tempo verbal. As sugestões mantêm o tom académico: sem reescritas excessivas, sem alterações de voz que não pediu.",
+      "stats": {
+        "corrections": "correções",
+        "tone": "ajuste de tom",
+        "rewrites": "reescritas"
+      },
+      "cta": "Rever a minha tese"
+    },
+    "formatting": {
+      "label": "Formatação",
+      "title1": "Adapte ao padrão da",
+      "title2": "sua instituição.",
+      "description": "Margens, títulos, citações, referências. Reestruturamos o seu documento conforme o padrão exigido pelo júri.",
+      "cta": "Formatar a minha tese"
+    },
+    "guidelines": {
+      "abnt": { "name": "ABNT NBR 14724", "description": "Padrão académico brasileiro" },
+      "apa": { "name": "APA 7.ª edição", "description": "Ciências sociais, psicologia" },
+      "mla": { "name": "MLA 9.ª edição", "description": "Humanidades, literatura" },
+      "chicago": { "name": "Chicago 17.ª edição", "description": "História, artes" }
+    }
+  },
+  "pricing": {
+    "kicker": "Preços",
+    "title1": "Pague uma vez,",
+    "title2": "por tese.",
+    "free": {
+      "label": "Teste grátis",
+      "subtitle": "A primeira página é por nossa conta.",
+      "features": [
+        "Uma página grátis, em qualquer serviço",
+        "Sem cartão de crédito",
+        "Pré-visualização lado a lado"
+      ],
+      "cta": "Experimentar uma página"
+    },
+    "paid": {
+      "label": "Por tese",
+      "perDocument": "/ documento",
+      "subtitle": "Pagamento único, tese inteira.",
+      "features": [
+        "Até 200 páginas",
+        "Ambos os serviços incluídos",
+        "Três trocas de norma",
+        "Exportação .docx, .pdf, .tex"
+      ],
+      "cta": "Enviar a minha tese"
+    }
+  },
+  "auth": {
+    "signIn": {
+      "title": "Bem-vindo de volta",
+      "subtitle": "Inicie sessão para continuar no FormaTexto.",
+      "submit": "Iniciar sessão"
+    },
+    "signUp": {
+      "title": "Crie a sua conta",
+      "subtitle": "Comece com uma página grátis, sem cartão.",
+      "submit": "Criar conta"
+    },
+    "google": "Continuar com Google",
+    "or": "ou",
+    "fullName": "Nome completo",
+    "fullNamePlaceholder": "Ada Lovelace",
+    "email": "E-mail",
+    "emailPlaceholder": "voce@universidade.edu",
+    "password": "Palavra-passe",
+    "passwordPlaceholderSignUp": "Pelo menos 8 caracteres",
+    "passwordPlaceholderSignIn": "••••••••",
+    "forgotPassword": "Esqueceu-se da palavra-passe?",
+    "showPassword": "Mostrar palavra-passe",
+    "hidePassword": "Ocultar palavra-passe",
+    "alreadyHave": "Já tem conta?",
+    "dontHave": "Ainda não tem conta?",
+    "switchToSignIn": "Iniciar sessão",
+    "switchToSignUp": "Criar conta"
+  },
+  "dashboard": {
+    "title": "Os meus documentos",
+    "subtitleNoActive": "Sem documentos ativos",
+    "subtitleActive_one": "{{count}} documento a ser trabalhado",
+    "subtitleActive_other": "{{count}} documentos a serem trabalhados",
+    "newService": "Novo serviço",
+    "emptyTitle": "Ainda não há documentos",
+    "emptySubtitle": "Envie o seu primeiro documento para começar.",
+    "service": {
+      "proofreading": "Revisão",
+      "formatting": "Formatação"
+    },
+    "status": {
+      "inQueue": "Em espera",
+      "processing": "A processar",
+      "ready": "Pronto para revisão",
+      "delivered": "Entregue"
+    },
+    "time": {
+      "justNow": "Agora mesmo",
+      "hoursAgo_one": "há {{count}} hora",
+      "hoursAgo_other": "há {{count}} horas",
+      "daysAgo_one": "há {{count}} dia",
+      "daysAgo_other": "há {{count}} dias"
+    }
+  },
+  "getStarted": {
+    "title": "Vamos começar",
+    "subtitle": "Fluxo de envio / pagamento em breve."
+  },
+  "checkout": {
+    "title": "Pagamento",
+    "subtitle": "Fluxo de pagamento em breve."
+  }
+}
