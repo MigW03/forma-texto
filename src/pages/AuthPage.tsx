@@ -159,14 +159,6 @@ export default function AuthPage({ mode }: AuthPageProps) {
                 <label className="text-xs font-medium text-muted uppercase tracking-wider">
                   {t('auth.password')}
                 </label>
-                {!isSignUp && (
-                  <Link
-                    to={ROUTES.forgotPassword}
-                    className="text-xs text-muted hover:text-ink transition-colors"
-                  >
-                    {t('auth.forgotPassword')}
-                  </Link>
-                )}
               </div>
               <div className="relative">
                 <input
@@ -201,6 +193,15 @@ export default function AuthPage({ mode }: AuthPageProps) {
             >
               {loading ? '…' : t(`${ns}.submit`)}
             </button>
+
+            {!isSignUp && (
+              <Link
+                to={ROUTES.forgotPassword}
+                className="text-xs text-center text-muted hover:text-ink transition-colors"
+              >
+                {t('auth.forgotPassword')}
+              </Link>
+            )}
           </form>
         </div>
 

@@ -6,4 +6,7 @@ export const ROUTES = {
   getStarted: '/get-started',
   dashboard: '/dashboard',
   checkout: '/checkout',
+  terms: '/terms',
+  privacy: '/privacy',
+  pageSelection: '/page-selection',
 } as const

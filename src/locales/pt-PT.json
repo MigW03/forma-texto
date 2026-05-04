@@ -24,7 +24,7 @@
     "fileLimit": "Até 50MB. O ficheiro é encriptado durante o envio.",
     "documentUrl": "URL do documento",
     "linksSupported": "Suportamos ligações do Google Docs, OneDrive ou Dropbox.",
-    "freeFirstPage": "Primeira página grátis, sem cartão",
+    "freeFirstPage": "Primeira página grátis — avaliação única, sem cartão",
     "startEditing": "Começar a editar"
   },
   "services": {
@@ -62,14 +62,14 @@
     "title1": "Pague uma vez,",
     "title2": "por tese.",
     "free": {
-      "label": "Teste grátis",
-      "subtitle": "A primeira página é por nossa conta.",
+      "label": "Avaliação grátis",
+      "subtitle": "Uma página por nossa conta. Só uma vez.",
       "features": [
-        "Uma página grátis, em qualquer serviço",
+        "Uma página grátis, uma vez, em qualquer serviço",
         "Sem cartão de crédito",
         "Pré-visualização lado a lado"
       ],
-      "cta": "Experimentar uma página"
+      "cta": "Experimentar uma página grátis"
     },
     "paid": {
       "label": "Por tese",
@@ -92,7 +92,7 @@
     },
     "signUp": {
       "title": "Crie a sua conta",
-      "subtitle": "Comece com uma página grátis, sem cartão.",
+      "subtitle": "A sua primeira página é grátis — só uma vez. Sem cartão.",
       "submit": "Criar conta"
     },
     "google": "Continuar com Google",
@@ -154,13 +154,43 @@
     "stepService": "Escolha um serviço",
     "stepDocument": "Adicione o seu documento",
     "guidelineLabel": "Escolha uma norma",
-    "freeBadge": "Grátis",
-    "firstPage": "primeira página",
+    "freeBadge": "Avaliação grátis",
+    "firstPage": "só a 1.ª página",
     "perThesis": "por tese",
-    "submit": "Enviar documento"
+    "submit": "Enviar documento",
+    "ctaSubtitle": "Avaliação única — a sua primeira página é por nossa conta.",
+    "fileCard": {
+      "pages": "páginas",
+      "pagesUnknown": "— páginas",
+      "countingPages": "a contar páginas…",
+      "replace": "Substituir"
+    },
+    "termsPrefix": "Concordo com os",
+    "termsLink": "Termos de Serviço",
+    "termsAnd": "e com a",
+    "privacyLink": "Política de Privacidade"
   },
   "checkout": {
     "title": "Pagamento",
     "subtitle": "Fluxo de pagamento em breve."
+  },
+  "pageSelection": {
+    "title": "Selecione as páginas a processar",
+    "subtitle": "Escolha quais páginas quer que trabalhemos. A sua primeira página é grátis.",
+    "tip": "Clique nas páginas para as selecionar ou desmarcar. Mantenha Shift para selecionar um intervalo.",
+    "summary": "Resumo",
+    "totalPages": "Total de páginas",
+    "selectedPages": "Páginas selecionadas",
+    "rangeLabel": "Páginas a processar",
+    "rangePlaceholder": "ex: 1, 3-5, 8",
+    "rangeHint": "Separe as páginas por vírgula e use traço para intervalos.",
+    "rangeError": "Nenhuma página válida encontrada. Verifique o formato.",
+    "selectAll": "Selecionar tudo",
+    "clearAll": "Limpar seleção",
+    "continue": "Continuar para pagamento",
+    "page": "Página",
+    "pageCount_one": "página selecionada",
+    "pageCount_other": "páginas selecionadas",
+    "noDocument": "Nenhum documento encontrado. Volte e faça o carregamento."
   }
 }

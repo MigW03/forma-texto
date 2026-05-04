@@ -9,7 +9,6 @@ export default function Navbar() {
   const { t } = useTranslation()
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
-  const isDashboard = pathname === ROUTES.dashboard
 
   const handleSignOut = async () => {
     await signOut()
@@ -36,15 +35,6 @@ export default function Navbar() {
         {user ? (
           <div className="flex items-center gap-3">
             <LanguageSwitcher />
-            {isDashboard && (
-              <Link
-                to={ROUTES.getStarted}
-                className="flex items-center gap-1.5 bg-ink text-[#F0EEE8] text-sm font-medium px-4 py-2 rounded-lg hover:bg-ink/90 transition-colors"
-              >
-                {t('nav.newService')}
-                <span className="text-xs">→</span>
-              </Link>
-            )}
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full bg-forest flex items-center justify-center">
                 <span className="text-white text-xs font-semibold">{userInitial}</span>

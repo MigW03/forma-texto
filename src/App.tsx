@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Navbar from './components/layout/Navbar'
 import ProtectedRoute from './components/ProtectedRoute'
 import LandingPage from './pages/LandingPage'
@@ -7,9 +7,17 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import GetStartedPage from './pages/GetStartedPage'
 import CheckoutPage from './pages/CheckoutPage'
 import DashboardPage from './pages/DashboardPage'
-import { AuthProvider } from './lib/auth-context'
+import TermsPage from './pages/TermsPage'
+import PageSelectionPage from './pages/PageSelectionPage'
+import { AuthProvider, useAuth } from './lib/auth-context'
 import { ROUTES } from './lib/routes'
 import './index.css'
+
+function HomeRoute() {
+  const { user, loading } = useAuth()
+  if (loading) return null
+  return user ? <Navigate to={ROUTES.dashboard} replace /> : <LandingPage />
+}
 
 export default function App() {
   return (
@@ -18,7 +26,7 @@ export default function App() {
         <div className="min-h-screen bg-sand">
           <Navbar />
           <Routes>
-            <Route path={ROUTES.home} element={<LandingPage />} />
+            <Route path={ROUTES.home} element={<HomeRoute />} />
             <Route path={ROUTES.signIn} element={<AuthPage mode="sign-in" />} />
             <Route path={ROUTES.signUp} element={<AuthPage mode="sign-up" />} />
             <Route path={ROUTES.forgotPassword} element={<ForgotPasswordPage />} />
@@ -33,6 +41,11 @@ export default function App() {
             <Route
               path={ROUTES.dashboard}
               element={<ProtectedRoute><DashboardPage /></ProtectedRoute>}
+            />
+            <Route path={ROUTES.terms} element={<TermsPage />} />
+            <Route
+              path={ROUTES.pageSelection}
+              element={<ProtectedRoute><PageSelectionPage /></ProtectedRoute>}
             />
           </Routes>
         </div>

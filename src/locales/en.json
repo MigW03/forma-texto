@@ -24,7 +24,7 @@
     "fileLimit": "Up to 50MB. Your file is encrypted in transit.",
     "documentUrl": "Document URL",
     "linksSupported": "Google Docs, OneDrive, or Dropbox links are supported.",
-    "freeFirstPage": "Free first page, no card required",
+    "freeFirstPage": "First page free — one-time trial, no card required",
     "startEditing": "Start editing"
   },
   "services": {
@@ -63,13 +63,13 @@
     "title2": "per thesis.",
     "free": {
       "label": "Free trial",
-      "subtitle": "First page on us.",
+      "subtitle": "One page on us. First and only.",
       "features": [
-        "One free page, either service",
+        "One free page — one time, either service",
         "No credit card required",
         "Side-by-side preview"
       ],
-      "cta": "Try one page"
+      "cta": "Try one page free"
     },
     "paid": {
       "label": "Per thesis",
@@ -92,7 +92,7 @@
     },
     "signUp": {
       "title": "Create your account",
-      "subtitle": "Start with one free page, no card required.",
+      "subtitle": "Your first page is free — one time only. No card required.",
       "submit": "Create account"
     },
     "google": "Continue with Google",
@@ -154,13 +154,43 @@
     "stepService": "Choose a service",
     "stepDocument": "Add your document",
     "guidelineLabel": "Choose a guideline",
-    "freeBadge": "Free",
-    "firstPage": "first page",
+    "freeBadge": "Free trial",
+    "firstPage": "first page only",
     "perThesis": "per thesis",
-    "submit": "Submit document"
+    "submit": "Submit document",
+    "ctaSubtitle": "One-time trial — your first page is on us.",
+    "fileCard": {
+      "pages": "pages",
+      "pagesUnknown": "— pages",
+      "countingPages": "counting pages…",
+      "replace": "Replace"
+    },
+    "termsPrefix": "I agree to the",
+    "termsLink": "Terms of Service",
+    "termsAnd": "and",
+    "privacyLink": "Privacy Policy"
   },
   "checkout": {
     "title": "Checkout",
     "subtitle": "Payment flow coming soon."
+  },
+  "pageSelection": {
+    "title": "Select pages to process",
+    "subtitle": "Choose which pages you want us to work on. Your first page is free.",
+    "tip": "Click pages to select or deselect them. Hold Shift to select a range.",
+    "summary": "Summary",
+    "totalPages": "Total pages",
+    "selectedPages": "Selected pages",
+    "rangeLabel": "Pages to process",
+    "rangePlaceholder": "e.g. 1, 3-5, 8",
+    "rangeHint": "Separate pages with commas, use a dash for ranges.",
+    "rangeError": "No valid pages found. Check the format.",
+    "selectAll": "Select all",
+    "clearAll": "Clear all",
+    "continue": "Continue to checkout",
+    "page": "Page",
+    "pageCount_one": "page selected",
+    "pageCount_other": "pages selected",
+    "noDocument": "No document found. Please go back and upload one."
   }
 }
