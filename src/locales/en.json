@@ -148,8 +148,16 @@
     }
   },
   "getStarted": {
-    "title": "Get started",
-    "subtitle": "Upload / payment flow coming soon."
+    "title": "New service",
+    "subtitle": "What does your thesis need today?",
+    "backToDashboard": "Back to documents",
+    "stepService": "Choose a service",
+    "stepDocument": "Add your document",
+    "guidelineLabel": "Choose a guideline",
+    "freeBadge": "Free",
+    "firstPage": "first page",
+    "perThesis": "per thesis",
+    "submit": "Submit document"
   },
   "checkout": {
     "title": "Checkout",
