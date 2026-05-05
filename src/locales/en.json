@@ -163,7 +163,8 @@
       "pages": "pages",
       "pagesUnknown": "— pages",
       "countingPages": "counting pages…",
-      "replace": "Replace"
+      "replace": "Replace",
+      "invalidType": "Unsupported file type. Please upload a PDF or Word document (.pdf, .doc, .docx)."
     },
     "termsPrefix": "I agree to the",
     "termsLink": "Terms of Service",
@@ -191,6 +192,9 @@
     "page": "Page",
     "pageCount_one": "page selected",
     "pageCount_other": "pages selected",
-    "noDocument": "No document found. Please go back and upload one."
+    "noDocument": "No document found. Please go back and upload one.",
+    "backToProjects": "Back to projects",
+    "servicesLabel": "Services",
+    "guidelineLabel": "Guideline"
   }
 }

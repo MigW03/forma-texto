@@ -1,8 +1,12 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useLocation, useNavigate, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Info } from 'lucide-react'
+import { ArrowLeft, Info, Check, ChevronDown } from 'lucide-react'
 import { ROUTES } from '../lib/routes'
+import * as pdfjsLib from 'pdfjs-dist'
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 const FALLBACK_PAGE_COUNT = 8
 
@@ -44,8 +48,108 @@ function selectionToRangeString(pages: Set<number>, total: number): string {
   return ranges.join(', ')
 }
 
-// Simple SVG document page thumbnail
-function PageThumbnail({ pageNumber }: { pageNumber: number }) {
+function PdfPageCanvas({
+  doc,
+  pageNumber,
+}: {
+  doc: pdfjsLib.PDFDocumentProxy
+  pageNumber: number
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setVisible(true) },
+      { threshold: 0.05 }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (!visible) return
+    const canvas = canvasRef.current
+    if (!canvas) return
+    let cancelled = false
+    let renderTask: pdfjsLib.RenderTask | null = null
+
+    ;(async () => {
+      try {
+        const page = await doc.getPage(pageNumber)
+        if (cancelled) return
+        const viewport = page.getViewport({ scale: 1 })
+        const dpr = Math.min(window.devicePixelRatio || 1, 2)
+        const targetWidth = 300
+        const scale = (targetWidth / viewport.width) * dpr
+        const scaled = page.getViewport({ scale })
+        canvas.width = Math.round(scaled.width)
+        canvas.height = Math.round(scaled.height)
+        const ctx = canvas.getContext('2d')!
+        renderTask = page.render({ canvasContext: ctx, viewport: scaled })
+        await renderTask.promise
+      } catch {
+        // cancelled or render error
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      renderTask?.cancel()
+    }
+  }, [visible, doc, pageNumber])
+
+  return (
+    <div ref={wrapRef} className="w-full h-full bg-white">
+      <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: 'auto' }} />
+    </div>
+  )
+}
+
+function DocxPageThumbnail({ pageEl }: { pageEl: HTMLElement }) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const cloneRef = useRef<HTMLElement | null>(null)
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setVisible(true) },
+      { threshold: 0.05 }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (!visible) return
+    const wrap = wrapRef.current
+    if (!wrap) return
+    const clone = pageEl.cloneNode(true) as HTMLElement
+    clone.style.cssText += ';position:absolute;top:0;left:0;margin:0;transform-origin:top left;pointer-events:none;visibility:hidden;'
+    wrap.appendChild(clone)
+    cloneRef.current = clone
+    requestAnimationFrame(() => {
+      const naturalWidth = pageEl.offsetWidth || 816
+      const containerWidth = wrap.clientWidth || 150
+      const s = containerWidth / naturalWidth
+      clone.style.transform = `scale(${s})`
+      clone.style.visibility = 'visible'
+    })
+    return () => {
+      if (cloneRef.current && wrap.contains(cloneRef.current)) wrap.removeChild(cloneRef.current)
+      cloneRef.current = null
+    }
+  }, [visible, pageEl])
+
+  return <div ref={wrapRef} className="w-full h-full overflow-hidden bg-white relative" />
+}
+
+function SkeletonThumbnail() {
   const lineGroups = [
     [14, 18, 22, 26, 30, 34],
     [42, 46, 50, 54],
@@ -55,33 +159,14 @@ function PageThumbnail({ pageNumber }: { pageNumber: number }) {
   return (
     <svg viewBox="0 0 100 130" className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
       <rect width="100" height="130" fill="white" />
-      {/* Header line */}
-      <rect x="8" y="8" width={pageNumber === 1 ? 60 : 45} height="3" rx="1.5" fill="#E5E3DD" />
-      {/* Text lines in groups */}
+      <rect x="8" y="8" width="45" height="3" rx="1.5" fill="#E5E3DD" />
       {lineGroups.map((lines, gi) =>
         lines.map((y, li) => (
-          <rect
-            key={`${gi}-${li}`}
-            x="8"
-            y={y}
+          <rect key={`${gi}-${li}`} x="8" y={y}
             width={li === lines.length - 1 ? 40 + (gi % 3) * 10 : 84}
-            height="2"
-            rx="1"
-            fill="#DDDBD3"
+            height="2" rx="1" fill="#DDDBD3"
           />
         ))
-      )}
-      {/* Table on page 1 */}
-      {pageNumber === 1 && (
-        <>
-          <rect x="8" y="102" width="84" height="20" rx="1" fill="#F5F4F0" stroke="#E5E3DD" strokeWidth="0.5" />
-          {[0, 1, 2].map(i => (
-            <rect key={i} x={8 + i * 28} y="102" width="28" height="20" fill="none" stroke="#E5E3DD" strokeWidth="0.5" />
-          ))}
-          {[106, 112, 118].map(y => (
-            <rect key={y} x="12" y={y} width="16" height="1.5" rx="0.75" fill="#DDDBD3" />
-          ))}
-        </>
       )}
     </svg>
   )
@@ -101,6 +186,75 @@ export default function PageSelectionPage() {
   } | null
 
   const total = state?.pageCount ?? FALLBACK_PAGE_COUNT
+  const [effectiveTotal, setEffectiveTotal] = useState(total)
+
+  // PDF
+  const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null)
+  useEffect(() => {
+    const file = state?.file
+    if (!file || !file.name.toLowerCase().endsWith('.pdf')) return
+    let cancelled = false
+    let doc: pdfjsLib.PDFDocumentProxy | null = null
+    file.arrayBuffer().then(buf => {
+      if (cancelled) return
+      return pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise
+    }).then(d => {
+      if (!cancelled) { doc = d; setPdfDoc(d) }
+    }).catch(() => {})
+    return () => { cancelled = true; doc?.destroy() }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Docx
+  const hiddenDocxRef = useRef<HTMLDivElement | null>(null)
+  const [docxPages, setDocxPages] = useState<HTMLElement[] | null>(null)
+  useEffect(() => {
+    const file = state?.file
+    if (!file) return
+    const name = file.name.toLowerCase()
+    if (!name.endsWith('.doc') && !name.endsWith('.docx')) return
+    let cancelled = false
+    const div = document.createElement('div')
+    div.style.cssText = 'position:fixed;visibility:hidden;left:-9999px;top:0;width:816px;overflow:visible;pointer-events:none;'
+    document.body.appendChild(div)
+    hiddenDocxRef.current = div
+    import('docx-preview').then(({ renderAsync }) => {
+      if (cancelled) return renderAsync(file, div, undefined, { breakPages: true, inWrapper: false })
+      return renderAsync(file, div, undefined, { breakPages: true, inWrapper: false })
+    }).then(() => {
+      if (cancelled) return
+      const pages = Array.from(div.querySelectorAll('section.docx')) as HTMLElement[]
+      setDocxPages(pages)
+      if (pages.length > 0) {
+        setEffectiveTotal(pages.length)
+        const all = new Set<number>()
+        for (let i = 1; i <= pages.length; i++) all.add(i)
+        setSelected(all)
+        setRangeInput(pages.length > 1 ? `1-${pages.length}` : `${pages.length}`)
+      }
+    }).catch(() => {})
+    return () => {
+      cancelled = true
+      if (hiddenDocxRef.current && document.body.contains(hiddenDocxRef.current)) {
+        document.body.removeChild(hiddenDocxRef.current)
+      }
+      hiddenDocxRef.current = null
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const [activeServices, setActiveServices] = useState<Set<string>>(
+    () => new Set(state?.services ?? [])
+  )
+  const [guideline, setGuideline] = useState<string>(state?.guideline ?? 'abnt')
+
+  const toggleService = (svc: string) => {
+    setActiveServices(prev => {
+      const next = new Set(prev)
+      next.has(svc) ? next.delete(svc) : next.add(svc)
+      return next
+    })
+  }
 
   const [selected, setSelected] = useState<Set<number>>(() => {
     const all = new Set<number>()
@@ -113,23 +267,23 @@ export default function PageSelectionPage() {
 
   // Sync range input → selection
   const applyRange = useCallback((input: string) => {
-    const parsed = parseRangeInput(input, total)
+    const parsed = parseRangeInput(input, effectiveTotal)
     if (parsed.size > 0) {
       setSelected(parsed)
       setRangeError(false)
     } else {
       setRangeError(true)
     }
-  }, [total])
+  }, [effectiveTotal])
 
   // Sync selection → range input
   useEffect(() => {
     if (selected.size === 0) {
       setRangeInput('')
     } else {
-      setRangeInput(selectionToRangeString(selected, total))
+      setRangeInput(selectionToRangeString(selected, effectiveTotal))
     }
-  }, [selected, total])
+  }, [selected, effectiveTotal])
 
   const togglePage = (page: number, shiftHeld: boolean) => {
     setSelected(prev => {
@@ -148,7 +302,7 @@ export default function PageSelectionPage() {
     setLastClicked(page)
   }
 
-  const canContinue = selected.size > 0
+  const canContinue = selected.size > 0 && activeServices.size > 0
 
   if (!state) {
     return (
@@ -169,11 +323,20 @@ export default function PageSelectionPage() {
       <div className="flex-1 overflow-y-auto px-8 py-8">
         <div className="mb-6 flex items-center gap-3">
           <button
-            onClick={() => navigate(-1)}
+            onClick={() => navigate(ROUTES.getStarted, {
+              state: {
+                file: state.file,
+                pasteUrl: state.pasteUrl,
+                inputTab: state.inputTab,
+                services: Array.from(activeServices),
+                guideline,
+                pageCount: state.pageCount,
+              }
+            })}
             className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink transition-colors"
           >
             <ArrowLeft size={14} />
-            {t('getStarted.backToDashboard')}
+            {t('pageSelection.backToProjects')}
           </button>
         </div>
 
@@ -181,7 +344,7 @@ export default function PageSelectionPage() {
         <p className="text-sm text-muted mb-8">{t('pageSelection.subtitle')}</p>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
-          {Array.from({ length: total }, (_, i) => i + 1).map(page => {
+          {Array.from({ length: effectiveTotal }, (_, i) => i + 1).map(page => {
             const isSelected = selected.has(page)
             return (
               <div
@@ -207,7 +370,10 @@ export default function PageSelectionPage() {
                       : '0 1px 4px rgba(0,0,0,0.08)',
                   }}
                 >
-                  <PageThumbnail pageNumber={page} />
+                  {pdfDoc
+                    ? <PdfPageCanvas doc={pdfDoc} pageNumber={page} />
+                    : <SkeletonThumbnail />
+                  }
 
                   {/* Checkbox overlay */}
                   <div
@@ -250,6 +416,52 @@ export default function PageSelectionPage() {
             </p>
           </div>
 
+          {/* Service selection */}
+          <div>
+            <p className="text-xs font-medium text-muted uppercase tracking-widest mb-3">
+              {t('pageSelection.servicesLabel')}
+            </p>
+            <div className="flex flex-col divide-y divide-border border border-border rounded-xl overflow-hidden">
+              {(['proofreading', 'formatting'] as const).map(svc => (
+                <button
+                  key={svc}
+                  onClick={() => toggleService(svc)}
+                  className="flex items-center justify-between px-3 py-2.5 bg-white hover:bg-[#F0EEE8] transition-colors text-left"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
+                      activeServices.has(svc) ? 'bg-forest border-forest' : 'border-border'
+                    }`}>
+                      {activeServices.has(svc) && <Check size={9} className="text-white" strokeWidth={3} />}
+                    </div>
+                    <span className="text-sm text-ink">{t(`services.${svc}.label`)}</span>
+                  </div>
+                  <span className="text-xs font-semibold text-ink">$29</span>
+                </button>
+              ))}
+            </div>
+
+            {activeServices.has('formatting') && (
+              <div className="mt-3">
+                <label className="text-xs font-medium text-muted uppercase tracking-widest block mb-2">
+                  {t('pageSelection.guidelineLabel')}
+                </label>
+                <div className="relative">
+                  <select
+                    value={guideline}
+                    onChange={e => setGuideline(e.target.value)}
+                    className="w-full text-sm border border-border rounded-xl px-3 py-2.5 pr-8 bg-white focus:outline-none focus:ring-2 focus:ring-forest-mid/30 appearance-none cursor-pointer"
+                  >
+                    {(['abnt', 'apa', 'mla', 'chicago'] as const).map(id => (
+                      <option key={id} value={id}>{t(`services.guidelines.${id}.name`)}</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Stats */}
           <div>
             <p className="text-xs font-medium text-muted uppercase tracking-widest mb-3">
@@ -258,7 +470,7 @@ export default function PageSelectionPage() {
             <div className="flex flex-col gap-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted">{t('pageSelection.totalPages')}</span>
-                <span className="font-medium text-ink">{total}</span>
+                <span className="font-medium text-ink">{effectiveTotal}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted">{t('pageSelection.selectedPages')}</span>
@@ -296,7 +508,7 @@ export default function PageSelectionPage() {
           {/* Select all / clear */}
           <div className="flex gap-2">
             <button
-              onClick={() => setSelected(new Set(Array.from({ length: total }, (_, i) => i + 1)))}
+              onClick={() => setSelected(new Set(Array.from({ length: effectiveTotal }, (_, i) => i + 1)))}
               className="flex-1 text-xs font-medium text-muted border border-border rounded-lg py-2 hover:border-forest-mid/40 hover:text-ink transition-colors"
             >
               {t('pageSelection.selectAll')}
@@ -315,7 +527,12 @@ export default function PageSelectionPage() {
           <button
             disabled={!canContinue}
             onClick={() => navigate(ROUTES.checkout, {
-              state: { ...state, selectedPages: Array.from(selected).sort((a, b) => a - b) }
+              state: {
+                ...state,
+                services: Array.from(activeServices),
+                guideline,
+                selectedPages: Array.from(selected).sort((a, b) => a - b),
+              }
             })}
             className={`w-full flex items-center justify-center gap-2 text-sm font-semibold py-3 rounded-xl transition-all bg-forest text-white ${
               canContinue

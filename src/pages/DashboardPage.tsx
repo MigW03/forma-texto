@@ -2,6 +2,11 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { FileText, Plus } from 'lucide-react'
 import { ROUTES } from '../lib/routes'
+import { SESSION_KEY } from './GetStartedPage'
+
+function clearGetStartedSession() {
+  sessionStorage.removeItem(SESSION_KEY)
+}
 
 type ServiceType = 'proofreading' | 'formatting'
 type StatusType = 'inQueue' | 'processing' | 'ready' | 'delivered'
@@ -82,6 +87,7 @@ export default function DashboardPage() {
         </div>
         <Link
           to={ROUTES.getStarted}
+          onClick={clearGetStartedSession}
           className="flex items-center gap-2 bg-ink text-[#F0EEE8] text-sm font-medium px-4 py-2.5 rounded-xl hover:bg-ink/90 transition-colors"
         >
           <Plus size={15} />
@@ -170,6 +176,7 @@ function EmptyState() {
       <p className="text-sm text-muted mb-6">{t('dashboard.emptySubtitle')}</p>
       <Link
         to={ROUTES.getStarted}
+        onClick={clearGetStartedSession}
         className="inline-flex items-center gap-1.5 bg-ink text-[#F0EEE8] text-sm font-medium px-5 py-3 rounded-xl hover:bg-ink/90 transition-colors"
       >
         <Plus size={15} />

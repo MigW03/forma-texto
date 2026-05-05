@@ -163,7 +163,8 @@
       "pages": "páginas",
       "pagesUnknown": "— páginas",
       "countingPages": "a contar páginas…",
-      "replace": "Substituir"
+      "replace": "Substituir",
+      "invalidType": "Formato não suportado. Envie um PDF ou documento Word (.pdf, .doc, .docx)."
     },
     "termsPrefix": "Concordo com os",
     "termsLink": "Termos de Serviço",
@@ -191,6 +192,9 @@
     "page": "Página",
     "pageCount_one": "página selecionada",
     "pageCount_other": "páginas selecionadas",
-    "noDocument": "Nenhum documento encontrado. Volte e faça o carregamento."
+    "noDocument": "Nenhum documento encontrado. Volte e faça o carregamento.",
+    "backToProjects": "Voltar para projetos",
+    "servicesLabel": "Serviços",
+    "guidelineLabel": "Norma"
   }
 }
