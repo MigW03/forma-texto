@@ -169,7 +169,8 @@
     "termsPrefix": "I agree to the",
     "termsLink": "Terms of Service",
     "termsAnd": "and",
-    "privacyLink": "Privacy Policy"
+    "privacyLink": "Privacy Policy",
+    "fileDeletionNotice": "Your uploaded and processed files will be automatically deleted 30 days after project completion. Download your results before then. See our"
   },
   "checkout": {
     "title": "Checkout",

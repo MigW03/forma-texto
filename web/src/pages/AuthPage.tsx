@@ -64,10 +64,12 @@ export default function AuthPage({ mode }: AuthPageProps) {
   }
 
   const handleGoogle = async () => {
-    await supabase.auth.signInWithOAuth({
+    setError(null)
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}${ROUTES.dashboard}` },
+      options: { redirectTo: `${window.location.origin}/` },
     })
+    if (error) setError(error.message)
   }
 
   if (checkEmail) {

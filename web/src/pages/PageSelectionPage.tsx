@@ -567,15 +567,13 @@ export default function PageSelectionPage() {
             disabled={!canContinue}
             onClick={() => {
               storeFile(state.file)
-              navigate(ROUTES.textExtract, {
+              navigate(ROUTES.checkout, {
                 state: {
-                  fileName: state.file?.name ?? '',
                   services: Array.from(activeServices),
-                  guideline,
+                  pageCount: selected.size,
                   selectedPages: Array.from(selected).sort((a, b) => a - b),
-                  pasteUrl: state.pasteUrl,
-                  inputTab: state.inputTab,
-                  pageCount: state.pageCount,
+                  guideline,
+                  fileName: state.file?.name ?? null,
                 }
               })
             }}

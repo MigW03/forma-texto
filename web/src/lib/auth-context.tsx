@@ -17,13 +17,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      setLoading(false)
-    })
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, newSession) => {
+    // onAuthStateChange fires INITIAL_SESSION after determining the starting auth
+    // state — including exchanging any PKCE ?code= param in the URL.
+    // We only drop the loading flag once that first event has fired so that
+    // ProtectedRoute never redirects before the OAuth callback is processed.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession)
+      if (event === 'INITIAL_SESSION') {
+        setLoading(false)
+      }
     })
 
     return () => subscription.unsubscribe()

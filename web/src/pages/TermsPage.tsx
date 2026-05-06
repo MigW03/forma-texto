@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import type { SupportedLanguage } from '../lib/i18n'
 import { ROUTES } from '../lib/routes'
 
-const LAST_UPDATED = 'May 4, 2026'
+const LAST_UPDATED = 'May 6, 2026'
 
 const content: Record<SupportedLanguage, { sections: { title: string; body: string[] }[] }> = {
   en: {
@@ -56,16 +56,25 @@ const content: Record<SupportedLanguage, { sections: { title: string; body: stri
         body: [
           'A one-time free trial is available for the first page of any document, for each account, on either service. No credit card is required for the trial.',
           'Full document processing requires a one-time payment per document as displayed at checkout. All sales are final. Refunds are issued solely at our discretion in cases of documented technical failure attributable to FormaTexto.',
+          'You will be charged the full amount upon submission regardless of whether your document requires corrections. The fee covers the processing of your document by our service, not the number or significance of changes made. No refund or reduction will be issued on the basis that the original document was already well-written or required minimal intervention.',
         ],
       },
       {
-        title: '8. Changes to These Terms',
+        title: '8. Data Retention and File Deletion',
+        body: [
+          'When you submit a document, both the original uploaded file and the processed output file are stored securely in our systems solely for the purpose of making them available to you during the project period.',
+          'All files — original and processed — are permanently and automatically deleted thirty (30) days after the project is marked as completed. This deletion is irreversible. You are solely responsible for downloading and saving your processed document before the deletion date.',
+          'FormaTexto is not liable for any loss of data resulting from the scheduled deletion of files in accordance with this policy.',
+        ],
+      },
+      {
+        title: '9. Changes to These Terms',
         body: [
           'We may update these Terms at any time. Continued use of the Service after changes are posted constitutes acceptance of the updated Terms. We will indicate the date of the most recent revision at the top of this page.',
         ],
       },
       {
-        title: '9. Contact',
+        title: '10. Contact',
         body: [
           'If you have questions about these Terms, please contact us at legal@formatexto.com.',
         ],
@@ -121,16 +130,25 @@ const content: Record<SupportedLanguage, { sections: { title: string; body: stri
         body: [
           'Uma avaliação gratuita única está disponível para a primeira página de qualquer documento, por conta, em qualquer um dos serviços. Não é necessário cartão de crédito para a avaliação.',
           'O processamento completo do documento requer um pagamento único por documento, conforme exibido no checkout. Todas as vendas são definitivas. Reembolsos são concedidos exclusivamente a nosso critério em casos de falha técnica documentada atribuída ao FormaTexto.',
+          'O valor será cobrado integralmente no momento do envio, independentemente de o documento necessitar ou não de correções. A taxa cobre o processamento do documento pelo nosso serviço, não a quantidade ou relevância das alterações realizadas. Nenhum reembolso ou redução será concedido com base no fato de o documento original já estar bem escrito ou ter exigido intervenção mínima.',
         ],
       },
       {
-        title: '8. Alterações nestes Termos',
+        title: '8. Retenção de Dados e Exclusão de Arquivos',
+        body: [
+          'Ao enviar um documento, tanto o arquivo original quanto o arquivo processado são armazenados com segurança em nossos sistemas exclusivamente para disponibilizá-los durante o período do projeto.',
+          'Todos os arquivos — originais e processados — são excluídos de forma permanente e automática trinta (30) dias após a conclusão do projeto. Essa exclusão é irreversível. Você é o único responsável por baixar e salvar o documento processado antes da data de exclusão.',
+          'O FormaTexto não se responsabiliza por qualquer perda de dados decorrente da exclusão programada de arquivos conforme esta política.',
+        ],
+      },
+      {
+        title: '9. Alterações nestes Termos',
         body: [
           'Podemos atualizar estes Termos a qualquer momento. O uso continuado do Serviço após a publicação das alterações constitui aceitação dos Termos atualizados. Indicaremos a data da revisão mais recente no topo desta página.',
         ],
       },
       {
-        title: '9. Contato',
+        title: '10. Contato',
         body: [
           'Em caso de dúvidas sobre estes Termos, entre em contato pelo e-mail legal@formatexto.com.',
         ],
@@ -186,16 +204,25 @@ const content: Record<SupportedLanguage, { sections: { title: string; body: stri
         body: [
           'Uma avaliação gratuita única está disponível para a primeira página de qualquer documento, por conta, em qualquer um dos serviços. Não é necessário cartão de crédito para a avaliação.',
           'O processamento completo do documento requer um pagamento único por documento, conforme apresentado no checkout. Todas as vendas são definitivas. Os reembolsos são concedidos exclusivamente a nosso critério em casos de falha técnica documentada atribuída ao FormaTexto.',
+          'O montante será cobrado integralmente no momento do envio, independentemente de o documento necessitar ou não de correções. A taxa cobre o processamento do documento pelo nosso serviço, não a quantidade ou relevância das alterações efetuadas. Nenhum reembolso ou redução será concedido com base no facto de o documento original já estar bem escrito ou ter exigido intervenção mínima.',
         ],
       },
       {
-        title: '8. Alterações a estes Termos',
+        title: '8. Retenção de Dados e Eliminação de Ficheiros',
+        body: [
+          'Ao enviar um documento, tanto o ficheiro original como o ficheiro processado são armazenados de forma segura nos nossos sistemas exclusivamente para os disponibilizar durante o período do projeto.',
+          'Todos os ficheiros — originais e processados — são eliminados de forma permanente e automática trinta (30) dias após a conclusão do projeto. Esta eliminação é irreversível. O utilizador é o único responsável por descarregar e guardar o documento processado antes da data de eliminação.',
+          'O FormaTexto não se responsabiliza por qualquer perda de dados resultante da eliminação programada de ficheiros nos termos desta política.',
+        ],
+      },
+      {
+        title: '9. Alterações a estes Termos',
         body: [
           'Podemos atualizar estes Termos a qualquer momento. A utilização continuada do Serviço após a publicação das alterações constitui aceitação dos Termos atualizados. Indicaremos a data da revisão mais recente no topo desta página.',
         ],
       },
       {
-        title: '9. Contacto',
+        title: '10. Contacto',
         body: [
           'Em caso de dúvidas sobre estes Termos, contacte-nos através do e-mail legal@formatexto.com.',
         ],

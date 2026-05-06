@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Check, Upload, Link as LinkIcon, ChevronDown, FileText, X } from 'lucide-react'
+import { ArrowLeft, Check, Upload, Link as LinkIcon, ChevronDown, FileText, X, Clock } from 'lucide-react'
 import { ROUTES } from '../lib/routes'
 import { PRICING, formatBRL } from '../lib/pricing'
 
@@ -493,6 +493,18 @@ export default function GetStartedPage() {
           </div>
 
         </div>
+      </div>
+
+      {/* File deletion notice */}
+      <div className="mt-4 flex items-start gap-2.5">
+        <Clock size={13} className="text-muted shrink-0 mt-0.5" />
+        <p className="text-xs text-muted leading-relaxed">
+          {t('getStarted.fileDeletionNotice')}{' '}
+          <a href={ROUTES.terms} target="_blank" rel="noopener noreferrer" className="text-ink underline underline-offset-2 hover:text-forest transition-colors">
+            {t('getStarted.termsLink')}
+          </a>
+          .
+        </p>
       </div>
 
       {/* Terms */}

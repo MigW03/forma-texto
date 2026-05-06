@@ -16,6 +16,15 @@ export function calcPrice(service: ServiceKey, pageCount: number): number {
   return Math.max(pageCount * perPage, minimum)
 }
 
+/** One page free — subtracted from the post-minimum total, floor 0 */
+export function calcPriceWithTrial(service: ServiceKey, pageCount: number): number {
+  return Math.max(calcPrice(service, pageCount) - PRICING[service].perPage, 0)
+}
+
+export function trialDiscountBRL(services: ServiceKey[]): number {
+  return services.reduce((sum, s) => sum + PRICING[s].perPage, 0)
+}
+
 export function formatBRL(amount: number): string {
   return `R$${amount.toFixed(0)}`
 }

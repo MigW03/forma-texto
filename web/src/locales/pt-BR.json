@@ -169,7 +169,8 @@
     "termsPrefix": "Concordo com os",
     "termsLink": "Termos de Serviço",
     "termsAnd": "e com a",
-    "privacyLink": "Política de Privacidade"
+    "privacyLink": "Política de Privacidade",
+    "fileDeletionNotice": "Seus arquivos (original e processado) serão excluídos automaticamente 30 dias após a conclusão do projeto. Baixe seus resultados antes disso. Veja nossos"
   },
   "checkout": {
     "title": "Pagamento",
