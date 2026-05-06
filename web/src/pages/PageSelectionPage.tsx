@@ -3,6 +3,8 @@ import { useLocation, useNavigate, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Info, Check, ChevronDown } from 'lucide-react'
 import { ROUTES } from '../lib/routes'
+import { PRICING, calcPrice, formatBRL } from '../lib/pricing'
+import { storeFile } from '../lib/file-store'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
@@ -109,9 +111,16 @@ function PdfPageCanvas({
   )
 }
 
-function DocxPageThumbnail({ pageEl }: { pageEl: HTMLElement }) {
+function DocxSliceThumbnail({
+  section,
+  pageNumber,
+  pageHeight,
+}: {
+  section: HTMLElement
+  pageNumber: number
+  pageHeight: number
+}) {
   const wrapRef = useRef<HTMLDivElement>(null)
-  const cloneRef = useRef<HTMLElement | null>(null)
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
@@ -126,25 +135,33 @@ function DocxPageThumbnail({ pageEl }: { pageEl: HTMLElement }) {
   }, [])
 
   useEffect(() => {
-    if (!visible) return
+    if (!visible || !wrapRef.current) return
     const wrap = wrapRef.current
-    if (!wrap) return
-    const clone = pageEl.cloneNode(true) as HTMLElement
-    clone.style.cssText += ';position:absolute;top:0;left:0;margin:0;transform-origin:top left;pointer-events:none;visibility:hidden;'
-    wrap.appendChild(clone)
-    cloneRef.current = clone
-    requestAnimationFrame(() => {
-      const naturalWidth = pageEl.offsetWidth || 816
-      const containerWidth = wrap.clientWidth || 150
-      const s = containerWidth / naturalWidth
-      clone.style.transform = `scale(${s})`
-      clone.style.visibility = 'visible'
-    })
+    const naturalWidth = section.offsetWidth || 816
+    const containerWidth = wrap.clientWidth || 150
+    const scale = containerWidth / naturalWidth
+    const offset = (pageNumber - 1) * pageHeight
+
+    const clipper = document.createElement('div')
+    clipper.style.cssText = `width:${naturalWidth}px;height:${pageHeight}px;overflow:hidden;transform-origin:top left;transform:scale(${scale});position:absolute;top:0;left:0;`
+
+    const clone = section.cloneNode(true) as HTMLElement
+    clone.style.position = 'absolute'
+    clone.style.top = `-${offset}px`
+    clone.style.left = '0'
+    clone.style.margin = '0'
+    clone.style.overflow = 'visible'
+    clone.style.height = 'auto'
+    clone.style.minHeight = 'unset'
+    clone.style.pointerEvents = 'none'
+
+    clipper.appendChild(clone)
+    wrap.appendChild(clipper)
+
     return () => {
-      if (cloneRef.current && wrap.contains(cloneRef.current)) wrap.removeChild(cloneRef.current)
-      cloneRef.current = null
+      if (wrap.contains(clipper)) wrap.removeChild(clipper)
     }
-  }, [visible, pageEl])
+  }, [visible, section, pageNumber, pageHeight])
 
   return <div ref={wrapRef} className="w-full h-full overflow-hidden bg-white relative" />
 }
@@ -207,7 +224,11 @@ export default function PageSelectionPage() {
 
   // Docx
   const hiddenDocxRef = useRef<HTMLDivElement | null>(null)
-  const [docxPages, setDocxPages] = useState<HTMLElement[] | null>(null)
+  const [docxRender, setDocxRender] = useState<{
+    section: HTMLElement
+    pageHeight: number
+    pageCount: number
+  } | null>(null)
   useEffect(() => {
     const file = state?.file
     if (!file) return
@@ -219,19 +240,28 @@ export default function PageSelectionPage() {
     document.body.appendChild(div)
     hiddenDocxRef.current = div
     import('docx-preview').then(({ renderAsync }) => {
-      if (cancelled) return renderAsync(file, div, undefined, { breakPages: true, inWrapper: false })
-      return renderAsync(file, div, undefined, { breakPages: true, inWrapper: false })
+      if (cancelled) return
+      return renderAsync(file, div, undefined, {
+        breakPages: false,
+        inWrapper: false,
+      })
     }).then(() => {
       if (cancelled) return
-      const pages = Array.from(div.querySelectorAll('section.docx')) as HTMLElement[]
-      setDocxPages(pages)
-      if (pages.length > 0) {
-        setEffectiveTotal(pages.length)
-        const all = new Set<number>()
-        for (let i = 1; i <= pages.length; i++) all.add(i)
-        setSelected(all)
-        setRangeInput(pages.length > 1 ? `1-${pages.length}` : `${pages.length}`)
-      }
+      const section = div.querySelector('section.docx') as HTMLElement
+      if (!section) return
+      section.style.overflow = 'visible'
+      section.style.height = 'auto'
+      const pageHeight = parseFloat(getComputedStyle(section).minHeight) || section.offsetHeight
+      const contentHeight = section.scrollHeight
+      const pageCount = pageHeight > 0
+        ? Math.max(1, Math.ceil(contentHeight / pageHeight))
+        : 1
+      setDocxRender({ section, pageHeight, pageCount })
+      setEffectiveTotal(pageCount)
+      const all = new Set<number>()
+      for (let i = 1; i <= pageCount; i++) all.add(i)
+      setSelected(all)
+      setRangeInput(pageCount > 1 ? `1-${pageCount}` : '1')
     }).catch(() => {})
     return () => {
       cancelled = true
@@ -372,7 +402,9 @@ export default function PageSelectionPage() {
                 >
                   {pdfDoc
                     ? <PdfPageCanvas doc={pdfDoc} pageNumber={page} />
-                    : <SkeletonThumbnail />
+                    : docxRender
+                      ? <DocxSliceThumbnail section={docxRender.section} pageNumber={page} pageHeight={docxRender.pageHeight} />
+                      : <SkeletonThumbnail />
                   }
 
                   {/* Checkbox overlay */}
@@ -436,7 +468,14 @@ export default function PageSelectionPage() {
                     </div>
                     <span className="text-sm text-ink">{t(`services.${svc}.label`)}</span>
                   </div>
-                  <span className="text-xs font-semibold text-ink">$29</span>
+                  <div className="flex flex-col items-end gap-0.5">
+                    <span className="text-xs font-semibold text-ink">
+                      {formatBRL(calcPrice(svc, selected.size))}
+                    </span>
+                    <span className="text-xs text-muted/60 leading-none">
+                      {formatBRL(PRICING[svc].perPage)}/pg · mín. {formatBRL(PRICING[svc].minimum)}
+                    </span>
+                  </div>
                 </button>
               ))}
             </div>
@@ -526,14 +565,20 @@ export default function PageSelectionPage() {
         <div className="px-6 py-5 border-t border-border">
           <button
             disabled={!canContinue}
-            onClick={() => navigate(ROUTES.checkout, {
-              state: {
-                ...state,
-                services: Array.from(activeServices),
-                guideline,
-                selectedPages: Array.from(selected).sort((a, b) => a - b),
-              }
-            })}
+            onClick={() => {
+              storeFile(state.file)
+              navigate(ROUTES.textExtract, {
+                state: {
+                  fileName: state.file?.name ?? '',
+                  services: Array.from(activeServices),
+                  guideline,
+                  selectedPages: Array.from(selected).sort((a, b) => a - b),
+                  pasteUrl: state.pasteUrl,
+                  inputTab: state.inputTab,
+                  pageCount: state.pageCount,
+                }
+              })
+            }}
             className={`w-full flex items-center justify-center gap-2 text-sm font-semibold py-3 rounded-xl transition-all bg-forest text-white ${
               canContinue
                 ? 'hover:bg-forest-mid cursor-pointer opacity-100'

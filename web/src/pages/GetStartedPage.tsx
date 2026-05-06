@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Check, Upload, Link as LinkIcon, ChevronDown, FileText, X } from 'lucide-react'
 import { ROUTES } from '../lib/routes'
+import { PRICING, formatBRL } from '../lib/pricing'
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -32,7 +33,7 @@ async function getDocxPageCount(file: File): Promise<number | null> {
       unzip(new Uint8Array(buffer), (err, files) => {
         if (err || !files['docProps/app.xml']) { resolve(null); return }
         const xml = new TextDecoder().decode(files['docProps/app.xml'])
-        const match = xml.match(/<Pages>(\d+)<\/Pages>/)
+        const match = xml.match(/<(?:[^:>]+:)?Pages>(\d+)<\/(?:[^:>]+:)?Pages>/)
         resolve(match ? parseInt(match[1]) : null)
       })
     })
@@ -41,10 +42,34 @@ async function getDocxPageCount(file: File): Promise<number | null> {
   }
 }
 
+async function getDocxPageCountByRender(file: File): Promise<number | null> {
+  try {
+    const { renderAsync } = await import('docx-preview')
+    const div = document.createElement('div')
+    div.style.cssText = 'position:fixed;visibility:hidden;left:-9999px;top:0;width:816px;overflow:visible;pointer-events:none;'
+    document.body.appendChild(div)
+    await renderAsync(file, div, undefined, { breakPages: false, inWrapper: false })
+    const section = div.querySelector('section.docx') as HTMLElement
+    if (!section) { document.body.removeChild(div); return null }
+    section.style.overflow = 'visible'
+    section.style.height = 'auto'
+    const pageHeight = parseFloat(getComputedStyle(section).minHeight)
+    const contentHeight = section.scrollHeight
+    document.body.removeChild(div)
+    return pageHeight > 0 ? Math.max(1, Math.ceil(contentHeight / pageHeight)) : null
+  } catch {
+    return null
+  }
+}
+
 async function getFilePageCount(file: File): Promise<number | null> {
   const name = file.name.toLowerCase()
   if (name.endsWith('.pdf')) return getPdfPageCount(file)
-  if (name.endsWith('.doc') || name.endsWith('.docx')) return getDocxPageCount(file)
+  if (name.endsWith('.doc') || name.endsWith('.docx')) {
+    const xmlCount = await getDocxPageCount(file)
+    if (xmlCount) return xmlCount
+    return getDocxPageCountByRender(file)
+  }
   return null
 }
 
@@ -235,12 +260,12 @@ export default function GetStartedPage() {
           </div>
 
           <div className="pt-3 border-t border-border flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium text-muted bg-[#F0EEE8] border border-border rounded-full px-2.5 py-1">
-              {t('getStarted.freeBadge')} · {t('getStarted.firstPage')}
+            <span className="text-xs font-semibold text-ink">
+              {formatBRL(PRICING.proofreading.perPage)}/pg
             </span>
-            <span className="text-muted/40 text-xs">·</span>
-            <span className="text-xs font-semibold text-ink">$29</span>
-            <span className="text-xs text-muted">{t('getStarted.perThesis')}</span>
+            <span className="text-xs text-muted">
+              · mín. {formatBRL(PRICING.proofreading.minimum)}
+            </span>
           </div>
         </div>
 
@@ -311,12 +336,12 @@ export default function GetStartedPage() {
           )}
 
           <div className="pt-3 border-t border-border flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium text-muted bg-[#F0EEE8] border border-border rounded-full px-2.5 py-1">
-              {t('getStarted.freeBadge')} · {t('getStarted.firstPage')}
+            <span className="text-xs font-semibold text-ink">
+              {formatBRL(PRICING.formatting.perPage)}/pg
             </span>
-            <span className="text-muted/40 text-xs">·</span>
-            <span className="text-xs font-semibold text-ink">$29</span>
-            <span className="text-xs text-muted">{t('getStarted.perThesis')}</span>
+            <span className="text-xs text-muted">
+              · mín. {formatBRL(PRICING.formatting.minimum)}
+            </span>
             <button
               onClick={(e) => { e.stopPropagation(); setGuidelinesOpen(o => !o) }}
               className="ml-auto flex items-center gap-1 text-xs text-muted hover:text-ink transition-colors"
@@ -371,7 +396,16 @@ export default function GetStartedPage() {
                 />
                 {file ? (
                   /* File card */
-                  <div className="rounded-xl border border-border bg-[#F0EEE8] px-4 py-4 flex items-start gap-3">
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+                    onDragLeave={() => setDragging(false)}
+                    onDrop={handleDrop}
+                    className={`rounded-xl border px-4 py-4 flex items-start gap-3 transition-colors ${
+                      dragging
+                        ? 'border-forest-mid bg-forest-mid/5'
+                        : 'border-border bg-[#F0EEE8]'
+                    }`}
+                  >
                     <div className="shrink-0 w-9 h-9 rounded-lg bg-white border border-border flex items-center justify-center">
                       <FileText size={16} className="text-forest" strokeWidth={1.5} />
                     </div>
