@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { useLocation, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { useLocation, Link } from 'react-router-dom'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import mammoth from 'mammoth'
+import { unzipSync } from 'fflate'
 import { ROUTES } from '../lib/routes'
 import { getStoredFile } from '../lib/file-store'
 
@@ -22,13 +23,18 @@ interface PageContent {
 }
 
 function classifyFontSize(size: number, sizes: number[]): BlockType {
-  const sorted = [...new Set(sizes)].sort((a, b) => b - a)
-  const rank = sorted.indexOf(size)
-  const bodySize = sorted[sorted.length - 1] ?? size
-  if (size < bodySize * 0.85) return 'caption'
-  if (rank === 0) return 'h1'
-  if (rank === 1) return 'h2'
-  if (rank === 2) return 'h3'
+  if (sizes.length === 0 || size <= 0) return 'paragraph'
+  // Body = most frequent size; fall back to smallest if tie
+  const freq: Record<number, number> = {}
+  for (const s of sizes) freq[s] = (freq[s] ?? 0) + 1
+  const bodySize = Number(
+    Object.entries(freq).sort((a, b) => b[1] - a[1] || Number(a[0]) - Number(b[0]))[0][0]
+  )
+  const ratio = size / bodySize
+  if (ratio < 0.85) return 'caption'
+  if (ratio >= 1.6) return 'h1'
+  if (ratio >= 1.3) return 'h2'
+  if (ratio >= 1.1) return 'h3'
   return 'paragraph'
 }
 
@@ -90,49 +96,139 @@ async function extractPageText(
   return blocks
 }
 
+function parseXml(xmlStr: string): Document {
+  return new DOMParser().parseFromString(xmlStr, 'application/xml')
+}
+
+function attr(el: Element, ns: string, name: string): string {
+  return el.getAttributeNS(ns, name) ?? el.getAttribute(`w:${name}`) ?? ''
+}
+
+const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+
+// Heading style IDs used by Word (EN + PT variants)
+const HEADING_STYLE_RE = /^(heading|título|Heading|h)[_ -]?([1-6])$/i
+
+function resolveHeadingLevel(styleId: string): number | null {
+  const m = styleId.match(HEADING_STYLE_RE)
+  return m ? parseInt(m[2]) : null
+}
+
+async function extractDocxText(file: File): Promise<PageContent[]> {
+  const buf = await file.arrayBuffer()
+  const zip = unzipSync(new Uint8Array(buf))
+
+  const decoder = new TextDecoder()
+  const docXml = parseXml(decoder.decode(zip['word/document.xml']))
+  const stylesXml = zip['word/styles.xml']
+    ? parseXml(decoder.decode(zip['word/styles.xml']))
+    : null
+
+  // Build map: styleId → base font size (half-points) from styles.xml
+  const styleFontSize: Record<string, number> = {}
+  const styleHeadingLevel: Record<string, number> = {}
+  if (stylesXml) {
+    for (const style of Array.from(stylesXml.getElementsByTagNameNS(W, 'style'))) {
+      const idEl = style.getElementsByTagNameNS(W, 'styleId')[0]
+      const id = attr(style, W, 'styleId') || idEl?.textContent || ''
+      const lvl = resolveHeadingLevel(id)
+      if (lvl) styleHeadingLevel[id] = lvl
+
+      const szEl = style.getElementsByTagNameNS(W, 'sz')[0]
+      if (szEl) {
+        const sz = parseInt(attr(szEl, W, 'val') || szEl.getAttribute('w:val') || '0')
+        if (sz > 0) styleFontSize[id] = sz / 2 // half-points → points
+      }
+    }
+  }
+
+  // Extract paragraphs with text + effective font size
+  const paragraphs: { text: string; fontSize: number; headingLevel: number | null }[] = []
+  const allSizes: number[] = []
+
+  for (const para of Array.from(docXml.getElementsByTagNameNS(W, 'p'))) {
+    // Collect all text runs
+    const text = Array.from(para.getElementsByTagNameNS(W, 't'))
+      .map(t => t.textContent ?? '')
+      .join('')
+      .trim()
+    if (!text) continue
+
+    // Style ID → heading level from styles.xml
+    const pStyleEl = para.querySelector('[*|val]')
+    const pPr = para.getElementsByTagNameNS(W, 'pPr')[0]
+    const pStyleId = pPr
+      ? (pPr.getElementsByTagNameNS(W, 'pStyle')[0]
+          ?.getAttribute('w:val') ?? '')
+      : ''
+    const headingLevel = resolveHeadingLevel(pStyleId) ?? null
+
+    // Effective font size: run-level override → style default → 0
+    let fontSize = 0
+    const runSizes: number[] = []
+    for (const run of Array.from(para.getElementsByTagNameNS(W, 'r'))) {
+      const szEl = run.getElementsByTagNameNS(W, 'sz')[0]
+      if (szEl) {
+        const val = parseInt(szEl.getAttribute('w:val') ?? '0')
+        if (val > 0) runSizes.push(val / 2)
+      }
+    }
+    if (runSizes.length > 0) {
+      fontSize = Math.max(...runSizes)
+    } else if (pStyleId && styleFontSize[pStyleId]) {
+      fontSize = styleFontSize[pStyleId]
+    }
+
+    paragraphs.push({ text, fontSize, headingLevel })
+    if (fontSize > 0) allSizes.push(fontSize)
+  }
+
+  // Font-size based classification (fallback when no heading style)
+  const classifySize = (size: number): BlockType => classifyFontSize(size, allSizes)
+
+  const headingLevelToType: Record<number, BlockType> = { 1: 'h1', 2: 'h2', 3: 'h3', 4: 'h3', 5: 'h3', 6: 'h3' }
+
+  const blocks: TextBlock[] = paragraphs.map(p => ({
+    type: p.headingLevel != null
+      ? headingLevelToType[p.headingLevel]
+      : classifySize(p.fontSize),
+    text: p.text,
+    fontSize: p.fontSize,
+  }))
+
+  // Split into virtual pages (~40 blocks each)
+  const BLOCKS_PER_PAGE = 40
+  const pages: PageContent[] = []
+  for (let i = 0; i < blocks.length; i += BLOCKS_PER_PAGE) {
+    pages.push({ pageNumber: pages.length + 1, blocks: blocks.slice(i, i + BLOCKS_PER_PAGE) })
+  }
+  if (pages.length === 0) pages.push({ pageNumber: 1, blocks: [] })
+  return pages
+}
+
 async function collectAllFontSizes(
   doc: pdfjsLib.PDFDocumentProxy,
   pages: number[]
 ): Promise<number[]> {
-  const sizes = new Set<number>()
-  await Promise.all(
+  const allSizes: number[][] = await Promise.all(
     pages.map(async (p) => {
       const page = await doc.getPage(p)
       const content = await page.getTextContent()
+      const sizes: number[] = []
       for (const item of content.items) {
         if (!('str' in item) || !item.str.trim()) continue
         const transform = item.transform as number[]
         const fontSize = Math.round((item.height || Math.abs(transform[3])) * 10) / 10
-        sizes.add(fontSize)
+        if (fontSize > 0) sizes.push(fontSize)
       }
+      return sizes
     })
   )
-  return Array.from(sizes)
-}
-
-const BLOCK_STYLES: Record<BlockType, string> = {
-  h1: 'text-2xl font-bold text-ink',
-  h2: 'text-xl font-semibold text-ink',
-  h3: 'text-lg font-medium text-ink',
-  paragraph: 'text-sm text-ink leading-relaxed',
-  caption: 'text-xs text-muted italic',
-}
-
-const BLOCK_LABELS: Record<BlockType, string> = {
-  h1: 'H1', h2: 'H2', h3: 'H3', paragraph: 'P', caption: 'CAPTION',
-}
-
-const LABEL_COLORS: Record<BlockType, string> = {
-  h1: 'bg-purple-100 text-purple-700',
-  h2: 'bg-blue-100 text-blue-700',
-  h3: 'bg-sky-100 text-sky-700',
-  paragraph: 'bg-stone-100 text-stone-600',
-  caption: 'bg-amber-50 text-amber-600',
+  return allSizes.flat()
 }
 
 export default function TextExtractPage() {
   const location = useLocation()
-  const navigate = useNavigate()
   const state = location.state as {
     fileName: string
     selectedPages: number[]
@@ -150,8 +246,13 @@ export default function TextExtractPage() {
       setLoading(false)
       return
     }
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setError('Only PDF extraction is supported for now.')
+
+    const name = file.name.toLowerCase()
+    const isDocx = name.endsWith('.docx') || name.endsWith('.doc')
+    const isPdf = name.endsWith('.pdf')
+
+    if (!isPdf && !isDocx) {
+      setError('Unsupported file type. Please use a PDF or Word document.')
       setLoading(false)
       return
     }
@@ -161,23 +262,29 @@ export default function TextExtractPage() {
 
     ;(async () => {
       try {
-        const buf = await file.arrayBuffer()
-        if (cancelled) return
-        doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise
-        if (cancelled) return
+        if (isDocx) {
+          const results = await extractDocxText(file)
+          if (!cancelled) setPages(results)
+        } else {
+          const buf = await file.arrayBuffer()
+          if (cancelled) return
+          doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise
+          if (cancelled) return
 
-        const selectedPages = state?.selectedPages ?? []
-        const allSizes = await collectAllFontSizes(doc, selectedPages)
-        if (cancelled) return
+          const selectedPages = (state?.selectedPages ?? [])
+            .filter(p => p >= 1 && p <= doc!.numPages)
+          const allSizes = await collectAllFontSizes(doc, selectedPages)
+          if (cancelled) return
 
-        const results: PageContent[] = []
-        for (const pageNum of selectedPages) {
-          if (cancelled) break
-          const blocks = await extractPageText(doc, pageNum, allSizes)
-          results.push({ pageNumber: pageNum, blocks })
+          const results: PageContent[] = []
+          for (const pageNum of selectedPages) {
+            if (cancelled) break
+            const blocks = await extractPageText(doc, pageNum, allSizes)
+            results.push({ pageNumber: pageNum, blocks })
+          }
+
+          if (!cancelled) setPages(results)
         }
-
-        if (!cancelled) setPages(results)
       } catch (e) {
         if (!cancelled) setError(String(e))
       } finally {
@@ -204,66 +311,10 @@ export default function TextExtractPage() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-sand">
-      <div className="max-w-3xl mx-auto px-6 py-10">
-        <div className="mb-8">
-          <button
-            onClick={() => navigate(-1)}
-            className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink transition-colors mb-6"
-          >
-            <ArrowLeft size={14} />
-            Back
-          </button>
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-xl font-semibold text-ink mb-1">Text Extraction</h1>
-              <p className="text-sm text-muted">
-                {state.fileName} · {state.selectedPages?.length ?? 0} pages selected
-              </p>
-            </div>
-            <span className="text-xs font-medium px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full border border-amber-200">
-              DEV ONLY
-            </span>
-          </div>
-        </div>
-
-        {loading && (
-          <div className="flex flex-col items-center justify-center py-24 gap-3">
-            <Loader2 size={24} className="animate-spin text-forest" />
-            <p className="text-sm text-muted">Extracting text from PDF…</p>
-          </div>
-        )}
-
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 text-sm text-red-700">
-            {error}
-          </div>
-        )}
-
-        {!loading && !error && pages.map((pg) => (
-          <div key={pg.pageNumber} className="mb-10">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="h-px flex-1 bg-border" />
-              <span className="text-xs font-medium text-muted uppercase tracking-widest">
-                Page {pg.pageNumber}
-              </span>
-              <div className="h-px flex-1 bg-border" />
-            </div>
-            <div className="bg-white border border-border rounded-2xl px-8 py-8 flex flex-col gap-4">
-              {pg.blocks.length === 0 && (
-                <p className="text-sm text-muted italic">No text content found on this page.</p>
-              )}
-              {pg.blocks.map((block, i) => (
-                <div key={i} className="flex gap-3 items-start">
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 mt-0.5 font-mono ${LABEL_COLORS[block.type]}`}>
-                    {BLOCK_LABELS[block.type]}
-                  </span>
-                  <p className={BLOCK_STYLES[block.type]}>{block.text}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="bg-white rounded-2xl border border-border p-10 w-full max-w-md text-center">
+        <h1 className="text-2xl font-semibold text-ink mb-2">Checkout</h1>
+        <p className="text-sm text-muted">Payment UI coming soon.</p>
       </div>
     </div>
   )
