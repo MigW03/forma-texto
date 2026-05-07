@@ -7,7 +7,11 @@
       "Bash(xargs wc -l)",
       "mcp__Claude_Preview__preview_start",
       "Bash(findstr \"pdfjs-dist\" \"D:\\\\UXbusiness\\\\forma-texto\\\\web\\\\package.json\")",
-      "Bash(node -e \"const p = require\\('D:/UXbusiness/forma-texto/web/node_modules/pdfjs-dist/build/pdf.mjs'\\); console.log\\(Object.keys\\(p\\).filter\\(k => k.toLowerCase\\(\\).includes\\('text'\\) || k.toLowerCase\\(\\).includes\\('layer'\\)\\)\\)\")"
+      "Bash(node -e \"const p = require\\('D:/UXbusiness/forma-texto/web/node_modules/pdfjs-dist/build/pdf.mjs'\\); console.log\\(Object.keys\\(p\\).filter\\(k => k.toLowerCase\\(\\).includes\\('text'\\) || k.toLowerCase\\(\\).includes\\('layer'\\)\\)\\)\")",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(gh pr create --title 'Project details page, title field, and real dashboard data' --body ' *)",
+      "Bash(npx tsc *)"
     ]
   }
 }

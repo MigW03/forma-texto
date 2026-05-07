@@ -13,6 +13,7 @@ import { useAuth } from '../lib/auth-context'
 import { supabase } from '../lib/supabase'
 import { getStoredFile } from '../lib/file-store'
 import { slicePdf } from '../lib/pdf-slice'
+import { sliceDocx } from '../lib/docx-slice'
 import { ROUTES } from '../lib/routes'
 
 type ServiceKey = 'formatting' | 'proofreading'
@@ -276,18 +277,17 @@ export default function CheckoutPage() {
       let storagePath: string | null = null
       const fileName = rawFile?.name ?? state?.fileName ?? null
 
-      // 1. Prepare the file to upload
-      //    PDF → slice to selected pages only
-      //    DOCX/DOC → upload as-is (server uses selected_pages metadata)
+      // 1. Prepare the file to upload — slice to selected pages only
       let fileToUpload: File | null = rawFile
       if (rawFile && selectedPages.length > 0) {
-        const isPdf = rawFile.name.toLowerCase().endsWith('.pdf')
-        if (isPdf) {
-          try {
-            fileToUpload = await slicePdf(rawFile, selectedPages)
-          } catch (err) {
-            console.error('PDF slicing failed, uploading full file:', err)
-          }
+        const name = rawFile.name.toLowerCase()
+        const isPdf = name.endsWith('.pdf')
+        const isDocx = name.endsWith('.docx')
+        try {
+          if (isPdf) fileToUpload = await slicePdf(rawFile, selectedPages)
+          else if (isDocx) fileToUpload = await sliceDocx(rawFile, selectedPages)
+        } catch (err) {
+          console.error('File slicing failed, uploading full file:', err)
         }
       }
 

@@ -65,7 +65,7 @@ async function getDocxPageCountByRender(file: File): Promise<number | null> {
 async function getFilePageCount(file: File): Promise<number | null> {
   const name = file.name.toLowerCase()
   if (name.endsWith('.pdf')) return getPdfPageCount(file)
-  if (name.endsWith('.doc') || name.endsWith('.docx')) {
+  if (name.endsWith('.docx')) {
     const xmlCount = await getDocxPageCount(file)
     if (xmlCount) return xmlCount
     return getDocxPageCountByRender(file)
@@ -144,7 +144,7 @@ export default function GetStartedPage() {
   const [inputTab, setInputTab] = useState<InputTab>(initTab)
   const [dragging, setDragging] = useState(false)
   const [file, setFile] = useState<File | null>(navState?.file ?? null)
-  const [fileTypeError, setFileTypeError] = useState(false)
+  const [fileTypeError, setFileTypeError] = useState<'doc' | 'invalid' | null>(null)
   const [pageCount, setPageCount] = useState<number | null>(navState?.pageCount ?? null)
   const [pageCountLoading, setPageCountLoading] = useState(false)
   const [pasteUrl, setPasteUrl] = useState(navState?.pasteUrl ?? saved?.pasteUrl ?? '')
@@ -179,13 +179,13 @@ export default function GetStartedPage() {
     agreedToTerms &&
     (inputTab === 'upload' ? file !== null : pasteUrl.trim() !== '')
 
-  const ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx']
+  const ALLOWED_EXTENSIONS = ['.pdf', '.docx']
   const ALLOWED_MIME_TYPES = [
     'application/pdf',
-    'application/msword',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   ]
 
+  const isDocFile = (f: File) => f.name.toLowerCase().endsWith('.doc') && !f.name.toLowerCase().endsWith('.docx')
   const isAllowedFile = (f: File) => {
     const ext = '.' + f.name.split('.').pop()?.toLowerCase()
     return ALLOWED_EXTENSIONS.includes(ext) || ALLOWED_MIME_TYPES.includes(f.type)
@@ -196,16 +196,18 @@ export default function GetStartedPage() {
     setDragging(false)
     const dropped = e.dataTransfer.files[0]
     if (!dropped) return
-    if (!isAllowedFile(dropped)) { setFileTypeError(true); return }
-    setFileTypeError(false)
+    if (isDocFile(dropped)) { setFileTypeError('doc'); return }
+    if (!isAllowedFile(dropped)) { setFileTypeError('invalid'); return }
+    setFileTypeError(null)
     setFile(dropped)
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0]
     if (!selected) return
-    if (!isAllowedFile(selected)) { setFileTypeError(true); e.target.value = ''; return }
-    setFileTypeError(false)
+    if (isDocFile(selected)) { setFileTypeError('doc'); e.target.value = ''; return }
+    if (!isAllowedFile(selected)) { setFileTypeError('invalid'); e.target.value = ''; return }
+    setFileTypeError(null)
     setFile(selected)
   }
 
@@ -409,7 +411,7 @@ export default function GetStartedPage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".pdf,.doc,.docx"
+                  accept=".pdf,.docx"
                   className="hidden"
                   onChange={handleFileChange}
                 />
@@ -454,7 +456,7 @@ export default function GetStartedPage() {
                         {t('getStarted.fileCard.replace')}
                       </button>
                       <button
-                        onClick={() => { setFile(null); setPageCount(null); setFileTypeError(false) }}
+                        onClick={() => { setFile(null); setPageCount(null); setFileTypeError(null) }}
                         className="text-muted hover:text-ink transition-colors p-0.5"
                         aria-label="Remove file"
                       >
@@ -479,13 +481,15 @@ export default function GetStartedPage() {
                   >
                     <Upload size={24} className={fileTypeError ? 'text-red-400' : 'text-muted'} strokeWidth={1.5} />
                     <p className="text-sm font-medium text-ink">{t('hero.dropPrompt')}</p>
-                    {fileTypeError ? (
+                    {fileTypeError === 'doc' ? (
+                      <p className="text-xs text-red-500 text-center px-6">{t('getStarted.fileCard.docConvert')}</p>
+                    ) : fileTypeError === 'invalid' ? (
                       <p className="text-xs text-red-500 text-center px-6">{t('getStarted.fileCard.invalidType')}</p>
                     ) : (
                       <p className="text-xs text-muted">{t('hero.fileLimit')}</p>
                     )}
                     <div className="flex gap-2 mt-1">
-                      {['.pdf', '.doc', '.docx'].map((ext) => (
+                      {['.pdf', '.docx'].map((ext) => (
                         <span key={ext} className={`text-xs border rounded px-2 py-0.5 ${fileTypeError ? 'border-red-300 text-red-400' : 'border-border text-muted'}`}>
                           {ext}
                         </span>

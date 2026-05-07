@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { ArrowLeft, FileText, Download } from 'lucide-react'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { renderAsync } from 'docx-preview'
 import { ROUTES } from '../lib/routes'
 import { supabase } from '../lib/supabase'
 import { calcPrice, formatBRL } from '../lib/pricing'
@@ -248,6 +249,133 @@ function PdfViewer({ url, pageCount }: { url: string; pageCount: number }) {
   )
 }
 
+// ── DOCX viewer ──────────────────────────────────────────────────────────────
+
+const DOCX_ZOOM_DEFAULT = 0.9
+
+function DocxViewer({ url }: { url: string }) {
+  const outerRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const styleRef = useRef<HTMLDivElement>(null)
+  const [zoom, setZoom] = useState(DOCX_ZOOM_DEFAULT)
+  const [zoomInput, setZoomInput] = useState(String(Math.round(DOCX_ZOOM_DEFAULT * 100)))
+  const [loadError, setLoadError] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  const applyZoom = (raw: string) => {
+    const n = parseInt(raw, 10)
+    if (!isNaN(n)) {
+      const clamped = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, n / 100))
+      setZoom(parseFloat(clamped.toFixed(2)))
+      setZoomInput(String(Math.round(clamped * 100)))
+    } else {
+      setZoomInput(String(Math.round(zoom * 100)))
+    }
+  }
+
+  useEffect(() => {
+    const body = bodyRef.current
+    const style = styleRef.current
+    if (!body || !style) return
+
+    fetch(url)
+      .then(r => r.blob())
+      .then(blob => renderAsync(blob, body, style, {
+        inWrapper: true,
+        breakPages: true,
+        ignoreLastRenderedPageBreak: false,
+        experimental: true,
+        renderHeaders: true,
+        renderFooters: true,
+      }))
+      .then(() => {
+        const override = document.createElement('style')
+        override.textContent = `
+          .docx-wrapper {
+            counter-reset: docx-page;
+            background: #E8E6DF !important;
+            padding: 32px !important;
+            padding-bottom: 8px !important;
+          }
+          .docx-wrapper > section.docx {
+            counter-increment: docx-page;
+            border-radius: 12px !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.10), 0 1px 2px rgba(0,0,0,0.06) !important;
+            margin-top: 22px !important;
+            margin-bottom: 24px !important;
+            position: relative !important;
+            overflow: visible !important;
+          }
+          .docx-wrapper > section.docx::before {
+            content: counter(docx-page);
+            position: absolute;
+            top: -20px;
+            left: 2px;
+            font-size: 14px;
+            font-weight: 500;
+            color: rgba(26, 26, 24, 0.6);
+            line-height: 1.2;
+          }
+        `
+        style.appendChild(override)
+        setLoading(false)
+      })
+      .catch(() => { setLoadError(true); setLoading(false) })
+  }, [url])
+
+  if (loadError) return null
+
+  return (
+    <div ref={outerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-auto relative bg-[#E8E6DF]">
+      {/* Zoom controls */}
+      <div className="sticky top-4 z-10 flex justify-end pr-4 pointer-events-none">
+        <div className="inline-flex items-center gap-1 bg-white border border-border rounded-xl px-2 py-1.5 shadow-sm pointer-events-auto">
+          <button
+            onClick={() => {
+              const next = Math.max(ZOOM_MIN, parseFloat((zoom - ZOOM_STEP).toFixed(2)))
+              setZoom(next); setZoomInput(String(Math.round(next * 100)))
+            }}
+            className="w-6 h-6 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-[#F0EEE8] transition-colors text-base font-medium"
+            aria-label="Zoom out"
+          >−</button>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={zoomInput}
+            onChange={e => setZoomInput(e.target.value)}
+            onBlur={() => applyZoom(zoomInput)}
+            onKeyDown={e => { if (e.key === 'Enter') { applyZoom(zoomInput); (e.target as HTMLInputElement).blur() } }}
+            className="text-xs font-medium text-ink w-9 text-center tabular-nums bg-transparent border-none outline-none focus:bg-[#F0EEE8] rounded focus:px-0.5 transition-colors"
+            aria-label="Zoom level"
+          />
+          <span className="text-xs text-muted">%</span>
+          <button
+            onClick={() => {
+              const next = Math.min(ZOOM_MAX, parseFloat((zoom + ZOOM_STEP).toFixed(2)))
+              setZoom(next); setZoomInput(String(Math.round(next * 100)))
+            }}
+            className="w-6 h-6 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-[#F0EEE8] transition-colors text-base font-medium"
+            aria-label="Zoom in"
+          >+</button>
+        </div>
+      </div>
+
+      {loading && (
+        <div className="flex flex-col items-center gap-6 py-8 px-8">
+          {[0, 1].map(i => (
+            <div key={i} className="bg-white rounded-xl shadow-sm animate-pulse" style={{ width: 595, height: 842 }} />
+          ))}
+        </div>
+      )}
+
+      <div style={{ zoom, display: loading ? 'none' : undefined }}>
+        <div ref={styleRef} />
+        <div ref={bodyRef} />
+      </div>
+    </div>
+  )
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ProjectDetailPage() {
@@ -301,7 +429,9 @@ export default function ProjectDetailPage() {
   }
 
   const status = DB_STATUS_MAP[project.status] ?? 'inQueue'
-  const isPdf = project.original_file_name.toLowerCase().endsWith('.pdf')
+  const nameLower = project.original_file_name.toLowerCase()
+  const isPdf = nameLower.endsWith('.pdf')
+  const isDocx = nameLower.endsWith('.docx')
   const totalCost = project.services.reduce((sum, s) => sum + calcPrice(s, project.page_count), 0)
 
   return (
@@ -321,6 +451,8 @@ export default function ProjectDetailPage() {
       <div className="flex-1 min-h-0 bg-[#E8E6DF] flex flex-col">
         {fileUrl && isPdf ? (
           <PdfViewer url={fileUrl} pageCount={project.page_count} />
+        ) : fileUrl && isDocx ? (
+          <DocxViewer url={fileUrl} />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8">
             <div className="w-14 h-14 rounded-2xl bg-white border border-border flex items-center justify-center">

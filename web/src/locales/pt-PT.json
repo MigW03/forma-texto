@@ -164,7 +164,8 @@
       "pagesUnknown": "— páginas",
       "countingPages": "a contar páginas…",
       "replace": "Substituir",
-      "invalidType": "Formato não suportado. Envie um PDF ou documento Word (.pdf, .doc, .docx)."
+      "invalidType": "Formato não suportado. Envie um PDF ou documento Word (.pdf, .docx).",
+      "docConvert": "O formato .doc antigo não é suportado. Converta o seu ficheiro para .docx antes de enviar."
     },
     "termsPrefix": "Concordo com os",
     "termsLink": "Termos de Serviço",

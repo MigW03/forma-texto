@@ -5,20 +5,14 @@ import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { ROUTES } from '../lib/routes'
 import { getStoredFile } from '../lib/file-store'
+import { extractDocxText, type PageContent, type BlockType } from '../lib/extract'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
-
-type BlockType = 'h1' | 'h2' | 'h3' | 'paragraph' | 'caption'
 
 interface TextBlock {
   type: BlockType
   text: string
   fontSize: number
-}
-
-interface PageContent {
-  pageNumber: number
-  blocks: TextBlock[]
 }
 
 function classifyFontSize(size: number, sizes: number[]): BlockType {
@@ -168,8 +162,13 @@ export default function TextExtractPage() {
       setLoading(false)
       return
     }
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setError('Only PDF extraction is supported for now.')
+
+    const name = file.name.toLowerCase()
+    const isDocx = name.endsWith('.docx')
+    const isPdf = name.endsWith('.pdf')
+
+    if (!isPdf && !isDocx) {
+      setError('Unsupported file type.')
       setLoading(false)
       return
     }
@@ -179,30 +178,36 @@ export default function TextExtractPage() {
 
     ;(async () => {
       try {
-        console.log('[extract] reading buffer, file size:', file.size)
-        const buf = await file.arrayBuffer()
-        if (cancelled) return
-        console.log('[extract] buffer OK, bytes:', buf.byteLength)
-        doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise
-        if (cancelled) return
-        console.log('[extract] PDF loaded, numPages:', doc.numPages)
+        if (isDocx) {
+          console.log('[extract] DOCX mode, file size:', file.size)
+          const results = await extractDocxText(file)
+          if (!cancelled) setPages(results)
+        } else {
+          console.log('[extract] reading buffer, file size:', file.size)
+          const buf = await file.arrayBuffer()
+          if (cancelled) return
+          console.log('[extract] buffer OK, bytes:', buf.byteLength)
+          doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise
+          if (cancelled) return
+          console.log('[extract] PDF loaded, numPages:', doc.numPages)
 
-        const selectedPages = state?.selectedPages ?? []
-        console.log('[extract] selectedPages:', selectedPages)
-        const allSizes = await collectAllFontSizes(doc, selectedPages)
-        console.log('[extract] allSizes:', allSizes)
-        if (cancelled) return
+          const selectedPages = state?.selectedPages ?? []
+          console.log('[extract] selectedPages:', selectedPages)
+          const allSizes = await collectAllFontSizes(doc, selectedPages)
+          console.log('[extract] allSizes:', allSizes)
+          if (cancelled) return
 
-        const results: PageContent[] = []
-        for (const pageNum of selectedPages) {
-          if (cancelled) break
-          const blocks = await extractPageText(doc, pageNum, allSizes)
-          console.log(`[extract] page ${pageNum} blocks:`, blocks)
-          results.push({ pageNumber: pageNum, blocks })
+          const results: PageContent[] = []
+          for (const pageNum of selectedPages) {
+            if (cancelled) break
+            const blocks = await extractPageText(doc, pageNum, allSizes)
+            console.log(`[extract] page ${pageNum} blocks:`, blocks)
+            results.push({ pageNumber: pageNum, blocks })
+          }
+
+          console.log('[extract] done, total pages:', results.length)
+          if (!cancelled) setPages(results)
         }
-
-        console.log('[extract] done, total pages:', results.length)
-        if (!cancelled) setPages(results)
       } catch (e) {
         console.error('[extract] error:', e)
         if (!cancelled) setError(String(e))
@@ -261,7 +266,7 @@ export default function TextExtractPage() {
         {loading && (
           <div className="flex flex-col items-center justify-center py-24 gap-3">
             <Loader2 size={24} className="animate-spin text-forest" />
-            <p className="text-sm text-muted">Extracting text from PDF…</p>
+            <p className="text-sm text-muted">Extracting text…</p>
           </div>
         )}
 

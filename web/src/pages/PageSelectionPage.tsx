@@ -234,7 +234,7 @@ export default function PageSelectionPage() {
     const file = state?.file
     if (!file) return
     const name = file.name.toLowerCase()
-    if (!name.endsWith('.doc') && !name.endsWith('.docx')) return
+    if (!name.endsWith('.docx')) return
     let cancelled = false
     const div = document.createElement('div')
     div.style.cssText = 'position:fixed;visibility:hidden;left:-9999px;top:0;width:816px;overflow:visible;pointer-events:none;'

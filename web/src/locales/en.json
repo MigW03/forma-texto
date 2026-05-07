@@ -164,7 +164,8 @@
       "pagesUnknown": "— pages",
       "countingPages": "counting pages…",
       "replace": "Replace",
-      "invalidType": "Unsupported file type. Please upload a PDF or Word document (.pdf, .doc, .docx)."
+      "invalidType": "Unsupported file type. Please upload a PDF or Word document (.pdf, .docx).",
+      "docConvert": "Old .doc format is not supported. Please convert your file to .docx before uploading."
     },
     "termsPrefix": "I agree to the",
     "termsLink": "Terms of Service",
