@@ -1,8 +1,11 @@
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { FileText, Plus } from 'lucide-react'
+import { FileText, Plus, ChevronRight } from 'lucide-react'
 import { ROUTES } from '../lib/routes'
 import { SESSION_KEY } from './GetStartedPage'
+import { useAuth } from '../lib/auth-context'
+import { supabase } from '../lib/supabase'
 
 function clearGetStartedSession() {
   sessionStorage.removeItem(SESSION_KEY)
@@ -19,6 +22,7 @@ type TimeAgo =
 
 interface Project {
   id: string
+  title: string | null
   fileName: string
   service: ServiceType
   guideline?: GuidelineId
@@ -26,38 +30,42 @@ interface Project {
   submittedAt: TimeAgo
 }
 
-const MOCK_PROJECTS: Project[] = [
-  {
-    id: '1',
-    fileName: 'thesis_final_v3.docx',
-    service: 'formatting',
-    guideline: 'abnt',
-    status: 'processing',
-    submittedAt: { kind: 'hours', count: 2 },
-  },
-  {
-    id: '2',
-    fileName: 'chapter_2_literature_review.docx',
-    service: 'proofreading',
-    status: 'ready',
-    submittedAt: { kind: 'days', count: 1 },
-  },
-  {
-    id: '3',
-    fileName: 'introduction_draft.docx',
-    service: 'proofreading',
-    status: 'delivered',
-    submittedAt: { kind: 'days', count: 3 },
-  },
-  {
-    id: '4',
-    fileName: 'methodology_section.docx',
-    service: 'formatting',
-    guideline: 'apa',
-    status: 'inQueue',
-    submittedAt: { kind: 'justNow' },
-  },
-]
+interface DbProject {
+  id: string
+  title: string | null
+  original_file_name: string
+  services: ServiceType[]
+  guideline: GuidelineId | null
+  status: string
+  created_at: string
+}
+
+const DB_STATUS_MAP: Record<string, StatusType> = {
+  pending: 'inQueue',
+  processing: 'processing',
+  ready: 'ready',
+  delivered: 'delivered',
+}
+
+function toTimeAgo(isoDate: string): TimeAgo {
+  const diffMs = Date.now() - new Date(isoDate).getTime()
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+  if (diffHours < 1) return { kind: 'justNow' }
+  if (diffHours < 24) return { kind: 'hours', count: diffHours }
+  return { kind: 'days', count: Math.floor(diffHours / 24) }
+}
+
+function mapDbProject(row: DbProject): Project {
+  return {
+    id: row.id,
+    title: row.title ?? null,
+    fileName: row.original_file_name,
+    service: row.services[0] ?? 'formatting',
+    guideline: row.guideline ?? undefined,
+    status: DB_STATUS_MAP[row.status] ?? 'inQueue',
+    submittedAt: toTimeAgo(row.created_at),
+  }
+}
 
 const STATUS_CLASS: Record<StatusType, string> = {
   inQueue: 'bg-[#F0EEE8] text-muted border border-border',
@@ -68,8 +76,26 @@ const STATUS_CLASS: Record<StatusType, string> = {
 
 export default function DashboardPage() {
   const { t } = useTranslation()
+  const { user } = useAuth()
+  const [projects, setProjects] = useState<Project[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const activeCount = MOCK_PROJECTS.filter(
+  useEffect(() => {
+    if (!user) return
+    supabase
+      .from('projects')
+      .select('id, title, original_file_name, services, guideline, status, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (error) console.error('[dashboard] projects fetch error:', error)
+        console.log('[dashboard] user:', user.id, 'rows:', data)
+        setProjects((data as DbProject[] ?? []).map(mapDbProject))
+        setLoading(false)
+      })
+  }, [user])
+
+  const activeCount = projects.filter(
     (p) => p.status === 'inQueue' || p.status === 'processing',
   ).length
 
@@ -96,11 +122,17 @@ export default function DashboardPage() {
       </div>
 
       {/* Project list */}
-      {MOCK_PROJECTS.length === 0 ? (
+      {loading ? (
+        <div className="flex flex-col gap-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="bg-white rounded-2xl border border-border px-6 py-5 h-[72px] animate-pulse" />
+          ))}
+        </div>
+      ) : projects.length === 0 ? (
         <EmptyState />
       ) : (
         <div className="flex flex-col gap-3">
-          {MOCK_PROJECTS.map((project) => (
+          {projects.map((project) => (
             <ProjectRow key={project.id} project={project} />
           ))}
         </div>
@@ -113,21 +145,30 @@ function ProjectRow({ project }: { project: Project }) {
   const { t } = useTranslation()
 
   return (
-    <div className="bg-white rounded-2xl border border-border px-6 py-5 flex items-center gap-4">
+    <Link
+      to={ROUTES.project.replace(':id', project.id)}
+      className="bg-white rounded-2xl border border-border px-6 py-5 flex items-center gap-4 hover:border-forest-mid/40 transition-colors group"
+    >
       <div className="shrink-0 w-10 h-10 rounded-xl bg-[#F0EEE8] flex items-center justify-center">
         <FileText size={18} className="text-muted" />
       </div>
 
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-ink truncate">{project.fileName}</p>
+        <p className="text-sm font-medium text-ink truncate">
+          {project.title || project.fileName}
+        </p>
+        {project.title && (
+          <p className="text-xs text-muted truncate">{project.fileName}</p>
+        )}
         <p className="text-xs text-muted mt-0.5">{formatTime(t, project.submittedAt)}</p>
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
         <ServiceBadge service={project.service} guideline={project.guideline} />
         <StatusBadge status={project.status} />
+        <ChevronRight size={14} className="text-muted/40 group-hover:text-muted transition-colors ml-1" />
       </div>
-    </div>
+    </Link>
   )
 }
 

@@ -10,4 +10,5 @@ export const ROUTES = {
   privacy: '/privacy',
   pageSelection: '/page-selection',
   textExtract: '/text-extract',
+  project: '/projects/:id',
 } as const

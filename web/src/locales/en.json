@@ -170,7 +170,22 @@
     "termsLink": "Terms of Service",
     "termsAnd": "and",
     "privacyLink": "Privacy Policy",
-    "fileDeletionNotice": "Your uploaded and processed files will be automatically deleted 30 days after project completion. Download your results before then. See our"
+    "fileDeletionNotice": "Your uploaded and processed files will be automatically deleted 30 days after project completion. Download your results before then. See our",
+    "projectTitle": "Project title",
+    "projectTitlePlaceholder": "e.g. Dissertation — Chapter 3"
+  },
+  "project": {
+    "backToDashboard": "Back to documents",
+    "details": "Details",
+    "fileName": "File",
+    "service": "Service",
+    "status": "Status",
+    "createdAt": "Submitted",
+    "pageCount": "Pages",
+    "cost": "Amount",
+    "noPreview": "Preview not available for this file type.",
+    "downloadFile": "Download file",
+    "notFound": "Project not found."
   },
   "checkout": {
     "title": "Checkout",

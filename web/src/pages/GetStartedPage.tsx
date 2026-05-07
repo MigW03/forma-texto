@@ -90,6 +90,7 @@ function loadSession() {
       inputTab: InputTab
       pasteUrl: string
       agreedToTerms: boolean
+      title: string
     }
   } catch {
     return null
@@ -103,6 +104,7 @@ type RestoredState = {
   services: ServiceType[]
   guideline: GuidelineId
   pageCount: number | null
+  title: string
 }
 
 export default function GetStartedPage() {
@@ -147,6 +149,7 @@ export default function GetStartedPage() {
   const [pageCountLoading, setPageCountLoading] = useState(false)
   const [pasteUrl, setPasteUrl] = useState(navState?.pasteUrl ?? saved?.pasteUrl ?? '')
   const [agreedToTerms, setAgreedToTerms] = useState(saved?.agreedToTerms ?? false)
+  const [title, setTitle] = useState(navState?.title ?? saved?.title ?? '')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Persist serializable state on every change
@@ -157,8 +160,9 @@ export default function GetStartedPage() {
       inputTab,
       pasteUrl,
       agreedToTerms,
+      title,
     }))
-  }, [selectedServices, selectedGuideline, inputTab, pasteUrl, agreedToTerms])
+  }, [selectedServices, selectedGuideline, inputTab, pasteUrl, agreedToTerms, title])
 
   useEffect(() => {
     if (!file) { setPageCount(null); return }
@@ -167,6 +171,7 @@ export default function GetStartedPage() {
       setPageCount(count)
       setPageCountLoading(false)
     })
+    setTitle(prev => prev || file.name.replace(/\.[^.]+$/, ''))
   }, [file])
 
   const canSubmit =
@@ -362,6 +367,20 @@ export default function GetStartedPage() {
           {t('getStarted.stepDocument')}
         </p>
         <div className="bg-white rounded-2xl border border-border p-4">
+          {/* Project title */}
+          <div className="mb-4">
+            <label className="text-xs font-medium text-muted uppercase tracking-widest block mb-1.5">
+              {t('getStarted.projectTitle')}
+            </label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={t('getStarted.projectTitlePlaceholder')}
+              className="w-full text-sm border border-border rounded-xl px-3 py-2.5 bg-[#F0EEE8] focus:outline-none focus:ring-2 focus:ring-forest-mid/30 text-ink placeholder:text-muted/60"
+            />
+          </div>
+
           {/* Tab switcher */}
           <div className="flex rounded-lg border border-border overflow-hidden mb-4">
             <button
@@ -553,6 +572,7 @@ export default function GetStartedPage() {
                 services: Array.from(selectedServices),
                 guideline: selectedGuideline,
                 pageCount,
+                title,
               },
             })
           }}

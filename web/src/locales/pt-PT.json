@@ -170,7 +170,22 @@
     "termsLink": "Termos de Serviço",
     "termsAnd": "e com a",
     "privacyLink": "Política de Privacidade",
-    "fileDeletionNotice": "Os seus ficheiros (original e processado) serão eliminados automaticamente 30 dias após a conclusão do projeto. Transfira os seus resultados antes disso. Consulte os nossos"
+    "fileDeletionNotice": "Os seus ficheiros (original e processado) serão eliminados automaticamente 30 dias após a conclusão do projeto. Transfira os seus resultados antes disso. Consulte os nossos",
+    "projectTitle": "Título do projeto",
+    "projectTitlePlaceholder": "Ex: Dissertação — Capítulo 3"
+  },
+  "project": {
+    "backToDashboard": "Voltar para documentos",
+    "details": "Detalhes",
+    "fileName": "Ficheiro",
+    "service": "Serviço",
+    "status": "Estado",
+    "createdAt": "Enviado em",
+    "pageCount": "Páginas",
+    "cost": "Valor",
+    "noPreview": "Pré-visualização não disponível para este formato.",
+    "downloadFile": "Transferir ficheiro",
+    "notFound": "Projeto não encontrado."
   },
   "checkout": {
     "title": "Pagamento",

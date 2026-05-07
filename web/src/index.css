@@ -20,3 +20,26 @@ body {
 #root {
   min-height: 100vh;
 }
+
+/* PDF text layer — transparent overlay for text selection */
+.pdf-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  user-select: text;
+  pointer-events: auto;
+}
+.pdf-text-layer span,
+.pdf-text-layer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.pdf-text-layer span::selection,
+.pdf-text-layer br::selection {
+  background: rgba(52, 100, 52, 0.25);
+  color: transparent;
+}

@@ -9,6 +9,7 @@ import CheckoutPage from './pages/CheckoutPage'
 import DashboardPage from './pages/DashboardPage'
 import TermsPage from './pages/TermsPage'
 import PageSelectionPage from './pages/PageSelectionPage'
+import ProjectDetailPage from './pages/ProjectDetailPage'
 import { AuthProvider, useAuth } from './lib/auth-context'
 import { ROUTES } from './lib/routes'
 import './index.css'
@@ -46,6 +47,10 @@ export default function App() {
             <Route
               path={ROUTES.pageSelection}
               element={<ProtectedRoute><PageSelectionPage /></ProtectedRoute>}
+            />
+            <Route
+              path={ROUTES.project}
+              element={<ProtectedRoute><ProjectDetailPage /></ProtectedRoute>}
             />
           </Routes>
         </div>

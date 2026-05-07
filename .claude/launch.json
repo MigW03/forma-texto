@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "forma-texto",
-      "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd web && npm run dev"],
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-Command", "cd web; npm run dev"],
       "port": 5173
     }
   ]

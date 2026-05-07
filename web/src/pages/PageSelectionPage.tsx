@@ -200,6 +200,7 @@ export default function PageSelectionPage() {
     services: string[]
     guideline: string
     pageCount: number | null
+    title?: string
   } | null
 
   const total = state?.pageCount ?? FALLBACK_PAGE_COUNT
@@ -574,6 +575,7 @@ export default function PageSelectionPage() {
                   selectedPages: Array.from(selected).sort((a, b) => a - b),
                   guideline,
                   fileName: state.file?.name ?? null,
+                  title: state.title ?? '',
                 }
               })
             }}

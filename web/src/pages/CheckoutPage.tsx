@@ -196,6 +196,7 @@ interface CheckoutState {
   selectedPages?: number[]
   guideline?: string
   fileName?: string | null
+  title?: string
 }
 
 type IntentResponse =
@@ -292,7 +293,12 @@ export default function CheckoutPage() {
 
       // 2. Upload to Supabase Storage
       if (fileToUpload) {
-        const path = `${user.id}/${projectId}/original/${fileToUpload.name}`
+        const safeName = fileToUpload.name
+          .normalize('NFD')
+          .replace(/[̀-ͯ]/g, '')
+          .replace(/\s+/g, '_')
+          .replace(/[^a-zA-Z0-9._-]/g, '')
+        const path = `${user.id}/${projectId}/original/${safeName}`
         const { error: uploadError } = await supabase.storage
           .from('projects')
           .upload(path, fileToUpload, { upsert: false })
@@ -317,6 +323,7 @@ export default function CheckoutPage() {
         original_file_name: fileName,
         original_file_path: storagePath,
         delete_files_at: deleteAt,
+        title: state?.title?.trim() || fileName || null,
       })
 
       if (projectError) {
