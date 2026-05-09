@@ -395,3 +395,4 @@ Brazil-first. Implications:
 6. **TypeScript strict** — no `any`, no unused vars.
 7. **`ProtectedRoute` wraps all auth-required pages** — already wired in `App.tsx`.
 8. **Missing**: `TextExtractPage` has no route. `PrivacyPage` has route but no file. No tests configured.
+9. **Keep `PLAN.md` current** — after every major feature implementation, bug fix, or test, mark the corresponding pre-existing task as completed (`[ ]` → `[x]`) and update its description to reflect what was actually built. Never add new tasks during this update — only mark what already existed. New tasks go in a separate, deliberate edit.

@@ -152,4 +152,14 @@ router.post('/complete-free-order', async (req: Request, res: Response) => {
   res.json({ success: true, orderId: orderData.id })
 })
 
+// ── Notify internal webhook after order complete ──────────────────────────────
+
+router.post('/notify', async (_req: Request, res: Response) => {
+  const url = process.env.WEBHOOK_URL
+  if (url) {
+    fetch(url).catch(err => console.error('Webhook notify failed:', err))
+  }
+  res.json({ ok: true })
+})
+
 export default router

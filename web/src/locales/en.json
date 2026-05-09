@@ -158,6 +158,7 @@
     "firstPage": "first page only",
     "perThesis": "per thesis",
     "submit": "Submit document",
+    "fetchingDocument": "Fetching document…",
     "ctaSubtitle": "One-time trial — your first page is on us.",
     "fileCard": {
       "pages": "pages",

@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Check, Upload, Link as LinkIcon, ChevronDown, FileText, X, Clock } from 'lucide-react'
+import { ArrowLeft, Check, Upload, Link as LinkIcon, ChevronDown, FileText, X, Clock, Loader2 } from 'lucide-react'
 import { ROUTES } from '../lib/routes'
 import { PRICING, formatBRL } from '../lib/pricing'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -152,6 +154,8 @@ export default function GetStartedPage() {
   const [pasteUrl, setPasteUrl] = useState(navState?.pasteUrl ?? saved?.pasteUrl ?? '')
   const [agreedToTerms, setAgreedToTerms] = useState(saved?.agreedToTerms ?? false)
   const [title, setTitle] = useState(navState?.title ?? saved?.title ?? '')
+  const [fetchingLink, setFetchingLink] = useState(false)
+  const [linkError, setLinkError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Persist serializable state on every change
@@ -500,6 +504,12 @@ export default function GetStartedPage() {
                   </div>
                 )}
               </>
+            ) : fetchingLink ? (
+              <div className="h-32 rounded-xl border border-border bg-[#F0EEE8] flex flex-col items-center justify-center gap-3">
+                <Loader2 size={20} className="text-forest animate-spin" />
+                <p className="text-sm font-medium text-ink">{t('getStarted.fetchingDocument')}</p>
+                <p className="text-xs text-muted">Google Docs → .docx</p>
+              </div>
             ) : (
               <div className="h-full rounded-xl border border-border px-4 py-4 flex flex-col justify-center gap-3">
                 <label className="text-xs font-medium text-muted uppercase tracking-wider">
@@ -509,10 +519,14 @@ export default function GetStartedPage() {
                   type="url"
                   placeholder="https://docs.google.com/..."
                   value={pasteUrl}
-                  onChange={(e) => setPasteUrl(e.target.value)}
+                  onChange={(e) => { setPasteUrl(e.target.value); setLinkError(null) }}
                   className="rounded-lg py-2.5"
                 />
-                <p className="text-xs text-muted">{t('hero.linksSupported')}</p>
+                {linkError ? (
+                  <p className="text-xs text-red-500">{linkError}</p>
+                ) : (
+                  <p className="text-xs text-muted">{t('hero.linksSupported')}</p>
+                )}
               </div>
             )}
           </div>
@@ -568,26 +582,54 @@ export default function GetStartedPage() {
         <Button
           variant="cta"
           size="lg"
-          disabled={!canSubmit}
-          onClick={() => {
-            if (!canSubmit) return
+          disabled={!canSubmit || fetchingLink}
+          onClick={async () => {
+            if (!canSubmit || fetchingLink) return
+            setLinkError(null)
+
+            let resolvedFile = file
+            let resolvedPageCount = pageCount
+
+            if (inputTab === 'link') {
+              setFetchingLink(true)
+              try {
+                const res = await fetch(`${API_URL}/api/documents/fetch?url=${encodeURIComponent(pasteUrl)}`)
+                if (!res.ok) {
+                  const data = await res.json()
+                  setLinkError(data.error ?? 'Failed to fetch document')
+                  setFetchingLink(false)
+                  return
+                }
+                const blob = await res.blob()
+                const filename = res.headers.get('X-Filename') ?? 'document.docx'
+                resolvedFile = new File([blob], filename, { type: blob.type })
+                resolvedPageCount = await getFilePageCount(resolvedFile)
+                if (!title) setTitle(filename.replace(/\.[^.]+$/, ''))
+              } catch {
+                setLinkError('Could not connect to server')
+                setFetchingLink(false)
+                return
+              }
+              setFetchingLink(false)
+            }
+
             sessionStorage.removeItem(SESSION_KEY)
             navigate(ROUTES.pageSelection, {
               state: {
-                file,
+                file: resolvedFile,
                 pasteUrl,
                 inputTab,
                 services: Array.from(selectedServices),
                 guideline: selectedGuideline,
-                pageCount,
+                pageCount: resolvedPageCount,
                 title,
               },
             })
           }}
           className="font-semibold whitespace-nowrap"
         >
-          {t('getStarted.submit')}
-          <span>→</span>
+          {fetchingLink ? t('getStarted.fetchingDocument') : t('getStarted.submit')}
+          {!fetchingLink && <span>→</span>}
         </Button>
       </div>
     </div>

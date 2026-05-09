@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { useLocation, useNavigate, Link } from 'react-router-dom'
 import { loadStripe } from '@stripe/stripe-js'
 import {
@@ -291,17 +291,21 @@ export default function CheckoutPage() {
         }
       }
 
-      // 2. Upload to Supabase Storage
+      // 2. Upload to Supabase Storage (DOCX stored as .zip — same bytes, renamed)
       if (fileToUpload) {
-        const safeName = fileToUpload.name
+        const isDocx = fileToUpload.name.toLowerCase().endsWith('.docx')
+        const uploadFile = isDocx
+          ? new File([fileToUpload], fileToUpload.name.replace(/\.docx$/i, '.zip'), { type: 'application/zip' })
+          : fileToUpload
+        const safeName = uploadFile.name
           .normalize('NFD')
           .replace(/[̀-ͯ]/g, '')
           .replace(/\s+/g, '_')
-          .replace(/[^a-zA-Z0-9._-]/g, '')
+          .replace(/[̀-ͯ]/g, '')
         const path = `${user.id}/${projectId}/original/${safeName}`
         const { error: uploadError } = await supabase.storage
           .from('projects')
-          .upload(path, fileToUpload, { upsert: false })
+          .upload(path, uploadFile, { upsert: false })
         if (!uploadError) {
           storagePath = path
         } else {
@@ -309,7 +313,10 @@ export default function CheckoutPage() {
         }
       }
 
-      // 3. Create project record
+      // 3. Notify backend webhook (fire-and-forget)
+      fetch(`${API_URL}/api/checkout/notify`, { method: 'POST' }).catch(() => {})
+
+      // 4. Create project record
       const deleteAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
       const { error: projectError } = await supabase.from('projects').insert({
         id: projectId,
