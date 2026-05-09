@@ -6,6 +6,9 @@ import { ROUTES } from '../lib/routes'
 import { SESSION_KEY } from './GetStartedPage'
 import { useAuth } from '../lib/auth-context'
 import { supabase } from '../lib/supabase'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Card } from '@/components/ui/card'
 
 function clearGetStartedSession() {
   sessionStorage.removeItem(SESSION_KEY)
@@ -67,11 +70,11 @@ function mapDbProject(row: DbProject): Project {
   }
 }
 
-const STATUS_CLASS: Record<StatusType, string> = {
-  inQueue: 'bg-[#F0EEE8] text-muted border border-border',
-  processing: 'bg-amber-50 text-amber-700 border border-amber-200',
-  ready: 'bg-forest/10 text-forest border border-forest/20',
-  delivered: 'bg-forest text-white border border-forest',
+const STATUS_VARIANT: Record<StatusType, 'default' | 'processing' | 'ready' | 'delivered'> = {
+  inQueue: 'default',
+  processing: 'processing',
+  ready: 'ready',
+  delivered: 'delivered',
 }
 
 export default function DashboardPage() {
@@ -111,14 +114,12 @@ export default function DashboardPage() {
               : t('dashboard.subtitleNoActive')}
           </p>
         </div>
-        <Link
-          to={ROUTES.getStarted}
-          onClick={clearGetStartedSession}
-          className="flex items-center gap-2 bg-ink text-[#F0EEE8] text-sm font-medium px-4 py-2.5 rounded-xl hover:bg-ink/90 transition-colors"
-        >
-          <Plus size={15} />
-          {t('dashboard.newService')}
-        </Link>
+        <Button asChild variant="default" size="default">
+          <Link to={ROUTES.getStarted} onClick={clearGetStartedSession}>
+            <Plus size={15} />
+            {t('dashboard.newService')}
+          </Link>
+        </Button>
       </div>
 
       {/* Project list */}
@@ -149,7 +150,7 @@ function ProjectRow({ project }: { project: Project }) {
       to={ROUTES.project.replace(':id', project.id)}
       className="bg-white rounded-2xl border border-border px-6 py-5 flex items-center gap-4 hover:border-forest-mid/40 transition-colors group"
     >
-      <div className="shrink-0 w-10 h-10 rounded-xl bg-[#F0EEE8] flex items-center justify-center">
+      <div className="shrink-0 w-10 h-10 rounded-xl bg-sand flex items-center justify-center">
         <FileText size={18} className="text-muted" />
       </div>
 
@@ -165,7 +166,9 @@ function ProjectRow({ project }: { project: Project }) {
 
       <div className="flex items-center gap-2 shrink-0">
         <ServiceBadge service={project.service} guideline={project.guideline} />
-        <StatusBadge status={project.status} />
+        <Badge variant={STATUS_VARIANT[project.status]}>
+          {t(`dashboard.status.${project.status}`)}
+        </Badge>
         <ChevronRight size={14} className="text-muted/40 group-hover:text-muted transition-colors ml-1" />
       </div>
     </Link>
@@ -181,7 +184,7 @@ function ServiceBadge({
 }) {
   const { t } = useTranslation()
   return (
-    <span className="inline-flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg bg-[#F0EEE8] text-ink border border-border">
+    <Badge variant="service" className="gap-1">
       {t(`dashboard.service.${service}`)}
       {guideline && (
         <>
@@ -191,39 +194,26 @@ function ServiceBadge({
           </span>
         </>
       )}
-    </span>
-  )
-}
-
-function StatusBadge({ status }: { status: StatusType }) {
-  const { t } = useTranslation()
-  return (
-    <span
-      className={`inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-lg ${STATUS_CLASS[status]}`}
-    >
-      {t(`dashboard.status.${status}`)}
-    </span>
+    </Badge>
   )
 }
 
 function EmptyState() {
   const { t } = useTranslation()
   return (
-    <div className="bg-white rounded-2xl border border-border px-8 py-16 text-center">
-      <div className="w-12 h-12 rounded-xl bg-[#F0EEE8] flex items-center justify-center mx-auto mb-4">
+    <Card className="px-8 py-16 text-center shadow-sm">
+      <div className="w-12 h-12 rounded-xl bg-sand flex items-center justify-center mx-auto mb-4">
         <FileText size={22} className="text-muted" />
       </div>
       <h3 className="text-sm font-medium text-ink mb-1">{t('dashboard.emptyTitle')}</h3>
       <p className="text-sm text-muted mb-6">{t('dashboard.emptySubtitle')}</p>
-      <Link
-        to={ROUTES.getStarted}
-        onClick={clearGetStartedSession}
-        className="inline-flex items-center gap-1.5 bg-ink text-[#F0EEE8] text-sm font-medium px-5 py-3 rounded-xl hover:bg-ink/90 transition-colors"
-      >
-        <Plus size={15} />
-        {t('dashboard.newService')}
-      </Link>
-    </div>
+      <Button asChild variant="default" size="lg">
+        <Link to={ROUTES.getStarted} onClick={clearGetStartedSession}>
+          <Plus size={15} />
+          {t('dashboard.newService')}
+        </Link>
+      </Button>
+    </Card>
   )
 }
 

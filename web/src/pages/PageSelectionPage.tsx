@@ -7,6 +7,8 @@ import { PRICING, calcPrice, formatBRL } from '../lib/pricing'
 import { storeFile } from '../lib/file-store'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -353,7 +355,9 @@ export default function PageSelectionPage() {
       {/* Main — page grid */}
       <div className="flex-1 overflow-y-auto px-8 py-8">
         <div className="mb-6 flex items-center gap-3">
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => navigate(ROUTES.getStarted, {
               state: {
                 file: state.file,
@@ -364,11 +368,10 @@ export default function PageSelectionPage() {
                 pageCount: state.pageCount,
               }
             })}
-            className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink transition-colors"
           >
             <ArrowLeft size={14} />
             {t('pageSelection.backToProjects')}
-          </button>
+          </Button>
         </div>
 
         <h1 className="text-xl font-semibold text-ink mb-1">{t('pageSelection.title')}</h1>
@@ -526,18 +529,14 @@ export default function PageSelectionPage() {
             <label className="text-xs font-medium text-muted uppercase tracking-widest block mb-2">
               {t('pageSelection.rangeLabel')}
             </label>
-            <input
+            <Input
               type="text"
               value={rangeInput}
               onChange={(e) => setRangeInput(e.target.value)}
               onBlur={(e) => applyRange(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && applyRange(rangeInput)}
               placeholder={t('pageSelection.rangePlaceholder')}
-              className={`w-full text-sm border rounded-xl px-3 py-2.5 bg-[#F0EEE8] focus:outline-none focus:ring-2 transition-colors ${
-                rangeError
-                  ? 'border-red-300 focus:ring-red-200'
-                  : 'border-border focus:ring-forest-mid/30'
-              }`}
+              className={`py-2.5 ${rangeError ? 'border-red-300 focus:ring-red-200' : ''}`}
             />
             {rangeError && (
               <p className="text-xs text-red-500 mt-1.5">{t('pageSelection.rangeError')}</p>
@@ -547,25 +546,32 @@ export default function PageSelectionPage() {
 
           {/* Select all / clear */}
           <div className="flex gap-2">
-            <button
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 text-xs"
               onClick={() => setSelected(new Set(Array.from({ length: effectiveTotal }, (_, i) => i + 1)))}
-              className="flex-1 text-xs font-medium text-muted border border-border rounded-lg py-2 hover:border-forest-mid/40 hover:text-ink transition-colors"
             >
               {t('pageSelection.selectAll')}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 text-xs"
               onClick={() => setSelected(new Set())}
-              className="flex-1 text-xs font-medium text-muted border border-border rounded-lg py-2 hover:border-forest-mid/40 hover:text-ink transition-colors"
             >
               {t('pageSelection.clearAll')}
-            </button>
+            </Button>
           </div>
         </div>
 
         {/* Continue CTA */}
         <div className="px-6 py-5 border-t border-border">
-          <button
+          <Button
+            variant="cta"
+            size="lg"
             disabled={!canContinue}
+            className="w-full font-semibold"
             onClick={() => {
               storeFile(state.file)
               navigate(ROUTES.checkout, {
@@ -579,15 +585,10 @@ export default function PageSelectionPage() {
                 }
               })
             }}
-            className={`w-full flex items-center justify-center gap-2 text-sm font-semibold py-3 rounded-xl transition-all bg-forest text-white ${
-              canContinue
-                ? 'hover:bg-forest-mid cursor-pointer opacity-100'
-                : 'opacity-40 cursor-not-allowed'
-            }`}
           >
             {t('pageSelection.continue')}
             <span>→</span>
-          </button>
+          </Button>
           {canContinue && (
             <p className="text-center text-xs text-muted mt-2">
               {selected.size} {selected.size === 1 ? t('pageSelection.pageCount_one') : t('pageSelection.pageCount_other')}

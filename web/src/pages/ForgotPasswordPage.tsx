@@ -3,6 +3,10 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '../lib/supabase'
 import { ROUTES } from '../lib/routes'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 
 export default function ForgotPasswordPage() {
   const { t } = useTranslation()
@@ -32,50 +36,50 @@ export default function ForgotPasswordPage() {
   return (
     <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl border border-border shadow-sm p-8">
-          <div className="mb-8">
-            <h1 className="text-2xl font-semibold text-ink mb-1">
-              {t('auth.resetPassword.title')}
-            </h1>
-            <p className="text-sm text-muted">{t('auth.resetPassword.subtitle')}</p>
-          </div>
+        <Card>
+          <CardHeader className="pt-8 pb-6">
+            <CardTitle className="text-2xl">{t('auth.resetPassword.title')}</CardTitle>
+            <CardDescription>{t('auth.resetPassword.subtitle')}</CardDescription>
+          </CardHeader>
 
-          {sent ? (
-            <p className="text-sm text-forest bg-forest/10 border border-forest/20 rounded-xl px-4 py-3">
-              {t('auth.resetSent')}
-            </p>
-          ) : (
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              {error && (
-                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-                  {error}
-                </p>
-              )}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium text-muted uppercase tracking-wider">
-                  {t('auth.email')}
-                </label>
-                <input
-                  type="email"
-                  autoComplete="email"
-                  placeholder={t('auth.emailPlaceholder')}
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="w-full text-sm border border-border rounded-xl px-4 py-3 bg-[#F0EEE8] placeholder:text-muted/60 focus:outline-none focus:ring-2 focus:ring-forest-mid/30"
-                />
-              </div>
+          <CardContent className="pt-0 pb-8">
+            {sent ? (
+              <p className="text-sm text-forest bg-forest/10 border border-forest/20 rounded-xl px-4 py-3">
+                {t('auth.resetSent')}
+              </p>
+            ) : (
+              <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                {error && (
+                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                    {error}
+                  </p>
+                )}
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="email">{t('auth.email')}</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    autoComplete="email"
+                    placeholder={t('auth.emailPlaceholder')}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full mt-2 bg-forest text-white text-sm font-medium py-3 rounded-xl hover:bg-forest-mid transition-colors disabled:opacity-60"
-              >
-                {loading ? '…' : t('auth.resetPassword.submit')}
-              </button>
-            </form>
-          )}
-        </div>
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  variant="cta"
+                  size="lg"
+                  className="w-full mt-2"
+                >
+                  {loading ? '…' : t('auth.resetPassword.submit')}
+                </Button>
+              </form>
+            )}
+          </CardContent>
+        </Card>
 
         <p className="text-center text-sm text-muted mt-6">
           <Link to={ROUTES.signIn} className="text-ink font-medium hover:underline">

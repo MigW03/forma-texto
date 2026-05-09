@@ -5,6 +5,10 @@ import { useTranslation } from 'react-i18next'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth-context'
 import { ROUTES } from '../lib/routes'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 
 interface AuthPageProps {
   mode: 'sign-in' | 'sign-up'
@@ -76,10 +80,12 @@ export default function AuthPage({ mode }: AuthPageProps) {
     return (
       <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-md">
-          <div className="bg-white rounded-2xl border border-border shadow-sm p-8 text-center">
-            <h2 className="text-xl font-semibold text-ink mb-2">{t('auth.checkEmailTitle')}</h2>
-            <p className="text-sm text-muted">{t('auth.checkEmail')}</p>
-          </div>
+          <Card>
+            <CardContent className="pt-8 pb-8 text-center">
+              <h2 className="text-xl font-semibold text-ink mb-2">{t('auth.checkEmailTitle')}</h2>
+              <p className="text-sm text-muted">{t('auth.checkEmail')}</p>
+            </CardContent>
+          </Card>
         </div>
       </div>
     )
@@ -88,124 +94,117 @@ export default function AuthPage({ mode }: AuthPageProps) {
   return (
     <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
-        {/* Card */}
-        <div className="bg-white rounded-2xl border border-border shadow-sm p-8">
-          <div className="mb-8">
-            <h1 className="text-2xl font-semibold text-ink mb-1">
-              {t(`${ns}.title`)}
-            </h1>
-            <p className="text-sm text-muted">
-              {t(`${ns}.subtitle`)}
-            </p>
-          </div>
+        <Card>
+          <CardHeader className="pt-8 pb-6">
+            <CardTitle className="text-2xl">{t(`${ns}.title`)}</CardTitle>
+            <CardDescription>{t(`${ns}.subtitle`)}</CardDescription>
+          </CardHeader>
 
-          {/* Google */}
-          <button
-            onClick={handleGoogle}
-            type="button"
-            className="w-full flex items-center justify-center gap-3 border border-border rounded-xl py-3 text-sm font-medium text-ink hover:bg-sand transition-colors mb-6"
-          >
-            <GoogleIcon />
-            {t('auth.google')}
-          </button>
-
-          {/* Divider */}
-          <div className="flex items-center gap-3 mb-6">
-            <div className="flex-1 h-px bg-border" />
-            <span className="text-xs text-muted">{t('auth.or')}</span>
-            <div className="flex-1 h-px bg-border" />
-          </div>
-
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {error && (
-              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-                {error}
-              </p>
-            )}
-
-            {isSignUp && (
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium text-muted uppercase tracking-wider">
-                  {t('auth.fullName')}
-                </label>
-                <input
-                  type="text"
-                  autoComplete="name"
-                  placeholder={t('auth.fullNamePlaceholder')}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  className="w-full text-sm border border-border rounded-xl px-4 py-3 bg-[#F0EEE8] placeholder:text-muted/60 focus:outline-none focus:ring-2 focus:ring-forest-mid/30"
-                />
-              </div>
-            )}
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-muted uppercase tracking-wider">
-                {t('auth.email')}
-              </label>
-              <input
-                type="email"
-                autoComplete="email"
-                placeholder={t('auth.emailPlaceholder')}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="w-full text-sm border border-border rounded-xl px-4 py-3 bg-[#F0EEE8] placeholder:text-muted/60 focus:outline-none focus:ring-2 focus:ring-forest-mid/30"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-muted uppercase tracking-wider">
-                  {t('auth.password')}
-                </label>
-              </div>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete={isSignUp ? 'new-password' : 'current-password'}
-                  placeholder={
-                    isSignUp
-                      ? t('auth.passwordPlaceholderSignUp')
-                      : t('auth.passwordPlaceholderSignIn')
-                  }
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  minLength={8}
-                  className="w-full text-sm border border-border rounded-xl px-4 py-3 pr-11 bg-[#F0EEE8] placeholder:text-muted/60 focus:outline-none focus:ring-2 focus:ring-forest-mid/30"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-ink transition-colors"
-                  aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
-                >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full mt-2 bg-forest text-white text-sm font-medium py-3 rounded-xl hover:bg-forest-mid transition-colors disabled:opacity-60"
+          <CardContent className="pt-0 pb-8 flex flex-col gap-6">
+            {/* Google */}
+            <Button
+              onClick={handleGoogle}
+              type="button"
+              variant="outline"
+              className="w-full gap-3"
             >
-              {loading ? '…' : t(`${ns}.submit`)}
-            </button>
+              <GoogleIcon />
+              {t('auth.google')}
+            </Button>
 
-            {!isSignUp && (
-              <Link
-                to={ROUTES.forgotPassword}
-                className="text-xs text-center text-muted hover:text-ink transition-colors"
+            {/* Divider */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-xs text-muted">{t('auth.or')}</span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+              {error && (
+                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                  {error}
+                </p>
+              )}
+
+              {isSignUp && (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="name">{t('auth.fullName')}</Label>
+                  <Input
+                    id="name"
+                    type="text"
+                    autoComplete="name"
+                    placeholder={t('auth.fullNamePlaceholder')}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                  />
+                </div>
+              )}
+
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="email">{t('auth.email')}</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  placeholder={t('auth.emailPlaceholder')}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="password">{t('auth.password')}</Label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                    placeholder={
+                      isSignUp
+                        ? t('auth.passwordPlaceholderSignUp')
+                        : t('auth.passwordPlaceholderSignIn')
+                    }
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={8}
+                    className="pr-11"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-ink transition-colors"
+                    aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <Button
+                type="submit"
+                disabled={loading}
+                variant="cta"
+                className="w-full mt-2"
+                size="lg"
               >
-                {t('auth.forgotPassword')}
-              </Link>
-            )}
-          </form>
-        </div>
+                {loading ? '…' : t(`${ns}.submit`)}
+              </Button>
+
+              {!isSignUp && (
+                <Link
+                  to={ROUTES.forgotPassword}
+                  className="text-xs text-center text-muted hover:text-ink transition-colors"
+                >
+                  {t('auth.forgotPassword')}
+                </Link>
+              )}
+            </form>
+          </CardContent>
+        </Card>
 
         {/* Switch mode */}
         <p className="text-center text-sm text-muted mt-6">

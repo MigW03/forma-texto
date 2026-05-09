@@ -10,10 +10,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-slot": "^1.2.4",
     "@stripe/react-stripe-js": "^6.3.0",
     "@stripe/stripe-js": "^9.4.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.105.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "docx-preview": "^0.3.7",
     "fflate": "^0.8.2",
     "i18next": "^26.0.8",
@@ -27,6 +31,8 @@
     "react-dom": "^19.2.5",
     "react-i18next": "^17.0.6",
     "react-router-dom": "^7.14.2",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss-animate": "^1.0.7",
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
