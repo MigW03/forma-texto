@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next'
 import { ROUTES } from '../../lib/routes'
 import { useAuth } from '../../lib/auth-context'
 import LanguageSwitcher from './LanguageSwitcher'
+import { Button } from '@/components/ui/button'
 
 export default function Navbar() {
-  const { pathname } = useLocation()
+  useLocation()
   const { t } = useTranslation()
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
@@ -39,12 +40,13 @@ export default function Navbar() {
               <div className="w-8 h-8 rounded-full bg-forest flex items-center justify-center">
                 <span className="text-white text-xs font-semibold">{userInitial}</span>
               </div>
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={handleSignOut}
-                className="text-sm text-muted hover:text-ink transition-colors"
               >
                 {t('nav.signOut')}
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
@@ -56,13 +58,12 @@ export default function Navbar() {
             >
               {t('nav.signIn')}
             </Link>
-            <Link
-              to={ROUTES.getStarted}
-              className="flex items-center gap-1.5 bg-ink text-[#F0EEE8] text-sm font-medium px-4 py-2 rounded-lg hover:bg-ink/90 transition-colors"
-            >
-              {t('nav.getStarted')}
-              <span className="text-xs">→</span>
-            </Link>
+            <Button asChild variant="default" size="sm" className="rounded-lg gap-1.5">
+              <Link to={ROUTES.getStarted}>
+                {t('nav.getStarted')}
+                <span className="text-xs">→</span>
+              </Link>
+            </Button>
           </div>
         )}
       </div>

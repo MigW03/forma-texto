@@ -9,6 +9,8 @@ import { ROUTES } from '../lib/routes'
 import { supabase } from '../lib/supabase'
 import { calcPrice, formatBRL } from '../lib/pricing'
 import type { ServiceKey } from '../lib/pricing'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -34,11 +36,11 @@ const DB_STATUS_MAP: Record<string, StatusType> = {
   delivered: 'delivered',
 }
 
-const STATUS_CLASS: Record<StatusType, string> = {
-  inQueue: 'bg-[#F0EEE8] text-muted border border-border',
-  processing: 'bg-amber-50 text-amber-700 border border-amber-200',
-  ready: 'bg-forest/10 text-forest border border-forest/20',
-  delivered: 'bg-forest text-white border border-forest',
+const STATUS_VARIANT: Record<StatusType, 'default' | 'processing' | 'ready' | 'delivered'> = {
+  inQueue: 'default',
+  processing: 'processing',
+  ready: 'ready',
+  delivered: 'delivered',
 }
 
 function formatDate(iso: string): string {
@@ -460,14 +462,12 @@ export default function ProjectDetailPage() {
             </div>
             <p className="text-sm text-muted max-w-xs">{t('project.noPreview')}</p>
             {fileUrl && (
-              <a
-                href={fileUrl}
-                download={project.original_file_name}
-                className="inline-flex items-center gap-2 text-sm font-medium text-ink border border-border rounded-xl px-4 py-2.5 hover:border-forest-mid/40 transition-colors bg-white"
-              >
-                <Download size={14} />
-                {t('project.downloadFile')}
-              </a>
+              <Button asChild variant="outline">
+                <a href={fileUrl} download={project.original_file_name}>
+                  <Download size={14} />
+                  {t('project.downloadFile')}
+                </a>
+              </Button>
             )}
           </div>
         )}
@@ -482,9 +482,9 @@ export default function ProjectDetailPage() {
           {project.title && (
             <p className="text-xs text-muted truncate mb-3">{project.original_file_name}</p>
           )}
-          <span className={`inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-lg ${STATUS_CLASS[status]}`}>
+          <Badge variant={STATUS_VARIANT[status]}>
             {t(`dashboard.status.${status}`)}
-          </span>
+          </Badge>
         </div>
 
         <div className="px-6 py-5 flex flex-col gap-4">
@@ -516,14 +516,12 @@ export default function ProjectDetailPage() {
 
         {fileUrl && (
           <div className="px-6 pb-6 mt-auto shrink-0">
-            <a
-              href={fileUrl}
-              download={project.original_file_name}
-              className="w-full flex items-center justify-center gap-2 text-sm font-medium border border-border rounded-xl px-4 py-2.5 hover:border-forest-mid/40 transition-colors text-ink"
-            >
-              <Download size={14} />
-              {t('project.downloadFile')}
-            </a>
+            <Button asChild variant="outline" className="w-full">
+              <a href={fileUrl} download={project.original_file_name}>
+                <Download size={14} />
+                {t('project.downloadFile')}
+              </a>
+            </Button>
           </div>
         )}
       </div>

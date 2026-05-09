@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Check, Upload, Link as LinkIcon, ChevronDown, FileText, X, Clock } from 'lucide-react'
 import { ROUTES } from '../lib/routes'
 import { PRICING, formatBRL } from '../lib/pricing'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -374,12 +376,12 @@ export default function GetStartedPage() {
             <label className="text-xs font-medium text-muted uppercase tracking-widest block mb-1.5">
               {t('getStarted.projectTitle')}
             </label>
-            <input
+            <Input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder={t('getStarted.projectTitlePlaceholder')}
-              className="w-full text-sm border border-border rounded-xl px-3 py-2.5 bg-[#F0EEE8] focus:outline-none focus:ring-2 focus:ring-forest-mid/30 text-ink placeholder:text-muted/60"
+              className="py-2.5"
             />
           </div>
 
@@ -503,12 +505,12 @@ export default function GetStartedPage() {
                 <label className="text-xs font-medium text-muted uppercase tracking-wider">
                   {t('hero.documentUrl')}
                 </label>
-                <input
+                <Input
                   type="url"
                   placeholder="https://docs.google.com/..."
                   value={pasteUrl}
                   onChange={(e) => setPasteUrl(e.target.value)}
-                  className="w-full text-sm border border-border rounded-lg px-3 py-2.5 bg-[#F0EEE8] focus:outline-none focus:ring-2 focus:ring-forest-mid/30"
+                  className="rounded-lg py-2.5"
                 />
                 <p className="text-xs text-muted">{t('hero.linksSupported')}</p>
               </div>
@@ -563,7 +565,9 @@ export default function GetStartedPage() {
           <p className="text-sm font-medium text-ink">{t('hero.freeFirstPage')}</p>
           <p className="text-xs text-muted mt-0.5">{t('getStarted.ctaSubtitle')}</p>
         </div>
-        <button
+        <Button
+          variant="cta"
+          size="lg"
           disabled={!canSubmit}
           onClick={() => {
             if (!canSubmit) return
@@ -580,15 +584,11 @@ export default function GetStartedPage() {
               },
             })
           }}
-          className={`flex items-center gap-2 text-sm font-semibold px-6 py-3 rounded-xl transition-all whitespace-nowrap bg-forest text-white ${
-            canSubmit
-              ? 'hover:bg-forest-mid cursor-pointer opacity-100'
-              : 'opacity-40 cursor-not-allowed'
-          }`}
+          className="font-semibold whitespace-nowrap"
         >
           {t('getStarted.submit')}
           <span>→</span>
-        </button>
+        </Button>
       </div>
     </div>
   )
