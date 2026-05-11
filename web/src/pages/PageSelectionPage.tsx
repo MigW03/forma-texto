@@ -113,15 +113,7 @@ function PdfPageCanvas({
   )
 }
 
-function DocxSliceThumbnail({
-  section,
-  pageNumber,
-  pageHeight,
-}: {
-  section: HTMLElement
-  pageNumber: number
-  pageHeight: number
-}) {
+function DocxPageThumbnail({ pageEl }: { pageEl: HTMLElement }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(false)
 
@@ -139,31 +131,24 @@ function DocxSliceThumbnail({
   useEffect(() => {
     if (!visible || !wrapRef.current) return
     const wrap = wrapRef.current
-    const naturalWidth = section.offsetWidth || 816
+    const naturalWidth = pageEl.offsetWidth || 816
     const containerWidth = wrap.clientWidth || 150
     const scale = containerWidth / naturalWidth
-    const offset = (pageNumber - 1) * pageHeight
 
-    const clipper = document.createElement('div')
-    clipper.style.cssText = `width:${naturalWidth}px;height:${pageHeight}px;overflow:hidden;transform-origin:top left;transform:scale(${scale});position:absolute;top:0;left:0;`
-
-    const clone = section.cloneNode(true) as HTMLElement
+    const clone = pageEl.cloneNode(true) as HTMLElement
+    clone.style.transformOrigin = 'top left'
+    clone.style.transform = `scale(${scale})`
+    clone.style.width = `${naturalWidth}px`
     clone.style.position = 'absolute'
-    clone.style.top = `-${offset}px`
+    clone.style.top = '0'
     clone.style.left = '0'
     clone.style.margin = '0'
-    clone.style.overflow = 'visible'
-    clone.style.height = 'auto'
-    clone.style.minHeight = 'unset'
     clone.style.pointerEvents = 'none'
+    clone.style.overflow = 'hidden'
 
-    clipper.appendChild(clone)
-    wrap.appendChild(clipper)
-
-    return () => {
-      if (wrap.contains(clipper)) wrap.removeChild(clipper)
-    }
-  }, [visible, section, pageNumber, pageHeight])
+    wrap.appendChild(clone)
+    return () => { if (wrap.contains(clone)) wrap.removeChild(clone) }
+  }, [visible, pageEl])
 
   return <div ref={wrapRef} className="w-full h-full overflow-hidden bg-white relative" />
 }
@@ -225,13 +210,9 @@ export default function PageSelectionPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Docx
+  // Docx — render with breakPages:true so each sectPr becomes its own <section>
   const hiddenDocxRef = useRef<HTMLDivElement | null>(null)
-  const [docxRender, setDocxRender] = useState<{
-    section: HTMLElement
-    pageHeight: number
-    pageCount: number
-  } | null>(null)
+  const [docxPages, setDocxPages] = useState<HTMLElement[]>([])
   useEffect(() => {
     const file = state?.file
     if (!file) return
@@ -245,26 +226,21 @@ export default function PageSelectionPage() {
     import('docx-preview').then(({ renderAsync }) => {
       if (cancelled) return
       return renderAsync(file, div, undefined, {
-        breakPages: false,
+        breakPages: true,
         inWrapper: false,
       })
     }).then(() => {
       if (cancelled) return
-      const section = div.querySelector('section.docx') as HTMLElement
-      if (!section) return
-      section.style.overflow = 'visible'
-      section.style.height = 'auto'
-      const pageHeight = parseFloat(getComputedStyle(section).minHeight) || section.offsetHeight
-      const contentHeight = section.scrollHeight
-      const pageCount = pageHeight > 0
-        ? Math.max(1, Math.ceil(contentHeight / pageHeight))
-        : 1
-      setDocxRender({ section, pageHeight, pageCount })
-      setEffectiveTotal(pageCount)
-      const all = new Set<number>()
-      for (let i = 1; i <= pageCount; i++) all.add(i)
-      setSelected(all)
-      setRangeInput(pageCount > 1 ? `1-${pageCount}` : '1')
+      const pages = Array.from(div.querySelectorAll('section.docx')) as HTMLElement[]
+      setDocxPages(pages)
+      // Only override effectiveTotal if we didn't already have a reliable count
+      if (pages.length > 0 && !state?.pageCount) {
+        setEffectiveTotal(pages.length)
+        const all = new Set<number>()
+        for (let i = 1; i <= pages.length; i++) all.add(i)
+        setSelected(all)
+        setRangeInput(pages.length > 1 ? `1-${pages.length}` : '1')
+      }
     }).catch(() => {})
     return () => {
       cancelled = true
@@ -406,8 +382,8 @@ export default function PageSelectionPage() {
                 >
                   {pdfDoc
                     ? <PdfPageCanvas doc={pdfDoc} pageNumber={page} />
-                    : docxRender
-                      ? <DocxSliceThumbnail section={docxRender.section} pageNumber={page} pageHeight={docxRender.pageHeight} />
+                    : docxPages[page - 1]
+                      ? <DocxPageThumbnail pageEl={docxPages[page - 1]} />
                       : <SkeletonThumbnail />
                   }
 

@@ -46,6 +46,26 @@ async function getDocxPageCount(file: File): Promise<number | null> {
   }
 }
 
+async function getDocxPageCountByBreaks(file: File): Promise<number | null> {
+  try {
+    const { unzip } = await import('fflate')
+    const buffer = await file.arrayBuffer()
+    return await new Promise(resolve => {
+      unzip(new Uint8Array(buffer), (err, files) => {
+        if (err || !files['word/document.xml']) { resolve(null); return }
+        const xml = new TextDecoder().decode(files['word/document.xml'])
+        // Acrobat-converted DOCXs use lastRenderedPageBreak or explicit page breaks
+        const lastRendered = (xml.match(/<w:lastRenderedPageBreak[^/]*/g) ?? []).length
+        const explicitBreaks = (xml.match(/w:type=["']page["']/g) ?? []).length
+        const breaks = Math.max(lastRendered, explicitBreaks)
+        resolve(breaks > 0 ? breaks + 1 : null)
+      })
+    })
+  } catch {
+    return null
+  }
+}
+
 async function getDocxPageCountByRender(file: File): Promise<number | null> {
   try {
     const { renderAsync } = await import('docx-preview')
@@ -70,8 +90,13 @@ async function getFilePageCount(file: File): Promise<number | null> {
   const name = file.name.toLowerCase()
   if (name.endsWith('.pdf')) return getPdfPageCount(file)
   if (name.endsWith('.docx')) {
+    // app.xml <Pages> is the most reliable source — Acrobat writes one sectPr per page and
+    // keeps the count accurate. lastRenderedPageBreak is a fallback for files where app.xml
+    // is missing or zero (rare). Render-based count is last resort only.
     const xmlCount = await getDocxPageCount(file)
     if (xmlCount) return xmlCount
+    const breakCount = await getDocxPageCountByBreaks(file)
+    if (breakCount) return breakCount
     return getDocxPageCountByRender(file)
   }
   return null

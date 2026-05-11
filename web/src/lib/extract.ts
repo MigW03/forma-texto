@@ -154,52 +154,77 @@ export async function extractDocxText(file: File): Promise<PageContent[]> {
     }
   }
 
-  const paragraphs: { text: string; fontSize: number; headingLevel: number | null }[] = []
+  const paragraphs: { text: string; fontSize: number; headingLevel: number | null; section: number }[] = []
   const allSizes: number[] = []
+  let currentSection = 0
+  let sectionCount = 0
 
   for (const para of Array.from(docXml.getElementsByTagNameNS(W, 'p'))) {
     const text = Array.from(para.getElementsByTagNameNS(W, 't'))
       .map(t => t.textContent ?? '')
       .join('')
       .trim()
-    if (!text) continue
 
-    const pPr = para.getElementsByTagNameNS(W, 'pPr')[0]
-    const pStyleId = pPr
-      ? (pPr.getElementsByTagNameNS(W, 'pStyle')[0]?.getAttribute('w:val') ?? '')
-      : ''
-    const headingLevel = resolveHeadingLevel(pStyleId) ?? null
+    if (text) {
+      const pPr = para.getElementsByTagNameNS(W, 'pPr')[0]
+      const pStyleId = pPr
+        ? (pPr.getElementsByTagNameNS(W, 'pStyle')[0]?.getAttribute('w:val') ?? '')
+        : ''
+      const headingLevel = resolveHeadingLevel(pStyleId) ?? null
 
-    let fontSize = 0
-    const runSizes: number[] = []
-    for (const run of Array.from(para.getElementsByTagNameNS(W, 'r'))) {
-      const szEl = run.getElementsByTagNameNS(W, 'sz')[0]
-      if (szEl) {
-        const val = parseInt(szEl.getAttribute('w:val') ?? '0')
-        if (val > 0) runSizes.push(val / 2)
+      let fontSize = 0
+      const runSizes: number[] = []
+      for (const run of Array.from(para.getElementsByTagNameNS(W, 'r'))) {
+        const szEl = run.getElementsByTagNameNS(W, 'sz')[0]
+        if (szEl) {
+          const val = parseInt(szEl.getAttribute('w:val') ?? '0')
+          if (val > 0) runSizes.push(val / 2)
+        }
       }
-    }
-    if (runSizes.length > 0) fontSize = Math.max(...runSizes)
-    else if (pStyleId && styleFontSize[pStyleId]) fontSize = styleFontSize[pStyleId]
+      if (runSizes.length > 0) fontSize = Math.max(...runSizes)
+      else if (pStyleId && styleFontSize[pStyleId]) fontSize = styleFontSize[pStyleId]
 
-    paragraphs.push({ text, fontSize, headingLevel })
-    if (fontSize > 0) allSizes.push(fontSize)
+      paragraphs.push({ text, fontSize, headingLevel, section: currentSection })
+      if (fontSize > 0) allSizes.push(fontSize)
+    }
+
+    // sectPr inside pPr marks the end of a section (page boundary)
+    const pPr = para.getElementsByTagNameNS(W, 'pPr')[0]
+    if (pPr && pPr.getElementsByTagNameNS(W, 'sectPr').length > 0) {
+      currentSection++
+      sectionCount++
+    }
   }
 
   const classifySize = (size: number): BlockType => classifyFontSize(size, allSizes)
   const headingLevelToType: Record<number, BlockType> = { 1: 'h1', 2: 'h2', 3: 'h3', 4: 'h3', 5: 'h3', 6: 'h3' }
 
-  const blocks: TextBlock[] = paragraphs.map(p => ({
+  const blocks: (TextBlock & { section: number })[] = paragraphs.map(p => ({
     type: p.headingLevel != null ? headingLevelToType[p.headingLevel] : classifySize(p.fontSize),
     text: p.text,
     fontSize: p.fontSize,
+    section: p.section,
   }))
 
-  const BLOCKS_PER_PAGE = 40
   const pages: PageContent[] = []
-  for (let i = 0; i < blocks.length; i += BLOCKS_PER_PAGE) {
-    pages.push({ pageNumber: pages.length + 1, blocks: blocks.slice(i, i + BLOCKS_PER_PAGE) })
+
+  if (sectionCount > 1) {
+    // sectPr-based grouping: group blocks by section number
+    const totalSections = sectionCount + 1
+    for (let s = 0; s < totalSections; s++) {
+      const sectionBlocks = blocks.filter(b => b.section === s)
+      if (sectionBlocks.length > 0) {
+        pages.push({ pageNumber: pages.length + 1, blocks: sectionBlocks })
+      }
+    }
+  } else {
+    // Fallback: 40-block heuristic for simple DOCXs
+    const BLOCKS_PER_PAGE = 40
+    for (let i = 0; i < blocks.length; i += BLOCKS_PER_PAGE) {
+      pages.push({ pageNumber: pages.length + 1, blocks: blocks.slice(i, i + BLOCKS_PER_PAGE) })
+    }
   }
+
   if (pages.length === 0) pages.push({ pageNumber: 1, blocks: [] })
   return pages
 }
