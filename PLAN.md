@@ -2,11 +2,6 @@
 
 ---
 
-## Next Actions
-
-- [ ] Normalize binary item index in n8n for URL-sourced files
-  - When a file is uploaded directly, the n8n workflow finds the DOCX content at `file_3` in the uncompressed binary items. When the file comes from a Google Docs link (fetched via `/api/documents/fetch` and uploaded as `.zip`), the relevant binary item is at `file_5` (observed in at least one test case). Investigate why the index differs — likely a structural difference in the ZIP produced by Google's export vs. a user-uploaded DOCX — and update the n8n filter to handle both cases, either by detecting the correct item dynamically or by normalizing the upload so both paths produce the same ZIP structure.
-
 ---
 
 ## Auth
@@ -135,7 +130,7 @@
 
 - [ ] AI processing pipeline (receives uploaded file, runs formatting/proofreading)
   - Backend reads file from Supabase Storage, runs multi-model AI chain, writes output file back
-- [ ] Project status updates written back to DB (`pending` → `processing` → `ready`)
+- [x] Project status updates written back to DB (`pending` → `processing` → `ready`)
   - Backend calls `supabase.from('projects').update({ status })` at each stage
 - [x] Processed file written to `processed_file_path` in Supabase Storage
   - n8n workflow uploads the processed `.docx` to `projects` bucket and updates `projects.processed_file_path`; sets `status` to `complete` when done.
@@ -145,12 +140,12 @@
   - Read uploaded PDF, apply academic formatting rules (margins, fonts, heading hierarchy, spacing) according to selected guideline (ABNT, APA, etc.), write formatted PDF back to Storage
 - [ ] PDF correction — apply corrected text to existing PDF
   - After proofreading pass produces corrected text, edit the original PDF to replace content in-place; preserve layout, fonts, and structure as much as possible
-- [ ] DOCX correction function
-  - Read `.zip` (stored DOCX), apply grammatical corrections to the XML content (`word/document.xml`), repack as `.zip` and write back to Storage
-- [ ] DOCX formatting function
-  - Parse `word/document.xml` styles and apply guideline-compliant formatting (paragraph styles, heading levels, page margins via `word/settings.xml` and `word/styles.xml`)
-- [ ] Convert processed `.zip` back to `.docx` for delivery
-  - Rename the output `.zip` to `.docx` and update `processed_file_path` before marking project as `ready`; ensure MIME type is set correctly for download
+- [x] DOCX correction function
+  - n8n workflow: unzips uploaded DOCX, extracts `word/document.xml`, runs AI proofreading pass, serializes corrected XML back, repacks as `.docx` and writes to Storage
+- [x] DOCX formatting function
+  - n8n workflow: applies guideline-compliant formatting to `word/document.xml` (paragraph styles, heading levels, margins); runs serially per project via Split in Batches (batch size 1) to prevent file cross-contamination
+- [x] Convert processed `.zip` back to `.docx` for delivery
+  - n8n repacks the processed output as `.docx` and stamps `processed_file_path` + `status = complete` in the `projects` table
 
 ---
 

@@ -93,7 +93,18 @@ export async function sliceDocx(file: File, pages: number[]): Promise<File> {
 
   const newZip: Record<string, Uint8Array> = {}
   for (const [path, data] of Object.entries(zip)) {
-    newZip[path] = path === 'word/document.xml' ? encoder.encode(newDocXml) : data
+    if (path === 'word/document.xml') {
+      newZip[path] = encoder.encode(newDocXml)
+    } else if (path === 'docProps/app.xml') {
+      const appXml = decoder.decode(data)
+      const updated = appXml.replace(
+        /(<(?:[^:>]+:)?Pages>)\d+(<\/(?:[^:>]+:)?Pages>)/,
+        `$1${pages.length}$2`
+      )
+      newZip[path] = encoder.encode(updated)
+    } else {
+      newZip[path] = data
+    }
   }
 
   const zipped = zipSync(newZip)

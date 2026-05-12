@@ -231,10 +231,10 @@ export default function PageSelectionPage() {
       })
     }).then(() => {
       if (cancelled) return
-      const pages = Array.from(div.querySelectorAll('section.docx')) as HTMLElement[]
+      const rawPages = Array.from(div.querySelectorAll('section.docx')) as HTMLElement[]
+      const pages = rawPages.filter(el => !!(el.textContent?.trim() || el.querySelector('img, table')))
       setDocxPages(pages)
-      // Only override effectiveTotal if we didn't already have a reliable count
-      if (pages.length > 0 && !state?.pageCount) {
+      if (pages.length > 0) {
         setEffectiveTotal(pages.length)
         const all = new Set<number>()
         for (let i = 1; i <= pages.length; i++) all.add(i)
