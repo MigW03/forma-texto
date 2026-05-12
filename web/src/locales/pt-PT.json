@@ -186,7 +186,11 @@
     "pageCount": "Páginas",
     "cost": "Valor",
     "noPreview": "Pré-visualização não disponível para este formato.",
+    "viewingFinal": "A ver ficheiro final",
+    "viewingOriginal": "A ver ficheiro original",
     "downloadFile": "Transferir ficheiro",
+    "downloadFinalFile": "Transferir ficheiro final",
+    "downloadOriginalFile": "Transferir ficheiro original",
     "notFound": "Projeto não encontrado."
   },
   "checkout": {

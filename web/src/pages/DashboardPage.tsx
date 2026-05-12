@@ -47,6 +47,7 @@ const DB_STATUS_MAP: Record<string, StatusType> = {
   pending: 'inQueue',
   processing: 'processing',
   ready: 'ready',
+  complete: 'ready',
   delivered: 'delivered',
 }
 
@@ -92,10 +93,27 @@ export default function DashboardPage() {
       .order('created_at', { ascending: false })
       .then(({ data, error }) => {
         if (error) console.error('[dashboard] projects fetch error:', error)
-        console.log('[dashboard] user:', user.id, 'rows:', data)
         setProjects((data as DbProject[] ?? []).map(mapDbProject))
         setLoading(false)
       })
+  }, [user])
+
+  useEffect(() => {
+    if (!user) return
+    const channel = supabase
+      .channel(`dashboard:${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'projects', filter: `user_id=eq.${user.id}` },
+        (payload) => {
+          const updated = payload.new as DbProject
+          setProjects((prev) =>
+            prev.map((p) => (p.id === updated.id ? mapDbProject(updated) : p))
+          )
+        }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
   }, [user])
 
   const activeCount = projects.filter(

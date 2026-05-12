@@ -22,6 +22,7 @@ interface ProjectDetail {
   title: string | null
   original_file_name: string
   original_file_path: string | null
+  processed_file_path: string | null
   services: ServiceKey[]
   guideline: GuidelineId | null
   status: string
@@ -33,6 +34,7 @@ const DB_STATUS_MAP: Record<string, StatusType> = {
   pending: 'inQueue',
   processing: 'processing',
   ready: 'ready',
+  complete: 'ready',
   delivered: 'delivered',
 }
 
@@ -157,13 +159,14 @@ const ZOOM_MIN = 0.4
 const ZOOM_MAX = 2.5
 const ZOOM_DEFAULT = 0.65
 
-function PdfViewer({ url, pageCount }: { url: string; pageCount: number }) {
-  const outerRef = useRef<HTMLDivElement>(null)
-  const [doc, setDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null)
-  const [containerWidth, setContainerWidth] = useState(0)
-  const [zoom, setZoom] = useState(ZOOM_DEFAULT)
-  const [zoomInput, setZoomInput] = useState(String(Math.round(ZOOM_DEFAULT * 100)))
-  const [loadError, setLoadError] = useState(false)
+// ── Zoom controls ────────────────────────────────────────────────────────────
+
+function ZoomControls({ zoom, setZoom }: { zoom: number; setZoom: (z: number) => void }) {
+  const [zoomInput, setZoomInput] = useState(String(Math.round(zoom * 100)))
+
+  useEffect(() => {
+    setZoomInput(String(Math.round(zoom * 100)))
+  }, [zoom])
 
   const applyZoom = (raw: string) => {
     const n = parseInt(raw, 10)
@@ -175,6 +178,41 @@ function PdfViewer({ url, pageCount }: { url: string; pageCount: number }) {
       setZoomInput(String(Math.round(zoom * 100)))
     }
   }
+
+  return (
+    <div className="inline-flex items-center gap-1 bg-white border border-border rounded-xl px-2 py-1.5 shadow-sm">
+      <button
+        onClick={() => setZoom(Math.max(ZOOM_MIN, parseFloat((zoom - ZOOM_STEP).toFixed(2))))}
+        className="w-6 h-6 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-[#F0EEE8] transition-colors text-base font-medium"
+        aria-label="Zoom out"
+      >−</button>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={zoomInput}
+        onChange={e => setZoomInput(e.target.value)}
+        onBlur={() => applyZoom(zoomInput)}
+        onKeyDown={e => { if (e.key === 'Enter') { applyZoom(zoomInput); (e.target as HTMLInputElement).blur() } }}
+        className="text-xs font-medium text-ink w-9 text-center tabular-nums bg-transparent border-none outline-none focus:bg-[#F0EEE8] rounded focus:px-0.5 transition-colors"
+        aria-label="Zoom level"
+      />
+      <span className="text-xs text-muted">%</span>
+      <button
+        onClick={() => setZoom(Math.min(ZOOM_MAX, parseFloat((zoom + ZOOM_STEP).toFixed(2))))}
+        className="w-6 h-6 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-[#F0EEE8] transition-colors text-base font-medium"
+        aria-label="Zoom in"
+      >+</button>
+    </div>
+  )
+}
+
+// ── PDF viewer ───────────────────────────────────────────────────────────────
+
+function PdfViewer({ url, pageCount, zoom }: { url: string; pageCount: number; zoom: number }) {
+  const outerRef = useRef<HTMLDivElement>(null)
+  const [doc, setDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null)
+  const [containerWidth, setContainerWidth] = useState(0)
+  const [loadError, setLoadError] = useState(false)
 
   const measureWidth = useCallback(() => {
     if (outerRef.current) {
@@ -203,39 +241,6 @@ function PdfViewer({ url, pageCount }: { url: string; pageCount: number }) {
 
   return (
     <div ref={outerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-auto relative">
-      {/* Zoom controls */}
-      <div className="sticky top-4 z-10 flex justify-end pr-4 pointer-events-none">
-        <div className="inline-flex items-center gap-1 bg-white border border-border rounded-xl px-2 py-1.5 shadow-sm pointer-events-auto">
-          <button
-            onClick={() => {
-              const next = Math.max(ZOOM_MIN, parseFloat((zoom - ZOOM_STEP).toFixed(2)))
-              setZoom(next); setZoomInput(String(Math.round(next * 100)))
-            }}
-            className="w-6 h-6 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-[#F0EEE8] transition-colors text-base font-medium"
-            aria-label="Zoom out"
-          >−</button>
-          <input
-            type="text"
-            inputMode="numeric"
-            value={zoomInput}
-            onChange={e => setZoomInput(e.target.value)}
-            onBlur={() => applyZoom(zoomInput)}
-            onKeyDown={e => { if (e.key === 'Enter') { applyZoom(zoomInput); (e.target as HTMLInputElement).blur() } }}
-            className="text-xs font-medium text-ink w-9 text-center tabular-nums bg-transparent border-none outline-none focus:bg-[#F0EEE8] rounded focus:px-0.5 transition-colors"
-            aria-label="Zoom level"
-          />
-          <span className="text-xs text-muted">%</span>
-          <button
-            onClick={() => {
-              const next = Math.min(ZOOM_MAX, parseFloat((zoom + ZOOM_STEP).toFixed(2)))
-              setZoom(next); setZoomInput(String(Math.round(next * 100)))
-            }}
-            className="w-6 h-6 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-[#F0EEE8] transition-colors text-base font-medium"
-            aria-label="Zoom in"
-          >+</button>
-        </div>
-      </div>
-
       {/* Pages */}
       <div className="flex flex-col items-center gap-6 py-4 pb-8 min-w-fit px-8">
         {doc && pageWidth > 0
@@ -255,25 +260,12 @@ function PdfViewer({ url, pageCount }: { url: string; pageCount: number }) {
 
 const DOCX_ZOOM_DEFAULT = 0.9
 
-function DocxViewer({ url }: { url: string }) {
+function DocxViewer({ url, zoom }: { url: string; zoom: number }) {
   const outerRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const styleRef = useRef<HTMLDivElement>(null)
-  const [zoom, setZoom] = useState(DOCX_ZOOM_DEFAULT)
-  const [zoomInput, setZoomInput] = useState(String(Math.round(DOCX_ZOOM_DEFAULT * 100)))
   const [loadError, setLoadError] = useState(false)
   const [loading, setLoading] = useState(true)
-
-  const applyZoom = (raw: string) => {
-    const n = parseInt(raw, 10)
-    if (!isNaN(n)) {
-      const clamped = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, n / 100))
-      setZoom(parseFloat(clamped.toFixed(2)))
-      setZoomInput(String(Math.round(clamped * 100)))
-    } else {
-      setZoomInput(String(Math.round(zoom * 100)))
-    }
-  }
 
   useEffect(() => {
     const body = bodyRef.current
@@ -285,12 +277,15 @@ function DocxViewer({ url }: { url: string }) {
       .then(blob => renderAsync(blob, body, style, {
         inWrapper: true,
         breakPages: true,
-        ignoreLastRenderedPageBreak: false,
+        ignoreLastRenderedPageBreak: true,
         experimental: true,
         renderHeaders: true,
         renderFooters: true,
       }))
       .then(() => {
+        body.querySelectorAll('section.docx').forEach((section) => {
+          if ((section as HTMLElement).innerText.trim() === '') section.remove()
+        })
         const override = document.createElement('style')
         override.textContent = `
           .docx-wrapper {
@@ -329,39 +324,6 @@ function DocxViewer({ url }: { url: string }) {
 
   return (
     <div ref={outerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-auto relative bg-[#E8E6DF]">
-      {/* Zoom controls */}
-      <div className="sticky top-4 z-10 flex justify-end pr-4 pointer-events-none">
-        <div className="inline-flex items-center gap-1 bg-white border border-border rounded-xl px-2 py-1.5 shadow-sm pointer-events-auto">
-          <button
-            onClick={() => {
-              const next = Math.max(ZOOM_MIN, parseFloat((zoom - ZOOM_STEP).toFixed(2)))
-              setZoom(next); setZoomInput(String(Math.round(next * 100)))
-            }}
-            className="w-6 h-6 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-[#F0EEE8] transition-colors text-base font-medium"
-            aria-label="Zoom out"
-          >−</button>
-          <input
-            type="text"
-            inputMode="numeric"
-            value={zoomInput}
-            onChange={e => setZoomInput(e.target.value)}
-            onBlur={() => applyZoom(zoomInput)}
-            onKeyDown={e => { if (e.key === 'Enter') { applyZoom(zoomInput); (e.target as HTMLInputElement).blur() } }}
-            className="text-xs font-medium text-ink w-9 text-center tabular-nums bg-transparent border-none outline-none focus:bg-[#F0EEE8] rounded focus:px-0.5 transition-colors"
-            aria-label="Zoom level"
-          />
-          <span className="text-xs text-muted">%</span>
-          <button
-            onClick={() => {
-              const next = Math.min(ZOOM_MAX, parseFloat((zoom + ZOOM_STEP).toFixed(2)))
-              setZoom(next); setZoomInput(String(Math.round(next * 100)))
-            }}
-            className="w-6 h-6 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-[#F0EEE8] transition-colors text-base font-medium"
-            aria-label="Zoom in"
-          >+</button>
-        </div>
-      </div>
-
       {loading && (
         <div className="flex flex-col items-center gap-6 py-8 px-8">
           {[0, 1].map(i => (
@@ -385,6 +347,8 @@ export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [project, setProject] = useState<ProjectDetail | null>(null)
   const [fileUrl, setFileUrl] = useState<string | null>(null)
+  const [processedFileUrl, setProcessedFileUrl] = useState<string | null>(null)
+  const [zoom, setZoom] = useState(ZOOM_DEFAULT)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
 
@@ -392,20 +356,47 @@ export default function ProjectDetailPage() {
     if (!id) return
     supabase
       .from('projects')
-      .select('id, title, original_file_name, original_file_path, services, guideline, status, page_count, created_at')
+      .select('id, title, original_file_name, original_file_path, processed_file_path, services, guideline, status, page_count, created_at')
       .eq('id', id)
       .single()
       .then(async ({ data, error }) => {
         if (error || !data) { setNotFound(true); setLoading(false); return }
         setProject(data as ProjectDetail)
-        if (data.original_file_path) {
-          const { data: signed } = await supabase.storage
-            .from('projects')
-            .createSignedUrl(data.original_file_path, 3600)
-          if (signed?.signedUrl) setFileUrl(signed.signedUrl)
-        }
+        setZoom(data.original_file_name.toLowerCase().endsWith('.docx') ? DOCX_ZOOM_DEFAULT : ZOOM_DEFAULT)
+        const [origSigned, procSigned] = await Promise.all([
+          data.original_file_path
+            ? supabase.storage.from('projects').createSignedUrl(data.original_file_path, 3600)
+            : Promise.resolve({ data: null }),
+          data.processed_file_path
+            ? supabase.storage.from('projects').createSignedUrl(data.processed_file_path, 3600)
+            : Promise.resolve({ data: null }),
+        ])
+        if (origSigned.data?.signedUrl) setFileUrl(origSigned.data.signedUrl)
+        if (procSigned.data?.signedUrl) setProcessedFileUrl(procSigned.data.signedUrl)
         setLoading(false)
       })
+  }, [id])
+
+  useEffect(() => {
+    if (!id) return
+    const channel = supabase
+      .channel(`project:${id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'projects', filter: `id=eq.${id}` },
+        async (payload) => {
+          const updated = payload.new as ProjectDetail
+          setProject((prev) => prev ? { ...prev, status: updated.status, processed_file_path: updated.processed_file_path } : prev)
+          if (updated.processed_file_path && updated.status === 'complete') {
+            const { data } = await supabase.storage
+              .from('projects')
+              .createSignedUrl(updated.processed_file_path, 3600)
+            if (data?.signedUrl) setProcessedFileUrl(data.signedUrl)
+          }
+        }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
   }, [id])
 
   if (loading) {
@@ -435,37 +426,59 @@ export default function ProjectDetailPage() {
   const isPdf = nameLower.endsWith('.pdf')
   const isDocx = nameLower.endsWith('.docx')
   const totalCost = project.services.reduce((sum, s) => sum + calcPrice(s, project.page_count), 0)
+  const canDownloadProcessed = !!processedFileUrl && project.status === 'complete'
+  const previewUrl = canDownloadProcessed ? processedFileUrl : fileUrl
 
   return (
     <div className="flex h-[calc(100vh-4rem)]">
-      {/* Back button — top left over file viewer */}
-      <div className="absolute top-[4rem] left-0 z-20 px-4 pt-4 pointer-events-none">
+      {/* Viewer top bar — back button · status badge · version badge · zoom controls */}
+      <div
+        className="absolute top-[4rem] left-0 right-0 md:right-80 z-20 flex items-center gap-3 px-4 pt-4 pb-10 pointer-events-none"
+        style={{ background: 'linear-gradient(to bottom, #F0EEE8 45%, transparent 100%)' }}
+      >
         <Link
           to={ROUTES.dashboard}
-          className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink transition-colors pointer-events-auto bg-white/80 backdrop-blur-sm border border-border rounded-xl px-3 py-2 shadow-sm"
+          className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink transition-colors pointer-events-auto bg-white/80 backdrop-blur-sm border border-border rounded-xl px-3 py-2 shadow-sm shrink-0"
         >
           <ArrowLeft size={14} />
           {t('project.backToDashboard')}
         </Link>
+
+        {processedFileUrl && (
+          <>
+            <span className="text-muted/40 select-none shrink-0">·</span>
+            <span className={`text-xs shrink-0 ${canDownloadProcessed ? 'text-forest' : 'text-muted'}`}>
+              {canDownloadProcessed ? t('project.viewingFinal') : t('project.viewingOriginal')}
+            </span>
+          </>
+        )}
+
+        <div className="flex-1" />
+
+        {previewUrl && (
+          <div className="pointer-events-auto shrink-0">
+            <ZoomControls zoom={zoom} setZoom={setZoom} />
+          </div>
+        )}
       </div>
 
       {/* File viewer */}
       <div className="flex-1 min-h-0 bg-[#E8E6DF] flex flex-col">
-        {fileUrl && isPdf ? (
-          <PdfViewer url={fileUrl} pageCount={project.page_count} />
-        ) : fileUrl && isDocx ? (
-          <DocxViewer url={fileUrl} />
+        {previewUrl && isPdf ? (
+          <PdfViewer url={previewUrl} pageCount={project.page_count} zoom={zoom} />
+        ) : previewUrl && isDocx ? (
+          <DocxViewer url={previewUrl} zoom={zoom} />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8">
             <div className="w-14 h-14 rounded-2xl bg-white border border-border flex items-center justify-center">
               <FileText size={24} className="text-muted" strokeWidth={1.5} />
             </div>
             <p className="text-sm text-muted max-w-xs">{t('project.noPreview')}</p>
-            {fileUrl && (
+            {(canDownloadProcessed || fileUrl) && (
               <Button asChild variant="outline">
-                <a href={fileUrl} download={project.original_file_name}>
+                <a href={(canDownloadProcessed ? processedFileUrl : fileUrl)!} download={project.original_file_name}>
                   <Download size={14} />
-                  {t('project.downloadFile')}
+                  {canDownloadProcessed ? t('project.downloadFinalFile') : t('project.downloadFile')}
                 </a>
               </Button>
             )}
@@ -514,14 +527,22 @@ export default function ProjectDetailPage() {
           </DetailRow>
         </div>
 
-        {fileUrl && (
-          <div className="px-6 pb-6 mt-auto shrink-0">
-            <Button asChild variant="outline" className="w-full">
-              <a href={fileUrl} download={project.original_file_name}>
+        {(canDownloadProcessed || fileUrl) && (
+          <div className="px-6 pb-6 mt-auto shrink-0 flex flex-col gap-2">
+            <Button asChild className="w-full">
+              <a href={(canDownloadProcessed ? processedFileUrl : fileUrl)!} download={project.original_file_name}>
                 <Download size={14} />
-                {t('project.downloadFile')}
+                {canDownloadProcessed ? t('project.downloadFinalFile') : t('project.downloadFile')}
               </a>
             </Button>
+            {canDownloadProcessed && fileUrl && (
+              <Button asChild variant="tertiary" className="w-full">
+                <a href={fileUrl} download={project.original_file_name}>
+                  <Download size={14} />
+                  {t('project.downloadOriginalFile')}
+                </a>
+              </Button>
+            )}
           </div>
         )}
       </div>

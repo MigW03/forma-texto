@@ -186,7 +186,11 @@
     "pageCount": "Pages",
     "cost": "Amount",
     "noPreview": "Preview not available for this file type.",
+    "viewingFinal": "Viewing processed file",
+    "viewingOriginal": "Viewing original file",
     "downloadFile": "Download file",
+    "downloadFinalFile": "Download final file",
+    "downloadOriginalFile": "Download original file",
     "notFound": "Project not found."
   },
   "checkout": {

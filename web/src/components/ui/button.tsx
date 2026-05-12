@@ -11,6 +11,7 @@ const buttonVariants = cva(
         default: 'bg-ink text-sand rounded-xl hover:bg-ink/90',
         cta: 'bg-forest text-white rounded-xl hover:bg-forest-mid',
         outline: 'border border-border bg-white text-ink rounded-xl hover:border-forest-mid/40 hover:bg-sand',
+        tertiary: 'text-muted hover:text-ink hover:bg-sand rounded-xl',
         ghost: 'text-muted hover:text-ink rounded-lg',
         link: 'text-ink underline-offset-2 hover:underline',
       },

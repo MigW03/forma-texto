@@ -94,8 +94,8 @@
   - `EmptyState` component in `DashboardPage.tsx`
 - [x] New service button
   - Link to `/get-started`, clears `sessionStorage` on click
-- [ ] Real-time / polling status updates (currently requires page refresh)
-  - Supabase Realtime: `supabase.channel(...).on('postgres_changes', ...)` subscription on `projects` table
+- [x] Real-time status updates on dashboard
+  - Supabase Realtime `postgres_changes` on `projects` filtered by `user_id=eq.{id}`; badge updates in place on `UPDATE` without a page refresh.
 
 ---
 
@@ -105,15 +105,18 @@
   - `pdfjs-dist` with `IntersectionObserver` for lazy render, `ResizeObserver` for responsive width, DPR-aware canvas
 - [x] PDF text layer (selectable text)
   - `pdfjsLib.TextLayer`, styled via `.pdf-text-layer` CSS in `index.css`
-- [x] DOCX viewer with zoom controls
-  - `docx-preview` `renderAsync()`, custom CSS injected for page separators and numbering
+- [x] DOCX viewer with zoom controls and page separation
+  - `docx-preview` `renderAsync()`, custom CSS injected for page separators and numbering. `ignoreLastRenderedPageBreak: true` fixes pages merging; post-render pass removes empty trailing sections (ghost page bug).
 - [x] Project metadata panel (service, guideline, page count, cost, date)
   - Right-side panel, reads from `supabase.from('projects').select(...).eq('id', id).single()`
-- [ ] Download processed file button
-  - The existing download button in `ProjectDetailPage.tsx` was built for the original file but should have targeted the processed output from the start. Wire it to `project.processed_file_path` using `supabase.storage.from('projects').createSignedUrl(path, 3600)`, visible only when `status === 'ready' || status === 'delivered'`.
-  - Explore a two-button approach: one for the processed file (primary CTA) and one for the original upload (secondary), so users can always retrieve what they sent in regardless of project status.
-- [ ] Real-time status updates (no polling or Supabase Realtime subscription)
-  - Supabase Realtime subscription on the specific project row; update local state on `status` change
+- [x] Download processed file button
+  - Two-button layout in the details panel: primary "Baixar Arquivo Final" downloads `processed_file_path` via signed URL — visible only when `project.status === 'complete'`; tertiary "Baixar Arquivo Original" downloads the original file and appears below it. Both signed URLs fetched in parallel on load. Tertiary variant added to `Button` component (`text-muted hover:text-ink hover:bg-sand`, no border).
+- [x] Viewer top bar with unified controls
+  - Shared absolute top bar over the file viewer: white-pill back button, inline plain-text file version label ("Visualizando arquivo final/original", green when processed), spacer, zoom controls (right). Sand gradient fades downward behind the bar. Gradient extends `right-0 md:right-80` to avoid hard cutoff on mobile. Zoom state lifted to `ProjectDetailPage` and passed as prop to both `PdfViewer` and `DocxViewer`; `ZoomControls` extracted as a standalone component. Status badge remains in the details panel.
+- [x] Processed file shown in viewer
+  - `previewUrl` prefers `processedFileUrl` when `status === 'complete'`, falls back to original. Viewer re-renders automatically when processed file is available.
+- [ ] *(low priority)* Real-time status badge update on project detail page
+  - Subscription is wired (`channel project:${id}`, `UPDATE` on `projects` filtered by `id=eq.{id}`) but badge does not update live — likely Supabase Realtime dropping the filter due to missing index or RLS policy on `id`. Dashboard real-time works fine and covers the common case. revisit if the "Baixar Arquivo Final" button needs to appear without a page refresh.
 - [ ] Show processing progress or estimated time
   - UI-only: status-based messaging, or backend-driven `progress` field added to `projects` table
 
@@ -134,10 +137,10 @@
   - Backend reads file from Supabase Storage, runs multi-model AI chain, writes output file back
 - [ ] Project status updates written back to DB (`pending` → `processing` → `ready`)
   - Backend calls `supabase.from('projects').update({ status })` at each stage
-- [ ] Processed file written to `processed_file_path` in Supabase Storage
-  - Backend uploads to `{userId}/{projectId}/processed/{filename}`, updates `projects.processed_file_path`
-- [ ] Webhook or job queue to trigger processing after order created
-  - Options: Supabase DB webhook → backend endpoint, or a job queue (BullMQ, etc.) triggered on project insert
+- [x] Processed file written to `processed_file_path` in Supabase Storage
+  - n8n workflow uploads the processed `.docx` to `projects` bucket and updates `projects.processed_file_path`; sets `status` to `complete` when done.
+- [x] Webhook or job queue to trigger processing after order created
+  - n8n handles end-to-end: triggered via webhook on project insert, runs the AI pipeline, writes output back to Storage, updates DB.
 - [ ] PDF formatting function
   - Read uploaded PDF, apply academic formatting rules (margins, fonts, heading hierarchy, spacing) according to selected guideline (ABNT, APA, etc.), write formatted PDF back to Storage
 - [ ] PDF correction — apply corrected text to existing PDF
@@ -190,8 +193,8 @@
 
 ## Pre-Deploy Checklist
 
-- [ ] Processed file storage + download button
-  - Backend AI pipeline must upload the processed file to Supabase Storage at `{userId}/{projectId}/processed/{filename}` and update `projects.processed_file_path`. Frontend side: `ProjectDetailPage.tsx` already has a download button for the original file using a signed URL — replicate the same pattern for `processed_file_path` and show it only when `status === 'ready' || status === 'delivered'`. Both the backend write and the frontend button must be done together for the feature to work end-to-end.
+- [x] Processed file storage + download button
+  - n8n uploads processed file to Storage and stamps `processed_file_path` + `status = complete`. Frontend fetches both signed URLs on load; "Baixar Arquivo Final" (primary) shows only when `status === 'complete'`, "Baixar Arquivo Original" (tertiary) always available.
 
 - [ ] File auto-deletion cron job
   - `projects.delete_files_at` is set (30 days after submission) but nothing acts on it. Before deploying, wire up a scheduled job that: queries `projects` where `delete_files_at < now()` and `files_deleted_at is null`, deletes both `original_file_path` and `processed_file_path` from Supabase Storage, then stamps `files_deleted_at`. Options: pg_cron inside Supabase, a scheduled Supabase Edge Function, or an n8n scheduled workflow.
