@@ -106,7 +106,7 @@ function PaymentForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      <PaymentElement options={{ layout: 'tabs', paymentMethodOrder: ['card', 'pix', 'boleto'] }} />
+      <PaymentElement options={{ layout: 'tabs', paymentMethodOrder: ['card'] }} />
 
       {error && (
         <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
@@ -198,6 +198,7 @@ interface CheckoutState {
   guideline?: string
   fileName?: string | null
   title?: string
+  referencePages?: number[]
 }
 
 type IntentResponse =
@@ -277,15 +278,27 @@ export default function CheckoutPage() {
       let storagePath: string | null = null
       const fileName = rawFile?.name ?? state?.fileName ?? null
 
-      // 1. Prepare the file to upload — slice to selected pages only
+      console.log('[checkout] rawFile:', rawFile ? `${rawFile.name} (${rawFile.size} bytes)` : 'NULL')
+      console.log('[checkout] selectedPages:', selectedPages)
+      console.log('[checkout] referencePages:', state?.referencePages)
+
+      // 1. Prepare the file to upload — slice to selected pages.
+      //    PDF: exclude reference pages (they go exclusively into the references subfolder).
+      //    DOCX: keep all selected pages in the main file — sliceDocx page detection diverges
+      //    from docx-preview, so splitting mid-document produces unreliable output.
+      const referencePages = state?.referencePages ?? []
+      const fileName2 = rawFile?.name.toLowerCase() ?? ''
+      const isDocxFile = fileName2.endsWith('.docx')
+      const isPdfFile = fileName2.endsWith('.pdf')
+      const mainPages = isPdfFile
+        ? selectedPages.filter(p => !referencePages.includes(p))
+        : selectedPages
       let fileToUpload: File | null = rawFile
-      if (rawFile && selectedPages.length > 0) {
-        const name = rawFile.name.toLowerCase()
-        const isPdf = name.endsWith('.pdf')
-        const isDocx = name.endsWith('.docx')
+      if (rawFile && mainPages.length > 0) {
         try {
-          if (isPdf) fileToUpload = await slicePdf(rawFile, selectedPages)
-          else if (isDocx) fileToUpload = await sliceDocx(rawFile, selectedPages)
+          if (isPdfFile) fileToUpload = await slicePdf(rawFile, mainPages)
+          else if (isDocxFile) fileToUpload = await sliceDocx(rawFile, mainPages)
+          console.log('[checkout] sliced main file:', fileToUpload ? `${fileToUpload.name} (${fileToUpload.size} bytes)` : 'NULL')
         } catch (err) {
           console.error('File slicing failed, uploading full file:', err)
         }
@@ -313,10 +326,46 @@ export default function CheckoutPage() {
         }
       }
 
-      // 3. Notify backend webhook (fire-and-forget)
+      // 3. Slice and upload reference pages (if provided)
+      let referencesStoragePath: string | null = null
+      if (rawFile && referencePages.length > 0) {
+        const name = rawFile.name.toLowerCase()
+        const isPdf = name.endsWith('.pdf')
+        const isDocx = name.endsWith('.docx')
+        try {
+          let refFile: File | null = null
+          if (isPdf) refFile = await slicePdf(rawFile, referencePages)
+          else if (isDocx) refFile = await sliceDocx(rawFile, referencePages)
+          console.log('[checkout] sliced ref file:', refFile ? `${refFile.name} (${refFile.size} bytes)` : 'NULL')
+
+          if (refFile) {
+            const isRefDocx = refFile.name.toLowerCase().endsWith('.docx')
+            const uploadRefFile = isRefDocx
+              ? new File([refFile], refFile.name.replace(/\.docx$/i, '.zip'), { type: 'application/zip' })
+              : refFile
+            const safeRefName = uploadRefFile.name
+              .normalize('NFD')
+              .replace(/[̀-ͯ]/g, '')
+              .replace(/\s+/g, '_')
+            const refPath = `${user.id}/${projectId}/original/references/${safeRefName}`
+            const { error: refUploadError } = await supabase.storage
+              .from('projects')
+              .upload(refPath, uploadRefFile, { upsert: false })
+            if (!refUploadError) {
+              referencesStoragePath = refPath
+            } else {
+              console.error('References upload failed:', refUploadError)
+            }
+          }
+        } catch (err) {
+          console.error('References slicing failed:', err)
+        }
+      }
+
+      // 4. Notify backend webhook (fire-and-forget)
       fetch(`${API_URL}/api/checkout/notify`, { method: 'POST' }).catch(() => {})
 
-      // 4. Create project record
+      // 5. Create project record
       const deleteAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
       const { error: projectError } = await supabase.from('projects').insert({
         id: projectId,
@@ -329,12 +378,19 @@ export default function CheckoutPage() {
         status: 'pending',
         original_file_name: fileName,
         original_file_path: storagePath,
+        references_pages: referencePages.length > 0 ? referencePages : null,
+        references_file_path: referencesStoragePath,
         delete_files_at: deleteAt,
         title: state?.title?.trim() || fileName || null,
       })
 
+      console.log('[checkout] storagePath:', storagePath)
+      console.log('[checkout] referencesStoragePath:', referencesStoragePath)
+
       if (projectError) {
         console.error('Project creation failed:', projectError)
+      } else {
+        console.log('[checkout] project created:', projectId)
       }
     } catch (err) {
       console.error('Post-payment error:', err)

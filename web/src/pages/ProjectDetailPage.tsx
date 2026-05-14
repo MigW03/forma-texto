@@ -23,10 +23,13 @@ interface ProjectDetail {
   original_file_name: string
   original_file_path: string | null
   processed_file_path: string | null
+  references_pages: number[] | null
+  references_file_path: string | null
   services: ServiceKey[]
   guideline: GuidelineId | null
   status: string
   page_count: number
+  selected_pages: number[] | null
   created_at: string
 }
 
@@ -57,10 +60,12 @@ function PdfPage({
   doc,
   pageNum,
   containerWidth,
+  label,
 }: {
   doc: pdfjsLib.PDFDocumentProxy
   pageNum: number
   containerWidth: number
+  label?: number
 }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -137,7 +142,7 @@ function PdfPage({
 
   return (
     <div ref={wrapRef} style={{ minHeight: height }}>
-      <p className="text-sm font-medium text-muted/80 mb-1.5 pl-0.5">{pageNum}</p>
+      <p className="text-sm font-medium text-muted/80 mb-1.5 pl-0.5">{label ?? pageNum}</p>
       <div className="relative bg-white rounded-xl shadow-sm overflow-hidden">
         {!rendered && (
           <div
@@ -208,9 +213,23 @@ function ZoomControls({ zoom, setZoom }: { zoom: number; setZoom: (z: number) =>
 
 // ── PDF viewer ───────────────────────────────────────────────────────────────
 
-function PdfViewer({ url, pageCount, zoom }: { url: string; pageCount: number; zoom: number }) {
+function PdfViewer({
+  url,
+  selectedPages,
+  referencesPages,
+  zoom,
+  referencesUrl,
+}: {
+  url: string
+  selectedPages: number[]
+  referencesPages: number[]
+  pageCount: number
+  zoom: number
+  referencesUrl?: string | null
+}) {
   const outerRef = useRef<HTMLDivElement>(null)
   const [doc, setDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null)
+  const [refsDoc, setRefsDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null)
   const [containerWidth, setContainerWidth] = useState(0)
   const [loadError, setLoadError] = useState(false)
 
@@ -235,20 +254,51 @@ function PdfViewer({ url, pageCount, zoom }: { url: string; pageCount: number; z
     return () => { pdfDoc?.destroy() }
   }, [url])
 
+  useEffect(() => {
+    if (!referencesUrl) return
+    let refDoc: pdfjsLib.PDFDocumentProxy | null = null
+    pdfjsLib.getDocument({ url: referencesUrl }).promise
+      .then((d) => { refDoc = d; setRefsDoc(d) })
+      .catch(() => {})
+    return () => { refDoc?.destroy() }
+  }, [referencesUrl])
+
   if (loadError) return null
 
   const pageWidth = containerWidth * zoom
 
+  // Build index maps: original page number → page number within each file
+  const refPagesSet = new Set(referencesPages)
+  const mainFilePages = selectedPages.filter(p => !refPagesSet.has(p))
+  const mainPageMap = new Map(mainFilePages.map((p, i) => [p, i + 1]))
+  const refPageMap = new Map(referencesPages.map((p, i) => [p, i + 1]))
+
+  // Display order = selectedPages sorted. Falls back to sequential 1..pageCount for old records without selected_pages.
+  const displayOrder = selectedPages.length > 0
+    ? [...selectedPages].sort((a, b) => a - b)
+    : Array.from({ length: pageCount }, (_, i) => i + 1)
+
   return (
     <div ref={outerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-auto relative">
-      {/* Pages */}
       <div className="flex flex-col items-center gap-6 py-4 pb-8 min-w-fit px-8">
-        {doc && pageWidth > 0
-          ? Array.from({ length: pageCount }, (_, i) => (
-              <PdfPage key={i + 1} doc={doc} pageNum={i + 1} containerWidth={pageWidth} />
-            ))
-          : Array.from({ length: Math.min(pageCount, 3) }, (_, i) => (
-              <div key={i} className="bg-white rounded-xl shadow-sm animate-pulse" style={{ width: pageWidth || 500, height: (pageWidth || 500) * 1.414 }} />
+        {pageWidth > 0
+          ? displayOrder.map((origPage, displayIdx) => {
+              const isRef = refPagesSet.has(origPage)
+              const docToUse = isRef ? refsDoc : doc
+              const pageNum = isRef ? refPageMap.get(origPage)! : mainPageMap.get(origPage)!
+              if (!docToUse) {
+                return (
+                  <div key={origPage} className="bg-white rounded-xl shadow-sm animate-pulse"
+                    style={{ width: pageWidth, height: pageWidth * 1.414 }} />
+                )
+              }
+              return (
+                <PdfPage key={origPage} doc={docToUse} pageNum={pageNum} containerWidth={pageWidth} label={displayIdx + 1} />
+              )
+            })
+          : Array.from({ length: Math.min(selectedPages.length, 3) }, (_, i) => (
+              <div key={i} className="bg-white rounded-xl shadow-sm animate-pulse"
+                style={{ width: 500, height: 500 * 1.414 }} />
             ))
         }
       </div>
@@ -259,6 +309,43 @@ function PdfViewer({ url, pageCount, zoom }: { url: string; pageCount: number; z
 // ── DOCX viewer ──────────────────────────────────────────────────────────────
 
 const DOCX_ZOOM_DEFAULT = 0.9
+
+const DOCX_RENDER_OPTIONS = {
+  inWrapper: true,
+  breakPages: true,
+  ignoreLastRenderedPageBreak: true,
+  experimental: true,
+  renderHeaders: true,
+  renderFooters: true,
+}
+
+const DOCX_PAGE_STYLES = `
+  .docx-wrapper {
+    counter-reset: docx-page;
+    background: #E8E6DF !important;
+    padding: 32px !important;
+    padding-bottom: 8px !important;
+  }
+  .docx-wrapper > section.docx {
+    counter-increment: docx-page;
+    border-radius: 12px !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.10), 0 1px 2px rgba(0,0,0,0.06) !important;
+    margin-top: 22px !important;
+    margin-bottom: 24px !important;
+    position: relative !important;
+    overflow: visible !important;
+  }
+  .docx-wrapper > section.docx::before {
+    content: counter(docx-page);
+    position: absolute;
+    top: -20px;
+    left: 2px;
+    font-size: 14px;
+    font-weight: 500;
+    color: rgba(26, 26, 24, 0.6);
+    line-height: 1.2;
+  }
+`
 
 function DocxViewer({ url, zoom }: { url: string; zoom: number }) {
   const outerRef = useRef<HTMLDivElement>(null)
@@ -274,46 +361,13 @@ function DocxViewer({ url, zoom }: { url: string; zoom: number }) {
 
     fetch(url)
       .then(r => r.blob())
-      .then(blob => renderAsync(blob, body, style, {
-        inWrapper: true,
-        breakPages: true,
-        ignoreLastRenderedPageBreak: true,
-        experimental: true,
-        renderHeaders: true,
-        renderFooters: true,
-      }))
+      .then(blob => renderAsync(blob, body, style, DOCX_RENDER_OPTIONS))
       .then(() => {
         body.querySelectorAll('section.docx').forEach((section) => {
           if ((section as HTMLElement).innerText.trim() === '') section.remove()
         })
         const override = document.createElement('style')
-        override.textContent = `
-          .docx-wrapper {
-            counter-reset: docx-page;
-            background: #E8E6DF !important;
-            padding: 32px !important;
-            padding-bottom: 8px !important;
-          }
-          .docx-wrapper > section.docx {
-            counter-increment: docx-page;
-            border-radius: 12px !important;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.10), 0 1px 2px rgba(0,0,0,0.06) !important;
-            margin-top: 22px !important;
-            margin-bottom: 24px !important;
-            position: relative !important;
-            overflow: visible !important;
-          }
-          .docx-wrapper > section.docx::before {
-            content: counter(docx-page);
-            position: absolute;
-            top: -20px;
-            left: 2px;
-            font-size: 14px;
-            font-weight: 500;
-            color: rgba(26, 26, 24, 0.6);
-            line-height: 1.2;
-          }
-        `
+        override.textContent = DOCX_PAGE_STYLES
         style.appendChild(override)
         setLoading(false)
       })
@@ -331,7 +385,6 @@ function DocxViewer({ url, zoom }: { url: string; zoom: number }) {
           ))}
         </div>
       )}
-
       <div style={{ zoom, display: loading ? 'none' : undefined }}>
         <div ref={styleRef} />
         <div ref={bodyRef} />
@@ -342,12 +395,14 @@ function DocxViewer({ url, zoom }: { url: string; zoom: number }) {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
+
 export default function ProjectDetailPage() {
   const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const [project, setProject] = useState<ProjectDetail | null>(null)
   const [fileUrl, setFileUrl] = useState<string | null>(null)
   const [processedFileUrl, setProcessedFileUrl] = useState<string | null>(null)
+  const [referencesFileUrl, setReferencesFileUrl] = useState<string | null>(null)
   const [zoom, setZoom] = useState(ZOOM_DEFAULT)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
@@ -356,23 +411,27 @@ export default function ProjectDetailPage() {
     if (!id) return
     supabase
       .from('projects')
-      .select('id, title, original_file_name, original_file_path, processed_file_path, services, guideline, status, page_count, created_at')
+      .select('id, title, original_file_name, original_file_path, processed_file_path, references_file_path, references_pages, selected_pages, services, guideline, status, page_count, created_at')
       .eq('id', id)
       .single()
       .then(async ({ data, error }) => {
         if (error || !data) { setNotFound(true); setLoading(false); return }
         setProject(data as ProjectDetail)
         setZoom(data.original_file_name.toLowerCase().endsWith('.docx') ? DOCX_ZOOM_DEFAULT : ZOOM_DEFAULT)
-        const [origSigned, procSigned] = await Promise.all([
+        const [origSigned, procSigned, refSigned] = await Promise.all([
           data.original_file_path
             ? supabase.storage.from('projects').createSignedUrl(data.original_file_path, 3600)
             : Promise.resolve({ data: null }),
           data.processed_file_path
             ? supabase.storage.from('projects').createSignedUrl(data.processed_file_path, 3600)
             : Promise.resolve({ data: null }),
+          data.references_file_path
+            ? supabase.storage.from('projects').createSignedUrl(data.references_file_path, 3600)
+            : Promise.resolve({ data: null }),
         ])
         if (origSigned.data?.signedUrl) setFileUrl(origSigned.data.signedUrl)
         if (procSigned.data?.signedUrl) setProcessedFileUrl(procSigned.data.signedUrl)
+        if (refSigned.data?.signedUrl) setReferencesFileUrl(refSigned.data.signedUrl)
         setLoading(false)
       })
   }, [id])
@@ -428,6 +487,8 @@ export default function ProjectDetailPage() {
   const totalCost = project.services.reduce((sum, s) => sum + calcPrice(s, project.page_count), 0)
   const canDownloadProcessed = !!processedFileUrl && project.status === 'complete'
   const previewUrl = canDownloadProcessed ? processedFileUrl : fileUrl
+  const selectedPages = project.selected_pages ?? []
+  const referencesPages = project.references_pages ?? []
 
   return (
     <div className="flex h-[calc(100vh-4rem)]">
@@ -465,7 +526,14 @@ export default function ProjectDetailPage() {
       {/* File viewer */}
       <div className="flex-1 min-h-0 bg-[#E8E6DF] flex flex-col">
         {previewUrl && isPdf ? (
-          <PdfViewer url={previewUrl} pageCount={project.page_count} zoom={zoom} />
+          <PdfViewer
+            url={previewUrl}
+            selectedPages={selectedPages}
+            referencesPages={referencesPages}
+            pageCount={project.page_count}
+            zoom={zoom}
+            referencesUrl={referencesFileUrl}
+          />
         ) : previewUrl && isDocx ? (
           <DocxViewer url={previewUrl} zoom={zoom} />
         ) : (

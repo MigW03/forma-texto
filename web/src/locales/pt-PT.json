@@ -191,7 +191,20 @@
     "downloadFile": "Transferir ficheiro",
     "downloadFinalFile": "Transferir ficheiro final",
     "downloadOriginalFile": "Transferir ficheiro original",
-    "notFound": "Projeto não encontrado."
+    "notFound": "Projeto não encontrado.",
+    "references": {
+      "title": "Referências",
+      "hasSection": "Este documento possui uma secção de referências",
+      "pagesLabel": "Páginas das referências",
+      "pagesPlaceholder": "Ex: 45-60 ou 45, 46, 47",
+      "disclaimer": "As referências não serão revistas gramaticalmente. A secção será apenas formatada conforme as normas. As citações no corpo do texto continuam a ser corrigidas.",
+      "save": "Guardar",
+      "saving": "A guardar…",
+      "saved": "Guardado",
+      "errorParse": "Formato inválido. Use: 45-60 ou 45, 46, 47",
+      "noValidPages": "Nenhuma das páginas informadas está selecionada para processamento.",
+      "partialWarning": "As páginas {{pages}} não estão selecionadas para processamento e serão excluídas das referências."
+    }
   },
   "checkout": {
     "title": "Pagamento",
@@ -217,6 +230,13 @@
     "noDocument": "Nenhum documento encontrado. Volte e faça o carregamento.",
     "backToProjects": "Voltar para projetos",
     "servicesLabel": "Serviços",
-    "guidelineLabel": "Norma"
+    "guidelineLabel": "Norma",
+    "zoomIn": "Aumentar zoom",
+    "zoomOut": "Diminuir zoom",
+    "expandPage": "Visualizar página {{page}}",
+    "prevPage": "Anterior",
+    "nextPage": "Próxima",
+    "select": "Selecionar página",
+    "selected": "Selecionada"
   }
 }

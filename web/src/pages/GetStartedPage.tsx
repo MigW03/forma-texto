@@ -22,9 +22,13 @@ function getExtension(name: string): string {
 async function getPdfPageCount(file: File): Promise<number | null> {
   try {
     const buffer = await file.arrayBuffer()
-    const text = new TextDecoder('latin1').decode(new Uint8Array(buffer))
-    const matches = [...text.matchAll(/\/Count\s+(\d+)/g)]
-    if (matches.length > 0) return parseInt(matches[matches.length - 1][1])
+    const pdfjsLib = await import('pdfjs-dist')
+    const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default
+    pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
+    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise
+    const count = doc.numPages
+    doc.destroy()
+    return count
   } catch { /* ignore */ }
   return null
 }

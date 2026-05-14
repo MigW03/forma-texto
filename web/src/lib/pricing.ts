@@ -26,5 +26,5 @@ export function trialDiscountBRL(services: ServiceKey[]): number {
 }
 
 export function formatBRL(amount: number): string {
-  return `R$${amount.toFixed(0)}`
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount)
 }

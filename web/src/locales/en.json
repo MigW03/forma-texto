@@ -191,7 +191,20 @@
     "downloadFile": "Download file",
     "downloadFinalFile": "Download final file",
     "downloadOriginalFile": "Download original file",
-    "notFound": "Project not found."
+    "notFound": "Project not found.",
+    "references": {
+      "title": "References",
+      "hasSection": "This document has a references section",
+      "pagesLabel": "References pages",
+      "pagesPlaceholder": "e.g. 45-60 or 45, 46, 47",
+      "disclaimer": "References will not be proofread. Only the references section formatting will be adjusted. In-text citations will still be corrected.",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Saved",
+      "errorParse": "Invalid format. Use: 45-60 or 45, 46, 47",
+      "noValidPages": "None of the reference pages you entered are selected for processing.",
+      "partialWarning": "Pages {{pages}} are not selected for processing and will be excluded from references."
+    }
   },
   "checkout": {
     "title": "Checkout",
@@ -217,6 +230,13 @@
     "noDocument": "No document found. Please go back and upload one.",
     "backToProjects": "Back to projects",
     "servicesLabel": "Services",
-    "guidelineLabel": "Guideline"
+    "guidelineLabel": "Guideline",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "expandPage": "Preview page {{page}}",
+    "prevPage": "Previous",
+    "nextPage": "Next",
+    "select": "Select page",
+    "selected": "Selected"
   }
 }

@@ -2,8 +2,6 @@
 
 ---
 
----
-
 ## Auth
 
 - [x] Sign up (email + password)
@@ -34,7 +32,7 @@
 - [x] File type validation (.doc warning, invalid type error)
   - Extension + MIME type check in `GetStartedPage.tsx`
 - [x] Automatic page count detection (PDF + DOCX)
-  - PDF: regex on raw bytes (`/Count`). DOCX: `fflate` unzip → parse `docProps/app.xml`, fallback to `docx-preview` render measurement
+  - PDF: `pdfjs-dist` `getDocument().numPages` (replaced old regex approach that picked up intermediate `/Count` entries from nested page tree nodes). DOCX: `fflate` unzip → parse `docProps/app.xml`, fallback to `docx-preview` render measurement
 - [x] Project title field
   - Local `useState<string>`, auto-filled from filename, persisted to `sessionStorage`
 - [x] Terms of service agreement checkbox
@@ -42,7 +40,7 @@
 - [x] Multi-step session state preserved across pages
   - `sessionStorage` (key `SESSION_KEY`) + `useNavigate` with `location.state`
 - [x] Page selection (choose which pages to process)
-  - `PageSelectionPage.tsx` — renders doc preview, user picks pages, passes `selectedPages: number[]` to checkout
+  - `PageSelectionPage.tsx` — renders doc preview, user picks pages, passes `selectedPages: number[]` to checkout. Service cards show name + price on the top row; pricing formula (R$/pg · mín.) on the second row, right-aligned.
 - [x] URL / link input — Google Docs fetch implemented
   - `GET /api/documents/fetch?url=` in `server/src/routes/documents.ts` extracts the doc ID, hits the Google export endpoint, and returns the `.docx` binary with `X-Filename` header. `GetStartedPage.tsx` fetches it on submit, creates a `File` object, runs page count detection, and navigates to `PageSelectionPage` with the file in state — identical to a manual upload from that point on. Loading state shown while fetching. Dropbox and other providers not yet supported.
 
@@ -64,16 +62,19 @@
   - `supabase.storage.from('projects').upload(path, file)`, path: `{userId}/{projectId}/original/{filename}`
 - [x] File sliced to selected pages before upload
   - PDF: `slicePdf()` via `pdf-lib`. DOCX: `sliceDocx()` via `fflate` XML manipulation
-- [ ] Always display cents in price values
-  - `formatBRL()` in `lib/pricing.ts` must always show two decimal places (e.g. R$&nbsp;1,00 not R$&nbsp;1). Audit every place a price is rendered — checkout summary, trial discount line, order total, pricing cards in `GetStartedPage.tsx`, and `Pricing.tsx` on the landing page — and ensure all use `formatBRL()` consistently with cents visible.
+- [x] Always display cents in price values
+  - `formatBRL()` in `lib/pricing.ts` now uses `Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })` — always shows two decimal places (e.g. R$&nbsp;1,00). All price display sites use `formatBRL()`: checkout summary, trial discount line, order total, `GetStartedPage.tsx` pricing cards, `PageSelectionPage.tsx`, and `ProjectDetailPage.tsx`.
+
+- [ ] Migrate to Checkout Sessions API (deferred)
+  - Stripe recommends Checkout Sessions + PaymentElement over Payment Intents for new integrations. Would simplify PIX and future local payment methods. Not worth the rewrite now — revisit if PIX setup on the live account proves painful. Server changes in `checkout.ts`; frontend changes in `CheckoutPage.tsx` (swap `Elements`+`PaymentElement` for `CheckoutElementsProvider` from `@stripe/react-stripe-js/checkout`, confirm via `checkout.confirm`).
 
 - [ ] PIX payment support
-  - Add `payment_method_types: ['card', 'pix']` to the `stripe.paymentIntents.create()` call in `server/src/routes/checkout.ts` so Stripe activates PIX on the intent. On the frontend, `PaymentElement` already lists PIX in `paymentMethodOrder` — confirm it renders correctly. PIX is async: the user scans a QR code and Stripe redirects back with `redirect_status`; `CheckoutPage.tsx` already handles `redirect_status` in the URL, but verify the `payment_intent.succeeded` webhook fires and the order is recorded correctly for PIX-originated payments.
+  - PIX removed from code (both `payment_method_types` on the server and `paymentMethodOrder` on the frontend) — needs to be enabled on the live Stripe account first (Settings → Payment methods), then re-add `payment_method_types: ['card', 'pix']` in `checkout.ts` and `'pix'` to `paymentMethodOrder` in `CheckoutPage.tsx`.
 - [ ] Comprehensive free trial security test
   - Verify the trial cannot be abused: test that a user who selects multiple pages cannot receive the free trial (backend must reject `pageCount > 1` on `complete-free-order`); test that a user cannot trigger a second free trial after the first is consumed (`trial_used_at` is stamped and re-checked server-side on every request); test that manipulating the client-side `isFree` or `isTrial` flags in the request body has no effect since eligibility is always re-verified in `checkout.ts`; test that creating a new account to bypass `trial_used_at` does not give a second trial if the same payment method or identity is reused.
 
-- [ ] Remove boleto from Stripe `paymentMethodOrder` (currently still in code)
-  - `CheckoutPage.tsx` line 109 — remove `'boleto'` from array
+- [x] Remove boleto from Stripe `paymentMethodOrder`
+  - Removed `'boleto'` from `paymentMethodOrder` in `CheckoutPage.tsx`. Now `['card', 'pix']` only.
 
 ---
 
@@ -104,6 +105,8 @@
   - `docx-preview` `renderAsync()`, custom CSS injected for page separators and numbering. `ignoreLastRenderedPageBreak: true` fixes pages merging; post-render pass removes empty trailing sections (ghost page bug).
 - [x] Project metadata panel (service, guideline, page count, cost, date)
   - Right-side panel, reads from `supabase.from('projects').select(...).eq('id', id).single()`
+- [x] References section in project creation flow (PageSelectionPage)
+  - Checkbox "Este documento possui uma seção de referências" (checked by default) + page range input in the right panel of `PageSelectionPage.tsx`. On checkout success: slices reference pages from the original file (PDF via `slicePdf`, DOCX via `sliceDocx`), uploads to `{userId}/{projectId}/original/references/`, stamps `references_pages` (int4[]) and `references_file_path` (text) on the project row at insert. Both columns added to `projects` table in `supabase_tables.md`. Final download merge (body + references) pending.
 - [x] Download processed file button
   - Two-button layout in the details panel: primary "Baixar Arquivo Final" downloads `processed_file_path` via signed URL — visible only when `project.status === 'complete'`; tertiary "Baixar Arquivo Original" downloads the original file and appears below it. Both signed URLs fetched in parallel on load. Tertiary variant added to `Button` component (`text-muted hover:text-ink hover:bg-sand`, no border).
 - [x] Viewer top bar with unified controls
@@ -142,8 +145,8 @@
   - After proofreading pass produces corrected text, edit the original PDF to replace content in-place; preserve layout, fonts, and structure as much as possible
 - [x] DOCX correction function
   - n8n workflow: unzips uploaded DOCX, extracts `word/document.xml`, runs AI proofreading pass, serializes corrected XML back, repacks as `.docx` and writes to Storage
-- [x] DOCX formatting function
-  - n8n workflow: applies guideline-compliant formatting to `word/document.xml` (paragraph styles, heading levels, margins); runs serially per project via Split in Batches (batch size 1) to prevent file cross-contamination
+- [ ] DOCX formatting function — see `formattingPlan.md` for full breakdown
+  - Five-step pipeline: (A) deterministic — rewrite `styles.xml` per guideline, strip direct overrides, fix margins; (B) deterministic — detect references section, apply hanging indent + spacing; (C) AI — reformat reference entries to guideline citation format (Haiku/GPT-4o-mini); (D) AI — heading reclassification; (E) repack → upload → stamp DB. AI only touches semantics; layout is deterministic XML.
 - [x] Convert processed `.zip` back to `.docx` for delivery
   - n8n repacks the processed output as `.docx` and stamps `processed_file_path` + `status = complete` in the `projects` table
 
