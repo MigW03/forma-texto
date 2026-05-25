@@ -14,8 +14,8 @@
   - `supabase.auth.resetPasswordForEmail()`
 - [x] Protected routes (redirect unauthenticated users)
   - `ProtectedRoute` component, reads `useAuth()` context, redirects to `/sign-in`
-- [ ] Profile details page
-  - New page at `/profile` — display and edit full name, email, and avatar; use `supabase.auth.updateUser()` for email/name changes; link from navbar user menu
+- [x] Profile details page
+  - `ProfilePage.tsx` at `/profile` (protected). Displays avatar (initials), full name, email, join date, trial status. Edit full name and email via `supabase.auth.updateUser()`; email change triggers confirmation email. Password change for email/password users only. Connected-account badge (Google vs email). Danger zone with delete-account modal (calls `POST /api/auth/delete-account` on the backend — endpoint must be implemented separately). Navbar avatar links to `/profile`.
 - [ ] Delete account
   - Supabase admin API or Edge Function — requires server-side call
 
@@ -123,7 +123,7 @@
 ## Notifications
 
 - [ ] Email notification when project is ready
-  - Supabase Edge Function triggered by DB status change, sends email via Resend or SendGrid
+  - `POST /api/notifications/project-ready` on the Express backend (same pattern as `/api/auth/notify-password-change`). Triggered by n8n after stamping `status = complete`. Looks up user email via Supabase service role, sends via Resend from `noreply@formatexto.com`. Resend installed, domain verified.
 - [ ] In-app notification or badge for status change
   - Supabase Realtime on `projects` table, show toast or navbar badge
 - [ ] File deletion warning email (7 days before expiry)
@@ -196,15 +196,8 @@
 - [x] Privacy page
   - `PrivacyPage.tsx` created, route `/privacy` registered. 10 sections in en/pt-BR/pt-PT, includes LGPD compliance section.
 
-- [ ] Profile page
-  - New page at `/profile`, protected route. Link from navbar user menu (currently shows initials avatar button).
-  - **Display:** full name, email address, avatar (initials fallback if no photo), account creation date, trial status (used or available).
-  - **Edit full name:** inline text input + save button → `supabase.auth.updateUser({ data: { full_name } })`.
-  - **Edit email:** input + confirm button → `supabase.auth.updateUser({ email })` — triggers confirmation email to new address; show instructional notice to user.
-  - **Change password:** only shown for email/password accounts (not Google OAuth users) — current password + new password fields → `supabase.auth.updateUser({ password })`.
-  - **Connected accounts:** read-only badge showing auth provider (Google or email). Google users cannot set a password.
-  - **Danger zone:** "Delete account" button — requires confirmation modal — calls Supabase admin API or Edge Function (client SDK cannot self-delete); on success, sign out and redirect to `/`.
-  - **Add `ROUTES.profile = '/profile'`** to `routes.ts` and register in `App.tsx`.
+- [x] Profile page
+  - `ProfilePage.tsx` at `/profile` (protected). Displays avatar (initials), full name, email, join date, trial status. Edit full name and email via `supabase.auth.updateUser()`; email change triggers confirmation email. Password change for email/password users only. Connected-account badge (Google vs email). Danger zone with delete-account modal (calls `POST /api/auth/delete-account` — backend endpoint not yet implemented). `ROUTES.profile = '/profile'` added; avatar in Navbar links to `/profile`.
 
 - [ ] DOCX formatting pipeline
   - Most important feature. Requires dedicated effort. Five-step pipeline: (A) rewrite `styles.xml` per guideline, strip direct overrides, fix margins; (B) detect references section, apply hanging indent + spacing; (C) AI — reformat reference entries to guideline citation format; (D) AI — heading reclassification; (E) repack → upload → stamp DB. Full breakdown in `formattingPlan.md`.
@@ -213,7 +206,7 @@
   - `projects.delete_files_at` set but nothing acts on it. Query rows where `delete_files_at < now()` and `files_deleted_at is null`, delete from Supabase Storage, stamp `files_deleted_at`. Options: pg_cron, Supabase Edge Function, or n8n scheduled workflow.
 
 - [ ] Email notification when project is ready
-  - Supabase Edge Function triggered by DB status change to `complete`. Send via Resend or SendGrid.
+  - `POST /api/notifications/project-ready` on Express backend, called by n8n after stamping `status = complete`. Resend installed + `formatexto.com` domain verified. Endpoint not yet implemented.
 
 - [ ] Landing page redesign
   - Full visual overhaul of `LandingPage.tsx` and sections (`Hero.tsx`, `Services.tsx`, `Pricing.tsx`). Stronger value proposition, social proof, conversion-focused layout.

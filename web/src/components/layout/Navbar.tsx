@@ -37,9 +37,9 @@ export default function Navbar() {
           <div className="flex items-center gap-3">
             <LanguageSwitcher />
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-forest flex items-center justify-center">
+              <Link to={ROUTES.profile} className="w-8 h-8 rounded-full bg-forest flex items-center justify-center hover:opacity-80 transition-opacity">
                 <span className="text-white text-xs font-semibold">{userInitial}</span>
-              </div>
+              </Link>
               <Button
                 variant="ghost"
                 size="sm"

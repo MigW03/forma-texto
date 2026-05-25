@@ -447,6 +447,8 @@ export default function ProjectDetailPage() {
   const [zoom, setZoom] = useState(ZOOM_DEFAULT)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
+  const viewerWrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!id) return
@@ -476,6 +478,14 @@ export default function ProjectDetailPage() {
         setLoading(false)
       })
   }, [id])
+
+  useEffect(() => {
+    const el = viewerWrapRef.current
+    if (!el) return
+    const onScroll = (e: Event) => setScrolled((e.target as HTMLElement).scrollTop > 0)
+    el.addEventListener('scroll', onScroll, { capture: true })
+    return () => el.removeEventListener('scroll', onScroll, { capture: true })
+  }, [loading])
 
   useEffect(() => {
     if (!id) return
@@ -533,10 +543,9 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="flex h-[calc(100vh-4rem)]">
-      {/* Viewer top bar — back button · status badge · version badge · zoom controls */}
+      {/* Viewer top bar — back button · version label · zoom controls */}
       <div
-        className="absolute top-[4rem] left-0 right-0 md:right-80 z-20 flex items-center gap-3 px-4 pt-4 pb-10 pointer-events-none"
-        style={{ background: 'linear-gradient(to bottom, #F0EEE8 45%, transparent 100%)' }}
+        className="absolute top-[4rem] left-0 right-0 md:right-80 z-20 flex items-center gap-3 px-4 py-3 pointer-events-none"
       >
         <Link
           to={ROUTES.dashboard}
@@ -546,14 +555,10 @@ export default function ProjectDetailPage() {
           {t('project.backToDashboard')}
         </Link>
 
-        {processedFileUrl && (
-          <>
-            <span className="text-muted/40 select-none shrink-0">·</span>
-            <span className={`text-xs shrink-0 ${canDownloadProcessed ? 'text-forest' : 'text-muted'}`}>
-              {canDownloadProcessed ? t('project.viewingFinal') : t('project.viewingOriginal')}
-            </span>
-          </>
-        )}
+        <span className="text-muted/40 select-none shrink-0">·</span>
+        <span className={`text-xs shrink-0 px-2.5 py-1 rounded-lg border transition-colors duration-150 ${canDownloadProcessed ? 'text-forest' : 'text-muted'} ${scrolled ? 'bg-white border-border' : 'bg-transparent border-transparent'}`}>
+          {canDownloadProcessed ? t('project.viewingFinal') : t('project.viewingOriginal')}
+        </span>
 
         <div className="flex-1" />
 
@@ -565,7 +570,7 @@ export default function ProjectDetailPage() {
       </div>
 
       {/* File viewer */}
-      <div className="flex-1 min-h-0 bg-[#E8E6DF] flex flex-col">
+      <div ref={viewerWrapRef} className="flex-1 min-h-0 bg-[#E8E6DF] flex flex-col">
         {previewUrl && isPdf ? (
           <PdfViewer
             url={previewUrl}

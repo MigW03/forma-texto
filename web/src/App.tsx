@@ -11,6 +11,7 @@ import TermsPage from './pages/TermsPage'
 import PrivacyPage from './pages/PrivacyPage'
 import PageSelectionPage from './pages/PageSelectionPage'
 import ProjectDetailPage from './pages/ProjectDetailPage'
+import ProfilePage from './pages/ProfilePage'
 import { AuthProvider, useAuth } from './lib/auth-context'
 import { ROUTES } from './lib/routes'
 import './index.css'
@@ -53,6 +54,10 @@ export default function App() {
             <Route
               path={ROUTES.project}
               element={<ProtectedRoute><ProjectDetailPage /></ProtectedRoute>}
+            />
+            <Route
+              path={ROUTES.profile}
+              element={<ProtectedRoute><ProfilePage /></ProtectedRoute>}
             />
           </Routes>
         </div>
