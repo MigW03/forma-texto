@@ -79,7 +79,7 @@
         "Up to 200 pages",
         "Both services included",
         "Three guideline switches",
-        "Export .docx, .pdf, .tex"
+        "Export .docx"
       ],
       "cta": "Submit my thesis"
     }
@@ -165,7 +165,7 @@
       "pagesUnknown": "— pages",
       "countingPages": "counting pages…",
       "replace": "Replace",
-      "invalidType": "Unsupported file type. Please upload a PDF or Word document (.pdf, .docx).",
+      "invalidType": "Unsupported file type. Please upload a Word document (.docx).",
       "docConvert": "Old .doc format is not supported. Please convert your file to .docx before uploading."
     },
     "termsPrefix": "I agree to the",

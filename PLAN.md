@@ -126,6 +126,8 @@
   - Supabase Edge Function triggered by DB status change, sends email via Resend or SendGrid
 - [ ] In-app notification or badge for status change
   - Supabase Realtime on `projects` table, show toast or navbar badge
+- [ ] File deletion warning email (7 days before expiry)
+  - Triggered by scheduled job (pg_cron or Supabase Edge Function, daily). Query `projects` where `delete_files_at` is between `now()` and `now() + 7 days`, `files_deleted_at` is null, `processed_file_path` is not null, and user has not yet downloaded (no download-tracking flag yet — needs `processed_file_downloaded_at` column added to `projects`, stamped on first signed-URL fetch or download click). Send email via Resend/SendGrid with a direct link to the project page. Guard against duplicate sends with a `deletion_warning_sent_at` column on `projects`.
 
 ---
 
@@ -160,8 +162,8 @@
   - Full visual overhaul of `LandingPage.tsx` and its sections (`Hero.tsx`, `Services.tsx`, `Pricing.tsx`) targeting non-logged-in visitors; stronger value proposition, social proof, and conversion-focused layout
 - [x] Terms of service page
   - `TermsPage.tsx`, route `/terms`
-- [ ] Privacy policy page (route `/privacy` defined, page file missing)
-  - Create `PrivacyPage.tsx`, register in `App.tsx` under `ROUTES.privacy`
+- [x] Privacy policy page
+  - `PrivacyPage.tsx` created, registered in `App.tsx` under `ROUTES.privacy`. 10 sections in en/pt-BR/pt-PT, includes LGPD compliance section.
 - [ ] `TextExtractPage` route (page file exists, no route registered)
   - Add `<Route path={ROUTES.textExtract} element={<TextExtractPage />} />` in `App.tsx`
 
@@ -186,6 +188,35 @@
 
 - [ ] New branding and color system
   - Define new brand identity: logo, color palette, typography scale. Update `tailwind.config.js` tokens (currently `sand`, `forest`, `ink`, etc.) and propagate changes across all components. Update `DESIGN.md` to reflect the new system.
+
+---
+
+## Next Steps (Prioritised)
+
+- [x] Privacy page
+  - `PrivacyPage.tsx` created, route `/privacy` registered. 10 sections in en/pt-BR/pt-PT, includes LGPD compliance section.
+
+- [ ] Profile page
+  - New page at `/profile`, protected route. Link from navbar user menu (currently shows initials avatar button).
+  - **Display:** full name, email address, avatar (initials fallback if no photo), account creation date, trial status (used or available).
+  - **Edit full name:** inline text input + save button → `supabase.auth.updateUser({ data: { full_name } })`.
+  - **Edit email:** input + confirm button → `supabase.auth.updateUser({ email })` — triggers confirmation email to new address; show instructional notice to user.
+  - **Change password:** only shown for email/password accounts (not Google OAuth users) — current password + new password fields → `supabase.auth.updateUser({ password })`.
+  - **Connected accounts:** read-only badge showing auth provider (Google or email). Google users cannot set a password.
+  - **Danger zone:** "Delete account" button — requires confirmation modal — calls Supabase admin API or Edge Function (client SDK cannot self-delete); on success, sign out and redirect to `/`.
+  - **Add `ROUTES.profile = '/profile'`** to `routes.ts` and register in `App.tsx`.
+
+- [ ] DOCX formatting pipeline
+  - Most important feature. Requires dedicated effort. Five-step pipeline: (A) rewrite `styles.xml` per guideline, strip direct overrides, fix margins; (B) detect references section, apply hanging indent + spacing; (C) AI — reformat reference entries to guideline citation format; (D) AI — heading reclassification; (E) repack → upload → stamp DB. Full breakdown in `formattingPlan.md`.
+
+- [ ] File auto-deletion cron job
+  - `projects.delete_files_at` set but nothing acts on it. Query rows where `delete_files_at < now()` and `files_deleted_at is null`, delete from Supabase Storage, stamp `files_deleted_at`. Options: pg_cron, Supabase Edge Function, or n8n scheduled workflow.
+
+- [ ] Email notification when project is ready
+  - Supabase Edge Function triggered by DB status change to `complete`. Send via Resend or SendGrid.
+
+- [ ] Landing page redesign
+  - Full visual overhaul of `LandingPage.tsx` and sections (`Hero.tsx`, `Services.tsx`, `Pricing.tsx`). Stronger value proposition, social proof, conversion-focused layout.
 
 ---
 

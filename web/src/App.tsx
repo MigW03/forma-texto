@@ -8,6 +8,7 @@ import GetStartedPage from './pages/GetStartedPage'
 import CheckoutPage from './pages/CheckoutPage'
 import DashboardPage from './pages/DashboardPage'
 import TermsPage from './pages/TermsPage'
+import PrivacyPage from './pages/PrivacyPage'
 import PageSelectionPage from './pages/PageSelectionPage'
 import ProjectDetailPage from './pages/ProjectDetailPage'
 import { AuthProvider, useAuth } from './lib/auth-context'
@@ -44,6 +45,7 @@ export default function App() {
               element={<ProtectedRoute><DashboardPage /></ProtectedRoute>}
             />
             <Route path={ROUTES.terms} element={<TermsPage />} />
+            <Route path={ROUTES.privacy} element={<PrivacyPage />} />
             <Route
               path={ROUTES.pageSelection}
               element={<ProtectedRoute><PageSelectionPage /></ProtectedRoute>}

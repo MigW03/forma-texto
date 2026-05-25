@@ -282,17 +282,13 @@ export default function CheckoutPage() {
       console.log('[checkout] selectedPages:', selectedPages)
       console.log('[checkout] referencePages:', state?.referencePages)
 
-      // 1. Prepare the file to upload — slice to selected pages.
-      //    PDF: exclude reference pages (they go exclusively into the references subfolder).
-      //    DOCX: keep all selected pages in the main file — sliceDocx page detection diverges
-      //    from docx-preview, so splitting mid-document produces unreliable output.
+      // 1. Prepare the file to upload — slice to selected pages, excluding reference pages.
+      //    Reference pages go exclusively into the references subfolder.
       const referencePages = state?.referencePages ?? []
       const fileName2 = rawFile?.name.toLowerCase() ?? ''
       const isDocxFile = fileName2.endsWith('.docx')
       const isPdfFile = fileName2.endsWith('.pdf')
-      const mainPages = isPdfFile
-        ? selectedPages.filter(p => !referencePages.includes(p))
-        : selectedPages
+      const mainPages = selectedPages.filter(p => !referencePages.includes(p))
       let fileToUpload: File | null = rawFile
       if (rawFile && mainPages.length > 0) {
         try {

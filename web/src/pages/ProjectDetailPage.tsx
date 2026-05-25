@@ -347,18 +347,21 @@ const DOCX_PAGE_STYLES = `
   }
 `
 
-function DocxViewer({ url, zoom }: { url: string; zoom: number }) {
+function DocxViewer({ url, zoom, referencesUrl }: { url: string; zoom: number; referencesUrl?: string | null }) {
+  const { t } = useTranslation()
   const outerRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const styleRef = useRef<HTMLDivElement>(null)
+  const bodyRef2 = useRef<HTMLDivElement>(null)
+  const styleRef2 = useRef<HTMLDivElement>(null)
   const [loadError, setLoadError] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [refsLoading, setRefsLoading] = useState(!!referencesUrl)
 
   useEffect(() => {
     const body = bodyRef.current
     const style = styleRef.current
     if (!body || !style) return
-
     fetch(url)
       .then(r => r.blob())
       .then(blob => renderAsync(blob, body, style, DOCX_RENDER_OPTIONS))
@@ -373,6 +376,23 @@ function DocxViewer({ url, zoom }: { url: string; zoom: number }) {
       })
       .catch(() => { setLoadError(true); setLoading(false) })
   }, [url])
+
+  useEffect(() => {
+    if (!referencesUrl) return
+    const body = bodyRef2.current
+    const style = styleRef2.current
+    if (!body || !style) return
+    fetch(referencesUrl)
+      .then(r => r.blob())
+      .then(blob => renderAsync(blob, body, style, DOCX_RENDER_OPTIONS))
+      .then(() => {
+        body.querySelectorAll('section.docx').forEach((section) => {
+          if ((section as HTMLElement).innerText.trim() === '') section.remove()
+        })
+        setRefsLoading(false)
+      })
+      .catch(() => setRefsLoading(false))
+  }, [referencesUrl])
 
   if (loadError) return null
 
@@ -389,6 +409,27 @@ function DocxViewer({ url, zoom }: { url: string; zoom: number }) {
         <div ref={styleRef} />
         <div ref={bodyRef} />
       </div>
+
+      {referencesUrl && !loading && (
+        <>
+          <div className="flex items-center gap-3 px-8 py-4">
+            <div className="flex-1 h-px bg-border/60" />
+            <span className="text-xs font-medium text-muted uppercase tracking-widest shrink-0">
+              {t('project.references.title')}
+            </span>
+            <div className="flex-1 h-px bg-border/60" />
+          </div>
+          {refsLoading && (
+            <div className="flex flex-col items-center gap-6 pb-8 px-8">
+              <div className="bg-white rounded-xl shadow-sm animate-pulse" style={{ width: 595, height: 842 }} />
+            </div>
+          )}
+          <div style={{ zoom, display: refsLoading ? 'none' : undefined }}>
+            <div ref={styleRef2} />
+            <div ref={bodyRef2} />
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -535,7 +576,7 @@ export default function ProjectDetailPage() {
             referencesUrl={referencesFileUrl}
           />
         ) : previewUrl && isDocx ? (
-          <DocxViewer url={previewUrl} zoom={zoom} />
+          <DocxViewer url={previewUrl} zoom={zoom} referencesUrl={referencesFileUrl} />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8">
             <div className="w-14 h-14 rounded-2xl bg-white border border-border flex items-center justify-center">

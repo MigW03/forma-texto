@@ -101,7 +101,7 @@ export default function Hero() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".docx,.pdf,.tex,.odt"
+                accept=".docx"
                 className="hidden"
                 onChange={handleFileChange}
               />
@@ -119,14 +119,9 @@ export default function Hero() {
                 </>
               )}
               <div className="flex gap-2 mt-1">
-                {['.docx', '.pdf', '.tex', '.odt'].map((ext) => (
-                  <span
-                    key={ext}
-                    className="text-xs border border-border rounded px-2 py-0.5 text-muted"
-                  >
-                    {ext}
-                  </span>
-                ))}
+                <span className="text-xs border border-border rounded px-2 py-0.5 text-muted">
+                  .docx
+                </span>
               </div>
             </div>
           ) : (

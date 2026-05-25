@@ -79,7 +79,7 @@
         "Até 200 páginas",
         "Ambos os serviços incluídos",
         "Três trocas de norma",
-        "Exportação .docx, .pdf, .tex"
+        "Exportação .docx"
       ],
       "cta": "Enviar a minha tese"
     }
@@ -165,7 +165,7 @@
       "pagesUnknown": "— páginas",
       "countingPages": "a contar páginas…",
       "replace": "Substituir",
-      "invalidType": "Formato não suportado. Envie um PDF ou documento Word (.pdf, .docx).",
+      "invalidType": "Formato não suportado. Envie um documento Word (.docx).",
       "docConvert": "O formato .doc antigo não é suportado. Converta o seu ficheiro para .docx antes de enviar."
     },
     "termsPrefix": "Concordo com os",

@@ -214,9 +214,8 @@ export default function GetStartedPage() {
     agreedToTerms &&
     (inputTab === 'upload' ? file !== null : pasteUrl.trim() !== '')
 
-  const ALLOWED_EXTENSIONS = ['.pdf', '.docx']
+  const ALLOWED_EXTENSIONS = ['.docx']
   const ALLOWED_MIME_TYPES = [
-    'application/pdf',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   ]
 
@@ -446,7 +445,7 @@ export default function GetStartedPage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".pdf,.docx"
+                  accept=".docx"
                   className="hidden"
                   onChange={handleFileChange}
                 />
@@ -524,11 +523,9 @@ export default function GetStartedPage() {
                       <p className="text-xs text-muted">{t('hero.fileLimit')}</p>
                     )}
                     <div className="flex gap-2 mt-1">
-                      {['.pdf', '.docx'].map((ext) => (
-                        <span key={ext} className={`text-xs border rounded px-2 py-0.5 ${fileTypeError ? 'border-red-300 text-red-400' : 'border-border text-muted'}`}>
-                          {ext}
-                        </span>
-                      ))}
+                      <span className={`text-xs border rounded px-2 py-0.5 ${fileTypeError ? 'border-red-300 text-red-400' : 'border-border text-muted'}`}>
+                        .docx
+                      </span>
                     </div>
                   </div>
                 )}
