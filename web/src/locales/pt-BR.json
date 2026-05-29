@@ -243,13 +243,22 @@
     "trialUsed": "Utilizado",
     "joined": "Membro desde",
     "dangerZone": "Zona de perigo",
+    "dangerZoneSubtitle": "Exclusão de conta",
     "deleteAccountNotice": "Após a exclusão, sua conta e todos os dados associados são removidos permanentemente. Esta ação não pode ser desfeita.",
     "deleteAccount": "Excluir conta",
     "deleteModalTitle": "Excluir sua conta?",
     "deleteModalBody": "Isso excluirá permanentemente sua conta, projetos e todos os arquivos enviados. Esta ação não pode ser desfeita.",
     "cancel": "Cancelar",
     "deleting": "Excluindo…",
-    "deleteError": "Algo deu errado. Tente novamente."
+    "deleteError": "Algo deu errado. Tente novamente.",
+    "notifications": {
+      "title": "Notificações por e-mail",
+      "projectReady": "Arquivo pronto",
+      "projectReadyHint": "Seja notificado quando o processamento do seu arquivo for concluído.",
+      "fileExpiry": "Aviso de expiração de arquivos",
+      "fileExpiryHint": "Lembrete 7 dias antes de seus arquivos serem excluídos automaticamente.",
+      "saved": "Salvo"
+    }
   },
   "pageSelection": {
     "title": "Selecione as páginas a processar",

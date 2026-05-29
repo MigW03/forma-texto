@@ -74,17 +74,12 @@ async function getDocxPageCountByRender(file: File): Promise<number | null> {
   try {
     const { renderAsync } = await import('docx-preview')
     const div = document.createElement('div')
-    div.style.cssText = 'position:fixed;visibility:hidden;left:-9999px;top:0;width:816px;overflow:visible;pointer-events:none;'
+    div.style.cssText = 'position:fixed;visibility:hidden;left:-9999px;top:0;width:816px;pointer-events:none;'
     document.body.appendChild(div)
-    await renderAsync(file, div, undefined, { breakPages: false, inWrapper: false })
-    const section = div.querySelector('section.docx') as HTMLElement
-    if (!section) { document.body.removeChild(div); return null }
-    section.style.overflow = 'visible'
-    section.style.height = 'auto'
-    const pageHeight = parseFloat(getComputedStyle(section).minHeight)
-    const contentHeight = section.scrollHeight
+    await renderAsync(file, div, undefined, { breakPages: true, inWrapper: true })
+    const sections = div.querySelectorAll('section.docx')
     document.body.removeChild(div)
-    return pageHeight > 0 ? Math.max(1, Math.ceil(contentHeight / pageHeight)) : null
+    return sections.length > 0 ? sections.length : null
   } catch {
     return null
   }
@@ -94,14 +89,16 @@ async function getFilePageCount(file: File): Promise<number | null> {
   const name = file.name.toLowerCase()
   if (name.endsWith('.pdf')) return getPdfPageCount(file)
   if (name.endsWith('.docx')) {
-    // app.xml <Pages> is the most reliable source — Acrobat writes one sectPr per page and
-    // keeps the count accurate. lastRenderedPageBreak is a fallback for files where app.xml
-    // is missing or zero (rare). Render-based count is last resort only.
-    const xmlCount = await getDocxPageCount(file)
-    if (xmlCount) return xmlCount
-    const breakCount = await getDocxPageCountByBreaks(file)
-    if (breakCount) return breakCount
-    return getDocxPageCountByRender(file)
+    // Run all three methods and take the max. app.xml is unreliable for Google Docs exports
+    // (the <Pages> tag is often stale). lastRenderedPageBreak is accurate for most exports.
+    // Render-based is the slowest but most reliable fallback.
+    const [xmlCount, breakCount, renderCount] = await Promise.all([
+      getDocxPageCount(file),
+      getDocxPageCountByBreaks(file),
+      getDocxPageCountByRender(file),
+    ])
+    const counts = [xmlCount, breakCount, renderCount].filter((c): c is number => c !== null && c > 0)
+    return counts.length > 0 ? Math.max(...counts) : null
   }
   return null
 }

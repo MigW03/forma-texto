@@ -5,7 +5,7 @@
       "name": "forma-texto",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "cwd": "/Users/miguelweber/Documents/formaTexto/forma-texto/web",
+      "cwd": "web",
       "port": 5173
     }
   ]

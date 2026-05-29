@@ -122,8 +122,16 @@
 
 ## Notifications
 
-- [ ] Email notification when project is ready
-  - `POST /api/notifications/project-ready` on the Express backend (same pattern as `/api/auth/notify-password-change`). Triggered by n8n after stamping `status = complete`. Looks up user email via Supabase service role, sends via Resend from `noreply@formatexto.com`. Resend installed, domain verified.
+- [x] Email notification when project is ready
+  - `POST /api/notifications/project-ready` implemented in `server/src/routes/notifications.ts`. Auth via `x-webhook-secret` header. Triggered by n8n after stamping `status = complete`. Looks up project + user email via Supabase service role, sends via Resend (`onboarding@resend.dev` for now — swap to `noreply@formatexto.com` once domain verified). Template in `server/src/emails/projectReady.ts`.
+- [ ] Improve email HTML templates
+  - Templates live in `server/src/emails/`. Improve visual design: better spacing, branded header, footer with unsubscribe/legal note, responsive layout. Consider extracting a shared `layout.ts` wrapper to avoid duplicating header/footer across templates. Currently using `onboarding@resend.dev` — swap `from` address to `noreply@formatexto.com` once domain is verified in Resend.
+- [ ] Welcome email on sign-up
+  - Triggered by Supabase auth webhook or n8n on new user creation. Brief onboarding email: explains the service, links to `/get-started`, reminds user of the free first page. Template in `server/src/emails/welcome.ts`.
+- [ ] Order confirmation / receipt email
+  - Triggered after payment succeeds (checkout flow). Body: services ordered, page count, guideline, amount paid, link to project page. Can be sent directly from the Express checkout route after the project insert, or by n8n on project creation. Template in `server/src/emails/orderConfirmation.ts`.
+- [ ] Respect notification preferences in backend
+  - `notifications.ts` endpoint and future email senders should fetch `user_profiles.notification_preferences` before sending and skip if the relevant toggle is off. Currently all emails send unconditionally.
 - [ ] In-app notification or badge for status change
   - Supabase Realtime on `projects` table, show toast or navbar badge
 - [ ] File deletion warning email (7 days before expiry)

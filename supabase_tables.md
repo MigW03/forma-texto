@@ -47,4 +47,7 @@
 |------|------|-------------|
 | `id` | `uuid` | Primary |
 | `trial_used_at` | `timestamptz` |  Nullable |
+| `notification_preferences` | `jsonb` |  Nullable |
+
+> Default value: `{"project_ready": true, "file_expiry": true}`. Null treated as all-on. Add column with: `ALTER TABLE user_profiles ADD COLUMN notification_preferences jsonb DEFAULT '{"project_ready":true,"file_expiry":true}'::jsonb;`
 

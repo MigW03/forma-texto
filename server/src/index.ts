@@ -5,6 +5,7 @@ import checkoutRouter from './routes/checkout'
 import webhookRouter from './routes/webhook'
 import documentsRouter from './routes/documents'
 import authRouter from './routes/auth'
+import notificationsRouter from './routes/notifications'
 
 const app = express()
 const PORT = process.env.PORT ?? 3001
@@ -22,6 +23,7 @@ app.use(express.json())
 app.use('/api/checkout', checkoutRouter)
 app.use('/api/documents', documentsRouter)
 app.use('/api/auth', authRouter)
+app.use('/api/notifications', notificationsRouter)
 
 app.get('/health', (_req, res) => res.json({ ok: true }))
 

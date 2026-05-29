@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../lib/auth-context'
 import { supabase } from '../lib/supabase'
@@ -40,6 +40,41 @@ export default function ProfilePage() {
   const [passwordLoading, setPasswordLoading] = useState(false)
   const [passwordSuccess, setPasswordSuccess] = useState(false)
   const [passwordError, setPasswordError] = useState('')
+
+  // Notification preferences
+  const [notifPrefs, setNotifPrefs] = useState({ project_ready: true, file_expiry: true })
+  const [notifSaved, setNotifSaved] = useState(false)
+
+  // Load notification preferences from user_profiles
+  useEffect(() => {
+    if (!user) return
+    supabase
+      .from('user_profiles')
+      .select('notification_preferences')
+      .eq('id', user.id)
+      .single()
+      .then(({ data }) => {
+        if (data?.notification_preferences) {
+          setNotifPrefs(data.notification_preferences as { project_ready: boolean; file_expiry: boolean })
+        }
+      })
+  }, [user])
+
+  const handleNotifToggle = async (key: 'project_ready' | 'file_expiry') => {
+    if (!user) return
+    const updated = { ...notifPrefs, [key]: !notifPrefs[key] }
+    setNotifPrefs(updated)
+    setNotifSaved(false)
+    await supabase
+      .from('user_profiles')
+      .update({ notification_preferences: updated })
+      .eq('id', user.id)
+    setNotifSaved(true)
+    setTimeout(() => setNotifSaved(false), 2000)
+  }
+
+  // Danger zone accordion
+  const [dangerOpen, setDangerOpen] = useState(false)
 
   // Delete account
   const [showDeleteModal, setShowDeleteModal] = useState(false)
@@ -238,16 +273,72 @@ export default function ProfilePage() {
           </div>
         )}
 
+        {/* Notification preferences */}
+        <div className="bg-white rounded-2xl border border-border px-6 py-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-ink">{t('profile.notifications.title')}</h2>
+            {notifSaved && <span className="text-xs text-forest">{t('profile.notifications.saved')}</span>}
+          </div>
+          <div className="flex flex-col gap-4">
+            {/* Project ready */}
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm text-ink">{t('profile.notifications.projectReady')}</p>
+                <p className="text-xs text-muted mt-0.5">{t('profile.notifications.projectReadyHint')}</p>
+              </div>
+              <button
+                role="switch"
+                aria-checked={notifPrefs.project_ready}
+                onClick={() => handleNotifToggle('project_ready')}
+                className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${notifPrefs.project_ready ? 'bg-forest' : 'bg-border'}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${notifPrefs.project_ready ? 'translate-x-4' : 'translate-x-0'}`} />
+              </button>
+            </div>
+            {/* File expiry */}
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm text-ink">{t('profile.notifications.fileExpiry')}</p>
+                <p className="text-xs text-muted mt-0.5">{t('profile.notifications.fileExpiryHint')}</p>
+              </div>
+              <button
+                role="switch"
+                aria-checked={notifPrefs.file_expiry}
+                onClick={() => handleNotifToggle('file_expiry')}
+                className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${notifPrefs.file_expiry ? 'bg-forest' : 'bg-border'}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${notifPrefs.file_expiry ? 'translate-x-4' : 'translate-x-0'}`} />
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Danger zone */}
         <div className="bg-white rounded-2xl border border-red-100 px-6 py-5">
-          <h2 className="text-sm font-semibold text-red-600 mb-1">{t('profile.dangerZone')}</h2>
-          <p className="text-xs text-muted mb-4">{t('profile.deleteAccountNotice')}</p>
           <button
-            onClick={() => setShowDeleteModal(true)}
-            className="text-sm font-medium text-red-600 px-4 py-2 rounded-xl border border-red-200 hover:bg-red-50 transition-colors"
+            onClick={() => setDangerOpen(o => !o)}
+            className="flex items-center justify-between w-full text-left"
           >
-            {t('profile.deleteAccount')}
+            <h2 className="text-sm font-semibold text-red-600">{t('profile.dangerZone')}</h2>
+            <svg
+              width="16" height="16" viewBox="0 0 16 16" fill="none"
+              className={`text-red-400 transition-transform duration-200 ${dangerOpen ? 'rotate-180' : ''}`}
+            >
+              <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </button>
+          {dangerOpen && (
+            <div className="mt-4">
+              <p className="text-sm font-medium text-red-600 mb-1">{t('profile.dangerZoneSubtitle')}</p>
+              <p className="text-xs text-muted mb-4">{t('profile.deleteAccountNotice')}</p>
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="text-sm font-medium text-red-600 px-4 py-2 rounded-xl border border-red-200 hover:bg-red-50 transition-colors"
+              >
+                {t('profile.deleteAccount')}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

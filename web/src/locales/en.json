@@ -243,13 +243,22 @@
     "trialUsed": "Used",
     "joined": "Member since",
     "dangerZone": "Danger zone",
+    "dangerZoneSubtitle": "Account deletion",
     "deleteAccountNotice": "Once deleted, your account and all associated data are permanently removed. This action cannot be undone.",
     "deleteAccount": "Delete account",
     "deleteModalTitle": "Delete your account?",
     "deleteModalBody": "This will permanently delete your account, projects, and all uploaded files. This cannot be undone.",
     "cancel": "Cancel",
     "deleting": "Deleting…",
-    "deleteError": "Something went wrong. Please try again."
+    "deleteError": "Something went wrong. Please try again.",
+    "notifications": {
+      "title": "Email notifications",
+      "projectReady": "Project ready",
+      "projectReadyHint": "Get notified when your file finishes processing.",
+      "fileExpiry": "File expiry warning",
+      "fileExpiryHint": "Reminder 7 days before your files are automatically deleted.",
+      "saved": "Saved"
+    }
   },
   "pageSelection": {
     "title": "Select pages to process",
