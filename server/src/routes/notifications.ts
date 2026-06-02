@@ -1,7 +1,5 @@
 import { Router, Request, Response } from 'express'
-import { supabase } from '../lib/supabase'
-import { resend } from '../lib/resend'
-import { projectReadyHtml } from '../emails/projectReady'
+import { sendProjectReadyEmail } from '../lib/notify'
 
 const router = Router()
 
@@ -24,47 +22,13 @@ router.post('/project-ready', async (req: Request, res: Response) => {
     return
   }
 
-  // Fetch project
-  const { data: project, error: projectError } = await supabase
-    .from('projects')
-    .select('id, title, user_id, original_file_name, services, guideline')
-    .eq('id', projectId)
-    .single()
-
-  if (projectError || !project) {
-    console.error('Project not found:', projectError)
-    res.status(404).json({ error: 'Project not found' })
-    return
-  }
-
-  // Fetch user email via admin API
-  const { data: userData, error: userError } = await supabase.auth.admin.getUserById(project.user_id)
-
-  if (userError || !userData.user?.email) {
-    console.error('User not found:', userError)
-    res.status(404).json({ error: 'User not found' })
-    return
-  }
-
-  const email = userData.user.email
-  const name = (userData.user.user_metadata?.full_name as string | undefined) ?? email
-  const projectUrl = `${process.env.FRONTEND_URL ?? 'http://localhost:5173'}/projects/${project.id}`
-  const title = project.title ?? project.original_file_name ?? 'Your document'
-
-  const { error: emailError } = await resend.emails.send({
-    from: 'FormaTexto <onboarding@resend.dev>',
-    to: email,
-    subject: `${title} está pronto`,
-    html: projectReadyHtml({ name, title, projectUrl }),
-  })
-
-  if (emailError) {
-    console.error('Failed to send project-ready email:', emailError)
+  try {
+    await sendProjectReadyEmail(projectId)
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('project-ready failed:', err)
     res.status(500).json({ error: 'Failed to send email' })
-    return
   }
-
-  res.json({ ok: true })
 })
 
 export default router

@@ -267,8 +267,11 @@ function PdfViewer({
 
   const pageWidth = containerWidth * zoom
 
-  // Build index maps: original page number → page number within each file
-  const refPagesSet = new Set(referencesPages)
+  // Build index maps: original page number → page number within each file.
+  // References are only a SEPARATE file for legacy projects (referencesUrl set).
+  // New projects keep references in the single file, so all selected pages map there.
+  const hasSeparateRefs = !!referencesUrl
+  const refPagesSet = hasSeparateRefs ? new Set(referencesPages) : new Set<number>()
   const mainFilePages = selectedPages.filter(p => !refPagesSet.has(p))
   const mainPageMap = new Map(mainFilePages.map((p, i) => [p, i + 1]))
   const refPageMap = new Map(referencesPages.map((p, i) => [p, i + 1]))
@@ -304,6 +307,21 @@ function PdfViewer({
       </div>
     </div>
   )
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function formatPageRanges(pages: number[]): string {
+  const sorted = [...new Set(pages)].sort((a, b) => a - b)
+  const ranges: string[] = []
+  let start = sorted[0]
+  let end = sorted[0]
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] === end + 1) { end = sorted[i] }
+    else { ranges.push(start === end ? `${start}` : `${start}–${end}`); start = sorted[i]; end = sorted[i] }
+  }
+  if (start !== undefined) ranges.push(start === end ? `${start}` : `${start}–${end}`)
+  return ranges.join(', ')
 }
 
 // ── DOCX viewer ──────────────────────────────────────────────────────────────
@@ -347,16 +365,12 @@ const DOCX_PAGE_STYLES = `
   }
 `
 
-function DocxViewer({ url, zoom, referencesUrl }: { url: string; zoom: number; referencesUrl?: string | null }) {
-  const { t } = useTranslation()
+function DocxViewer({ url, zoom }: { url: string; zoom: number }) {
   const outerRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const styleRef = useRef<HTMLDivElement>(null)
-  const bodyRef2 = useRef<HTMLDivElement>(null)
-  const styleRef2 = useRef<HTMLDivElement>(null)
   const [loadError, setLoadError] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [refsLoading, setRefsLoading] = useState(!!referencesUrl)
 
   useEffect(() => {
     const body = bodyRef.current
@@ -377,23 +391,6 @@ function DocxViewer({ url, zoom, referencesUrl }: { url: string; zoom: number; r
       .catch(() => { setLoadError(true); setLoading(false) })
   }, [url])
 
-  useEffect(() => {
-    if (!referencesUrl) return
-    const body = bodyRef2.current
-    const style = styleRef2.current
-    if (!body || !style) return
-    fetch(referencesUrl)
-      .then(r => r.blob())
-      .then(blob => renderAsync(blob, body, style, DOCX_RENDER_OPTIONS))
-      .then(() => {
-        body.querySelectorAll('section.docx').forEach((section) => {
-          if ((section as HTMLElement).innerText.trim() === '') section.remove()
-        })
-        setRefsLoading(false)
-      })
-      .catch(() => setRefsLoading(false))
-  }, [referencesUrl])
-
   if (loadError) return null
 
   return (
@@ -409,27 +406,6 @@ function DocxViewer({ url, zoom, referencesUrl }: { url: string; zoom: number; r
         <div ref={styleRef} />
         <div ref={bodyRef} />
       </div>
-
-      {referencesUrl && !loading && (
-        <>
-          <div className="flex items-center gap-3 px-8 py-4">
-            <div className="flex-1 h-px bg-border/60" />
-            <span className="text-xs font-medium text-muted uppercase tracking-widest shrink-0">
-              {t('project.references.title')}
-            </span>
-            <div className="flex-1 h-px bg-border/60" />
-          </div>
-          {refsLoading && (
-            <div className="flex flex-col items-center gap-6 pb-8 px-8">
-              <div className="bg-white rounded-xl shadow-sm animate-pulse" style={{ width: 595, height: 842 }} />
-            </div>
-          )}
-          <div style={{ zoom, display: refsLoading ? 'none' : undefined }}>
-            <div ref={styleRef2} />
-            <div ref={bodyRef2} />
-          </div>
-        </>
-      )}
     </div>
   )
 }
@@ -581,7 +557,7 @@ export default function ProjectDetailPage() {
             referencesUrl={referencesFileUrl}
           />
         ) : previewUrl && isDocx ? (
-          <DocxViewer url={previewUrl} zoom={zoom} referencesUrl={referencesFileUrl} />
+          <DocxViewer url={previewUrl} zoom={zoom} />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8">
             <div className="w-14 h-14 rounded-2xl bg-white border border-border flex items-center justify-center">
@@ -630,6 +606,11 @@ export default function ProjectDetailPage() {
           <DetailRow label={t('project.pageCount')}>
             <span className="text-sm text-ink">{project.page_count}</span>
           </DetailRow>
+          {referencesPages.length > 0 && (
+            <DetailRow label={t('project.referencesPages')}>
+              <span className="text-sm text-ink">{formatPageRanges(referencesPages)}</span>
+            </DetailRow>
+          )}
           <DetailRow label={t('project.cost')}>
             <span className="text-sm text-ink font-medium">{formatBRL(totalCost)}</span>
           </DetailRow>

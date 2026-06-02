@@ -166,7 +166,10 @@
       "countingPages": "a contar páginas…",
       "replace": "Substituir",
       "invalidType": "Formato não suportado. Envie um documento Word (.docx).",
-      "docConvert": "O formato .doc antigo não é suportado. Converta o seu ficheiro para .docx antes de enviar."
+      "docConvert": "O formato .doc antigo não é suportado. Converta o seu ficheiro para .docx antes de enviar.",
+      "pageCountUnavailable": "contagem de páginas indisponível",
+      "uncountableTitle": "Não foi possível ler a contagem de páginas deste ficheiro",
+      "uncountableBody": "Este documento não tem informação de páginas — provavelmente foi exportado do Google Docs ou convertido por outra ferramenta. Abra-o no Microsoft Word e guarde novamente, ou envie um PDF."
     },
     "termsPrefix": "Concordo com os",
     "termsLink": "Termos de Serviço",
@@ -184,6 +187,7 @@
     "status": "Estado",
     "createdAt": "Enviado em",
     "pageCount": "Páginas",
+    "referencesPages": "Páginas de referências",
     "cost": "Valor",
     "noPreview": "Pré-visualização não disponível para este formato.",
     "viewingFinal": "A ver ficheiro final",

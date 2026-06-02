@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Decision · n8n vs. Server Code</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:ital,opsz@1,18&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --sand: #F0EEE8;
+    --paper: #FBFAF7;
+    --ink: #1A1A18;
+    --muted: #6B6B60;
+    --border: #DDDBD3;
+    --forest: #1A3C2E;
+    --forest-mid: #2D5A3F;
+    --forest-light: #3D7A57;
+    --forest-tint: #EAF0EC;
+    --amber: #92702A;
+    --amber-tint: #F6F0E2;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--ink);
+    background: var(--sand);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    padding: 40px 16px 80px;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+
+  /* ---------- Header band ---------- */
+  header {
+    background: var(--ink);
+    color: var(--sand);
+    border-radius: 24px;
+    padding: 44px 48px 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  header::after {
+    content: "";
+    position: absolute;
+    right: -80px; top: -80px;
+    width: 280px; height: 280px;
+    background: radial-gradient(circle, rgba(61,122,87,0.35), transparent 70%);
+    pointer-events: none;
+  }
+  .eyebrow {
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--forest-light);
+  }
+  header .eyebrow { color: #7FB492; }
+  h1 {
+    font-size: 2.1rem; font-weight: 700; line-height: 1.15;
+    letter-spacing: -0.02em; margin: 10px 0 14px; max-width: 22ch;
+  }
+  .header-meta {
+    display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+    font-size: 0.88rem; color: rgba(240,238,232,0.7);
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--forest-light); color: #fff;
+    font-size: 0.8rem; font-weight: 600;
+    padding: 5px 14px; border-radius: 999px;
+  }
+  .pill svg { width: 14px; height: 14px; }
+
+  /* ---------- Verdict + scorecard ---------- */
+  .verdict {
+    display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px;
+    margin: 18px 0;
+  }
+  @media (max-width: 680px) { .verdict { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--paper);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 26px 28px;
+  }
+  .verdict-card {
+    background: var(--forest);
+    color: #fff; border: none;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .verdict-card .eyebrow { color: #8FC3A1; }
+  .verdict-card h2 { color: #fff; border: none; padding: 0; margin: 0; font-size: 1.3rem; }
+  .verdict-card p { color: rgba(255,255,255,0.85); font-size: 0.95rem; }
+  .verdict-card strong { color: #fff; }
+
+  .scorecard { display: flex; flex-direction: column; justify-content: center; gap: 14px; }
+  .score-row { display: flex; align-items: center; gap: 14px; }
+  .score-num {
+    font-size: 1.9rem; font-weight: 700; line-height: 1;
+    width: 52px; text-align: right; letter-spacing: -0.02em;
+  }
+  .score-row.code .score-num { color: var(--forest-mid); }
+  .score-row.n8n .score-num { color: var(--amber); }
+  .score-row.tie .score-num { color: var(--muted); }
+  .score-label { font-size: 0.86rem; color: var(--muted); line-height: 1.3; }
+  .score-label b { color: var(--ink); font-weight: 600; display: block; }
+
+  /* ---------- Generic section ---------- */
+  section { margin-top: 40px; }
+  h2 {
+    font-size: 1.4rem; font-weight: 700; letter-spacing: -0.01em;
+    margin: 6px 0 4px;
+  }
+  .section-head { margin-bottom: 18px; }
+  h3 { font-size: 1.05rem; font-weight: 600; }
+  p { margin: 12px 0; color: #2E2E2A; }
+  .lead { font-size: 1.06rem; color: var(--ink); }
+  em.serif { font-family: "Newsreader", Georgia, serif; font-style: italic; }
+  code {
+    background: var(--sand); border: 1px solid var(--border);
+    border-radius: 6px; padding: 1px 6px;
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 0.84em;
+  }
+
+  /* ---------- Comparison table ---------- */
+  .table-card { padding: 8px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  thead th {
+    text-align: left; font-size: 0.74rem; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+    padding: 14px 16px 10px;
+  }
+  tbody td { padding: 14px 16px; border-top: 1px solid var(--border); vertical-align: top; }
+  tbody tr { transition: background 0.15s ease; }
+  tbody tr:hover { background: var(--sand); }
+  .dim { font-weight: 600; color: var(--ink); width: 26%; }
+  td.col-code { color: #2E2E2A; }
+  td.col-n8n { color: var(--muted); }
+  .verdict-cell { width: 92px; }
+  .tag {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em;
+    padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+  }
+  .tag.code { background: var(--forest-tint); color: var(--forest-mid); }
+  .tag.n8n { background: var(--amber-tint); color: var(--amber); }
+  .tag.tie { background: #fff; color: var(--muted); border: 1px solid var(--border); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .tag.code .dot { background: var(--forest-light); }
+  .tag.n8n .dot { background: #C49A4A; }
+  .tag.tie .dot { background: var(--muted); }
+
+  /* ---------- Reasoning cards ---------- */
+  .reason {
+    border: 1px solid var(--border); border-radius: 16px;
+    background: var(--paper); padding: 20px 24px; margin: 14px 0;
+  }
+  .reason-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; margin-bottom: 4px;
+  }
+  .reason-head h3 { margin: 0; }
+  .reason p { margin: 8px 0 0; font-size: 0.95rem; }
+
+  /* ---------- Recommendation ---------- */
+  .rec { border-left: 4px solid var(--forest); }
+  .rec p:first-of-type { margin-top: 0; }
+  .caveat {
+    font-size: 0.9rem; color: var(--muted);
+    border-top: 1px dashed var(--border); margin-top: 16px; padding-top: 14px;
+  }
+
+  /* ---------- Flow timelines ---------- */
+  .flows { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 760px) { .flows { grid-template-columns: 1fr; } }
+  .flow-card { padding: 24px 26px; }
+  .flow-card.recommended { border: 1.5px solid var(--forest-light); background: var(--forest-tint); }
+  .flow-title { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 1.02rem; margin-bottom: 18px; }
+  .flow-title .pill { font-size: 0.68rem; padding: 3px 10px; }
+  .timeline { position: relative; }
+  .step {
+    position: relative; padding: 0 0 16px 24px;
+    border-left: 2px solid var(--border); margin-left: 5px;
+  }
+  .flow-card.recommended .step { border-left-color: rgba(61,122,87,0.35); }
+  .step:last-child { border-left-color: transparent; padding-bottom: 0; }
+  .step::before {
+    content: ""; position: absolute; left: -6px; top: 4px;
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--muted); box-shadow: 0 0 0 3px var(--paper);
+  }
+  .flow-card.recommended .step::before { background: var(--forest-light); box-shadow: 0 0 0 3px var(--forest-tint); }
+  .step-label { font-size: 0.9rem; font-weight: 500; color: var(--ink); }
+  .step-note { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+  .phase-label {
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--forest-mid);
+    padding: 4px 0 10px 24px; margin-left: 5px; border-left: 2px solid rgba(61,122,87,0.35);
+  }
+  .flow-foot { font-size: 0.85rem; color: var(--muted); margin-top: 16px; }
+
+  /* ---------- Next step ---------- */
+  .nextstep {
+    background: var(--ink); color: var(--sand);
+    border-radius: 18px; padding: 28px 30px; margin-top: 24px;
+    display: flex; gap: 18px; align-items: flex-start;
+  }
+  .nextstep .num {
+    flex: none; width: 40px; height: 40px; border-radius: 12px;
+    background: var(--forest-light); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 1.1rem;
+  }
+  .nextstep h2 { color: #fff; font-size: 1.15rem; margin: 0 0 6px; }
+  .nextstep p { color: rgba(240,238,232,0.78); font-size: 0.93rem; margin: 0; }
+  .nextstep code { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.18); color: #E8E6DF; }
+
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; margin-top: 40px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===== Header ===== -->
+  <header>
+    <div class="eyebrow">Business Decision · 2026-05-31</div>
+    <h1>n8n vs. Server Code for the Document Pipeline</h1>
+    <div class="header-meta">
+      <span class="pill">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        Recommended: move to server
+      </span>
+      <span>Pending final go-ahead</span>
+    </div>
+  </header>
+
+  <!-- ===== Verdict + scorecard ===== -->
+  <div class="verdict">
+    <div class="card verdict-card">
+      <div class="eyebrow">The short answer</div>
+      <h2>Build it in the server.</h2>
+      <p>This pipeline is code-heavy and file-heavy — exactly where n8n's strengths matter least and its limits hurt most. The one thing n8n gave for free (background execution) is replaced cleanly by <strong>pg-boss</strong> on the Postgres you already run.</p>
+    </div>
+    <div class="card scorecard">
+      <div class="score-row code"><div class="score-num">8</div><div class="score-label"><b>Favor server code</b>of 11 dimensions weighed</div></div>
+      <div class="score-row n8n"><div class="score-num">2</div><div class="score-label"><b>Favor n8n</b>long-running jobs, observability</div></div>
+      <div class="score-row tie"><div class="score-num">1</div><div class="score-label"><b>Roughly a tie</b>triggering the pipeline</div></div>
+    </div>
+  </div>
+
+  <!-- ===== Core insight ===== -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">The framing</div>
+      <h2>The core insight</h2>
+    </div>
+    <p class="lead">The question isn't "is n8n good?" — it's whether n8n fits <em class="serif">this</em> pipeline.</p>
+    <p>n8n's superpower is <strong>wiring together APIs with little or no code</strong> — "when a row hits this table, send a Slack message, then create a Trello card." But this pipeline is, at almost every step, custom code: unzip a file, surgically edit XML, chunk text, call an AI, merge results by index, re-zip, upload. We're already writing Code nodes for all of it. So we pay n8n's <em>costs</em> (binary-handling quirks, browser-based editing, dependency allow-lists, another service to run) without collecting its main <em>benefit</em>. That mismatch is the heart of this decision.</p>
+  </section>
+
+  <!-- ===== Comparison table ===== -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">At a glance</div>
+      <h2>Side-by-side comparison</h2>
+    </div>
+    <div class="card table-card">
+      <table>
+        <thead>
+          <tr><th class="dim">Dimension</th><th>n8n</th><th>Server code</th><th class="verdict-cell">Favors</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="dim">File / zip handling</td><td class="col-n8n">Base64 in memory, binary quirks, workarounds</td><td class="col-code">Native Buffers, fflate, streams — no friction</td><td><span class="tag code"><span class="dot"></span>Code</span></td></tr>
+          <tr><td class="dim">AI calls (chunk/merge)</td><td class="col-n8n">Loop Over Items + sub-workflows; fiddly</td><td class="col-code">Plain loop with the SDK; merge ≈ 10 lines</td><td><span class="tag code"><span class="dot"></span>Code</span></td></tr>
+          <tr><td class="dim">Maintainability</td><td class="col-n8n">Logic spread across nodes; hard to version/test</td><td class="col-code">TypeScript files; diffable, testable</td><td><span class="tag code"><span class="dot"></span>Code</span></td></tr>
+          <tr><td class="dim">AI-assisted dev</td><td class="col-n8n">Assistant can't see/edit nodes</td><td class="col-code">Assistant writes & edits the code directly</td><td><span class="tag code"><span class="dot"></span>Code</span></td></tr>
+          <tr><td class="dim">Deployment</td><td class="col-n8n">A second service to host, secure, upgrade</td><td class="col-code">Already deployed — just more files</td><td><span class="tag code"><span class="dot"></span>Code</span></td></tr>
+          <tr><td class="dim">Security</td><td class="col-n8n">Another system holding the service key</td><td class="col-code">One trust boundary; secrets already there</td><td><span class="tag code"><span class="dot"></span>Code</span></td></tr>
+          <tr><td class="dim">Triggering</td><td class="col-n8n">Easy (webhook / cron UI)</td><td class="col-code">Also easy — call a function after payment</td><td><span class="tag tie"><span class="dot"></span>Tie</span></td></tr>
+          <tr><td class="dim">Long-running jobs</td><td class="col-n8n">Decoupled from web request "for free"</td><td class="col-code">Must add a background queue (one real gap)</td><td><span class="tag n8n"><span class="dot"></span>n8n</span></td></tr>
+          <tr><td class="dim">Observability</td><td class="col-n8n">Great visual run history out of the box</td><td class="col-code">DIY logging + error tracking</td><td><span class="tag n8n"><span class="dot"></span>n8n</span></td></tr>
+          <tr><td class="dim">Scalability</td><td class="col-n8n">Queue mode needs setup; memory ceiling</td><td class="col-code">Precise concurrency control</td><td><span class="tag code"><span class="dot"></span>Code</span></td></tr>
+          <tr><td class="dim">Cost</td><td class="col-n8n">Subscription, or self-host + upkeep</td><td class="col-code">Marginal — uses existing server</td><td><span class="tag code"><span class="dot"></span>Code</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===== Reasoning ===== -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">The why</div>
+      <h2>Reasoning, dimension by dimension</h2>
+    </div>
+
+    <div class="reason">
+      <div class="reason-head"><h3>File handling — the biggest factor</h3><span class="tag code"><span class="dot"></span>Code</span></div>
+      <p>A <code>.docx</code> is a zip, and n8n's binary/base64 handling between nodes is clumsy; you end up building workarounds. In Node, <code>fflate</code> unzips and re-zips a docx in a few lines, working with normal Buffers. The thing fighting us today simply disappears.</p>
+    </div>
+
+    <div class="reason">
+      <div class="reason-head"><h3>AI calls & the split/merge logic</h3><span class="tag code"><span class="dot"></span>Code</span></div>
+      <p>Chunk-and-merge (split paragraphs into batches, send each to the AI, merge back by paragraph index) is <em>naturally</em> a loop over an array — a <code>for</code> loop or a <code>Promise</code> pool with a concurrency cap, ~30 lines. In n8n it becomes the "Loop + sub-workflow + re-attach metadata" dance, its most error-prone part.</p>
+    </div>
+
+    <div class="reason">
+      <div class="reason-head"><h3>Maintainability & AI-assisted dev</h3><span class="tag code"><span class="dot"></span>Code</span></div>
+      <p>The goal is to have code written for you, not to troubleshoot nodes by hand. n8n workflows are large JSON blobs that don't diff well, can't be unit-tested easily, and can't be read or edited by an assistant. In the repo, the assistant writes it, git tracks it, and each transform is testable in isolation.</p>
+    </div>
+
+    <div class="reason">
+      <div class="reason-head"><h3>Deployment & security</h3><span class="tag code"><span class="dot"></span>Code</span></div>
+      <p>You already run an Express server. Adding the pipeline there means <strong>one</strong> thing to deploy and <strong>one</strong> place the Supabase service-role key lives. n8n is a whole extra service to host, patch, and back up — and a second copy of sensitive credentials.</p>
+    </div>
+
+    <div class="reason">
+      <div class="reason-head"><h3>Long-running jobs — n8n's genuine edge</h3><span class="tag n8n"><span class="dot"></span>n8n</span></div>
+      <p>A 50-page document with AI calls takes minutes, which must never run inside a web request. n8n decouples this automatically. Code-only needs a <strong>background queue</strong> — but <code>pg-boss</code> runs on your existing Postgres, so the gap is real but small and well-solved.</p>
+    </div>
+
+    <div class="reason">
+      <div class="reason-head"><h3>Observability</h3><span class="tag n8n"><span class="dot"></span>n8n</span></div>
+      <p>n8n's visual execution history (inspect each step, replay failures) is genuinely nice for debugging flow. In code this is replicated with logging, an error tracker, and a <code>processing_stage</code> column — more setup, but standard and arguably more powerful once in place.</p>
+    </div>
+  </section>
+
+  <!-- ===== Recommendation ===== -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">The call</div>
+      <h2>Recommendation</h2>
+    </div>
+    <div class="card rec">
+      <p><strong>Move the pipeline into the server code.</strong> For this workload the reasoning is one-sided: code-heavy and file-heavy (n8n's weak spots), it benefits enormously from AI-assisted development (impossible inside n8n), and your server and database absorb the work with no extra infrastructure.</p>
+      <p>Keep n8n for what it's great at: lightweight integrations where you don't want to write or deploy code — e.g. <em class="serif">"email me when a project sits unprocessed for an hour."</em> Just not as the engine for document processing.</p>
+      <p class="caveat">Honest caveat: there's real, working effort already in the n8n flow, and rebuilding has a cost. But the migration is mostly <em>moving logic you've already figured out</em> into cleaner files — not redesigning it — and every future change gets easier, not harder.</p>
+    </div>
+  </section>
+
+  <!-- ===== Flows ===== -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">How it runs</div>
+      <h2>Rough processing flow</h2>
+    </div>
+    <div class="flows">
+
+      <div class="card flow-card">
+        <div class="flow-title">If staying on n8n</div>
+        <div class="timeline">
+          <div class="step"><div class="step-label">Webhook receives <code>projectId</code></div></div>
+          <div class="step"><div class="step-label">Get project row</div><div class="step-note">Supabase</div></div>
+          <div class="step"><div class="step-label">Download &amp; unzip <code>.docx</code></div><div class="step-note">Code node → document.xml + styles.xml</div></div>
+          <div class="step"><div class="step-label">Step A + B transforms</div><div class="step-note">styles, margins, references — Code nodes</div></div>
+          <div class="step"><div class="step-label">Chunk → Loop → AI → merge ×2</div><div class="step-note">headings &amp; references — sub-workflows</div></div>
+          <div class="step"><div class="step-label">Re-zip → upload → update DB</div></div>
+        </div>
+        <div class="flow-foot">Split/merge lives in Code nodes feeding "Loop Over Items," with a re-attach step to keep each chunk's index — the fiddly part.</div>
+      </div>
+
+      <div class="card flow-card recommended">
+        <div class="flow-title">Moving to the server <span class="pill">Recommended</span></div>
+        <div class="timeline">
+          <div class="step"><div class="step-label">Stripe webhook confirms payment</div></div>
+          <div class="step"><div class="step-label">Enqueue job <code>{ projectId }</code></div><div class="step-note">pg-boss, on existing Postgres</div></div>
+        </div>
+        <div class="phase-label">Background worker</div>
+        <div class="timeline">
+          <div class="step"><div class="step-label">Fetch row + download <code>.docx</code></div><div class="step-note">existing Supabase client</div></div>
+          <div class="step"><div class="step-label">Unzip → deterministic transforms</div><div class="step-note">pure, testable functions (fflate)</div></div>
+          <div class="step"><div class="step-label">AI passes — chunk · pool · merge</div><div class="step-note">chunkBlocks() → applyDecisions() by index</div></div>
+          <div class="step"><div class="step-label">Re-zip → upload → stamp <code>ready</code></div><div class="step-note">+ Resend "ready" email (already wired)</div></div>
+        </div>
+        <div class="flow-foot">Splitting &amp; merging are just functions — no loop nodes, no metadata re-attaching, fully unit-testable. Frontend polls the status badge (already built).</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===== Next step ===== -->
+  <div class="nextstep">
+    <div class="num">1</div>
+    <div>
+      <div class="eyebrow">Low-risk first move</div>
+      <h2>Prove the file-editing in code</h2>
+      <p>Port the deterministic transforms (styles / margins / strip-overrides, already drafted in <code>n8nResources/nodes/</code>) into a plain TypeScript module with a unit test — no AI, no queue. Just confirm the docx editing works in code, then judge how it feels before committing further.</p>
+    </div>
+  </div>
+
+  <footer>FormaTexto · internal decision record · business_decisions/n8n-vs-server.html</footer>
+
+</div>
+</body>
+</html>

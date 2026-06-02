@@ -1,19 +1,168 @@
 # DOCX Formatting — Implementation & Test Plan
 
+## Scope — first release
+
+- **DOCX only.** No PDF support in the first release. Every input is a `.docx` (a zip of XML parts).
+- **Text extraction happens inside n8n**, not on the client. The unzip step reads `word/document.xml` and `word/styles.xml` as raw XML strings, and the whole pipeline works directly on this WordprocessingML XML — never on plain text.
+- **Heading structure cannot be trusted.** Many users never apply Word's heading styles: chapter titles are typed as ordinary paragraphs made bold or large by hand. Detecting and correcting that structure is part of the formatting job, not an input we are given.
+
 ## Architecture
 
-Formatting is split into deterministic XML passes (no AI) and two targeted AI passes. This keeps cost low — AI only handles the parts that require semantic understanding.
+Formatting is split into deterministic XML passes (no AI) and two targeted AI passes. AI only touches the parts that need semantic understanding, which keeps cost and risk low.
 
 ```
 DOCX formatting pipeline
-├── Step A (no AI): rewrite styles.xml + strip direct overrides + fix margins
-├── Step B (no AI): detect references section + apply hanging indent + spacing
-├── Step C (AI):    reformat reference entries to guideline citation format
-├── Step D (AI):    reclassify headings in document.xml
-└── Step E (no AI): repack → upload → stamp DB
+├── Step A (no AI):     rewrite styles.xml + strip direct overrides + fix margins
+├── Step B (no AI):     detect references section + apply hanging indent + spacing
+├── Step C (AI, chunked): reformat reference entries to guideline citation format
+├── Step D (AI, chunked): reclassify headings in document.xml
+└── Step E (no AI):     repack → upload → stamp DB
 ```
 
+Steps A and B are deterministic and run on the **whole** `document.xml` string at once. String manipulation has no token limit — a 200-page file is as easy as a 2-page one. Only the two AI passes can exceed a model's context window on a long document, so **splitting is needed only for Steps C and D, nowhere else.** See the next section.
+
 Proofreading runs as a separate branch (same repack/upload/stamp step at the end). When both services are selected, formatting and proofreading run sequentially on the same file — formatting first, then proofreading on the formatted output.
+
+---
+
+## Splitting & merge strategy
+
+This is the part that makes 50+ page documents work.
+
+### What gets split, and where
+
+The deterministic passes never split — string manipulation on the full XML is fast and lossless. Splitting is confined to the two AI passes, and each pass does its own chunking right before its AI node and its own merge right after. They do not share chunks.
+
+- **Step D (headings):** chunk all body paragraphs, excluding the references section.
+- **Step C (references):** chunk the reference entries only.
+
+### Unit of split
+
+The atomic unit is a **top-level block of `<w:body>`** — a `<w:p>` paragraph or a `<w:tbl>` table. A block is never split across chunks; that would produce invalid XML. Every block keeps its **absolute index** (its position in the body, `0..N`). That index is the key that makes merge trivial.
+
+### The AI returns decisions, never XML
+
+Critical design choice: we do **not** ask the model to emit corrected XML. Models mangle namespaces, drop attributes, and reorder runs. Instead:
+
+- Each block is reduced to a compact descriptor — `{ i, text (truncated), style, bold, length }` — and the model returns only **decisions**: `[{ i, role: "title" | "h1" | "h2" | "h3" | "body" }]`.
+- A deterministic Code node then applies those decisions to the **original** XML by index: it rewrites only `<w:pStyle w:val="…"/>` on the named blocks and touches nothing else.
+
+The content is therefore never at the mercy of the model. The worst case of a bad decision is a wrong heading level — not corrupted text.
+
+### How merge works
+
+Because every decision carries the absolute block index, merge is a keyed map application, not a reassembly:
+
+1. Collect decisions from every chunk into one list (arrival order does not matter).
+2. Build `Map<index, role>`.
+3. Re-parse the original body into the same indexed block array.
+4. For each block: if the map has its index, rewrite its `pStyle`; otherwise leave it untouched.
+5. Re-serialize the body back into `document.xml`.
+
+The **references merge** is a contiguous splice instead: the references occupy a known index range `[refStart..end]`; reformatted entries come back per chunk, are concatenated in `chunkIndex` order, and replace that range in one shot.
+
+### Token budget & cross-chunk context
+
+- The budget per chunk is set well under the model's input limit. The compact descriptor (truncated text + a few flags) keeps a chunk small, so one chunk can still cover many pages of real document.
+- Heading levels are partly relative ("1.1" sits under "1"). To survive a mid-document cut, each chunk is prefixed with a short read-only context line listing the last one or two headings seen before it. Numbered headings ("1.", "1.1", "Capítulo 3") are largely self-describing, which limits cross-chunk dependence.
+
+### Chunker (Step D) — n8n Code node, "Run Once for All Items"
+
+```js
+// STEP D — CHUNK paragraphs for the heading-reclassification AI pass.
+// Input json: { documentXml, guideline, refStartIndex }   (refStartIndex = -1 if no references)
+
+const { documentXml, guideline, refStartIndex = -1 } = $input.first().json;
+
+// parseTopLevelBlocks → [{ index, xml, text, style, bold }] in body order.
+// Implement with fast-xml-parser (see parsing note below). Contract used here:
+const blocks = parseTopLevelBlocks(documentXml);
+
+// keep only real body paragraphs before the references section
+const candidates = blocks.filter(b =>
+  b.text.trim().length > 0 &&
+  (refStartIndex < 0 || b.index < refStartIndex)
+);
+
+const MAX_CHARS = 8000; // compact-text budget per chunk — tune to the model
+const descriptor = b => ({
+  i: b.index,
+  text: b.text.slice(0, 200), // heading detection needs the start, not the whole body
+  style: b.style || 'Normal',
+  bold: !!b.bold,
+  len: b.text.length,
+});
+
+const chunks = [];
+let cur = [], size = 0, seenHeadings = [];
+for (const b of candidates) {
+  const d = descriptor(b);
+  const cost = d.text.length + 40;
+  if (size + cost > MAX_CHARS && cur.length) {
+    chunks.push({ blocks: cur, context: seenHeadings.slice(-2) });
+    cur = []; size = 0;
+  }
+  cur.push(d); size += cost;
+  if (/heading/i.test(d.style) || (d.bold && d.len < 80)) seenHeadings.push(d.text);
+}
+if (cur.length) chunks.push({ blocks: cur, context: seenHeadings.slice(-2) });
+
+return chunks.map((c, k) => ({
+  json: { guideline, chunkIndex: k, totalChunks: chunks.length, context: c.context, blocks: c.blocks },
+}));
+```
+
+### Apply + merge (Step D) — n8n Code node, "Run Once for All Items"
+
+```js
+// STEP D — APPLY heading decisions back into the original document.xml.
+// Each incoming item json: { decisions: [{ i, role }] }
+// Original XML pulled from the unzip node by name.
+
+const decisions   = $input.all().flatMap(it => it.json.decisions || []);
+const roleByIndex = new Map(decisions.map(d => [d.i, d.role]));
+
+const STYLE = { title: 'Title', h1: 'Heading1', h2: 'Heading2', h3: 'Heading3', body: null };
+
+const documentXml = $('Unzip DOCX').first().json.documentXml;
+const blocks = parseTopLevelBlocks(documentXml); // same parser as the chunker
+
+const rebuilt = blocks.map(b => {
+  if (!roleByIndex.has(b.index)) return b.xml;      // untouched
+  const style = STYLE[roleByIndex.get(b.index)];
+  return style ? setParagraphStyle(b.xml, style)    // rewrite <w:pStyle w:val="..."/>
+               : clearHeadingStyle(b.xml);           // demote to body
+});
+
+const newDocumentXml = replaceBodyChildren(documentXml, rebuilt);
+return [{ json: { documentXml: newDocumentXml } }];
+```
+
+> **Parsing note.** Regex over WordprocessingML is fragile — tables nest paragraphs, and `<w:p` also matches `<w:pPr>`/`<w:pStyle>`. Both nodes above assume helpers `parseTopLevelBlocks`, `setParagraphStyle`, `clearHeadingStyle`, `replaceBodyChildren`. Implement them with `fast-xml-parser` (feasible since the unzip step already uses `fflate` as an external module — add `fast-xml-parser` to `NODE_FUNCTION_ALLOW_EXTERNAL`). Do not hand-roll regex block splitting for production.
+
+---
+
+## Resources required
+
+### Database (Supabase Postgres)
+- The `projects` table already carries what the pipeline needs: `status`, `guideline`, `services`, `original_file_path`, `processed_file_path`, `references_pages`, `references_file_path`, `completed_at`.
+- **Status values:** standardize on the app enum `pending → processing → ready → delivered`. (An earlier draft of this plan said `status = ready`; that is wrong — use `ready`.) Stamp `processing` when n8n starts and `ready` when the processed file is written.
+- **Recommended additions for long-job observability:** `processing_started_at timestamptz`, `error_message text`, and optionally `processing_stage text` (`styles | headings | references | repack`) so a stalled 50-page job is debuggable.
+
+### Supabase Storage
+- Bucket `projects`. Input lives at `{userId}/{filename}`. Write the processed output to a distinct key — recommend `{userId}/{projectId}/processed/{filename}` — and stamp it into `processed_file_path`. n8n needs the **service-role key** to read input and write output.
+
+### Backend (Express server)
+- Needs to **trigger n8n** once a project is paid and ready. Today `server/src/routes/webhook.ts` only inserts the order on `payment_intent.succeeded`. Add: once the project row exists with `status = pending`, POST `{ projectId }` to the n8n webhook (new route such as `POST /api/processing/start`, or fire it directly from the Stripe webhook handler).
+- Reuse the existing service-role Supabase client at `server/src/lib/supabase.ts`.
+- Decide trigger ownership (see open questions): backend push vs. n8n polling vs. Supabase DB webhook on insert.
+
+### n8n
+- **Trigger:** Webhook node receiving `{ projectId }`.
+- **Credentials:** Supabase service-role (Storage + REST) and an AI model API key (Claude Haiku / GPT-4o-mini for Steps C and D).
+- **External modules:** enable `fflate` and `fast-xml-parser` via `NODE_FUNCTION_ALLOW_EXTERNAL`.
+- **Execution timeout:** raise it — a 50-page job with two chunked AI loops runs for minutes. Respond `202 accepted` immediately and update DB status asynchronously rather than holding the HTTP connection open.
+- A **Loop Over Items** node throttles per-chunk AI calls to respect rate limits; a **sub-workflow** per AI pass keeps the main flow readable.
 
 ---
 
@@ -27,6 +176,7 @@ Proofreading runs as a separate branch (same repack/upload/stamp step at the end
 | Body size | 12pt | 12pt | 12pt | 12pt |
 | Line spacing | 1.5 | Double (2.0) | Double (2.0) | Double (2.0) |
 | Paragraph indent | 1.25cm first line | 0.5in first line | 0.5in first line | 0.5in first line |
+| Body alignment | Justified (`both`) | Left (ragged right) | Left (ragged right) | Left (ragged right) |
 | Margin top | 3cm | 1in | 1in | 1in |
 | Margin bottom | 2cm | 1in | 1in | 1in |
 | Margin left | 3cm | 1in | 1in | 1in |
@@ -62,9 +212,9 @@ Proofreading runs as a separate branch (same repack/upload/stamp step at the end
 
 ### Step 1.2 — Create `n8nResources/formatting_headings_prompt.md`
 - **Tool:** text editor
-- **Input:** `word/document.xml` XML (paragraphs only — strip non-paragraph nodes before sending to reduce tokens)
-- **Output:** same XML with corrected `<w:pStyle w:val="..."/>` values on paragraphs that are clearly chapter titles, section headings, or subheadings — text content unchanged, all other attributes unchanged
-- **Notes:** only reclassify where confidence is high (short line, all-caps, numbered like "1.", "1.1", "Capítulo 1"). If unsure — leave as-is.
+- **Input:** one chunk's compact descriptors `[{ i, text, style, bold, len }]` plus the `context` line (last 1–2 headings before the chunk) and `guideline` — produced by the Step D chunker, not raw XML
+- **Output:** a JSON array of **decisions** only — `[{ i, role: "title" | "h1" | "h2" | "h3" | "body" }]`. The model never emits XML; the deterministic merge node applies these by index.
+- **Notes:** only reclassify where confidence is high (short line, all-caps, numbered like "1.", "1.1", "Capítulo 1"). If unsure, return `role: "body"` (leave as-is). Echo every `i` it was given so the merge map is complete.
 
 ### Step 1.3 — Define heading style names per guideline
 - **Tool:** test DOCX opened in Word to inspect generated style IDs
@@ -104,6 +254,7 @@ Proofreading runs as a separate branch (same repack/upload/stamp step at the end
 - **Input:** `document.xml` after Step 2.4
 - **Output:** the index of the paragraph that is the references heading (matched against "Referências", "References", "Works Cited", "Bibliografia", "Bibliography" — case-insensitive, trimmed), and the array of paragraphs that follow it to end of document
 - **Notes:** if no references section is found, log a warning and skip Steps 2.6 and 2.7 gracefully — do not crash.
+- **Server status:** implemented in `server/src/lib/formatting/references.ts` (`formatReferences`). Bounded to the **user-flagged pages** (`references_pages`), NOT word-detection — the word "Referências" can appear in body text. Flagged page numbers are mapped to paragraphs via pagination signals (manual page breaks, `sectPr`, `lastRenderedPageBreak`, else 40-block). References live in the single stored file (separate references-file split removed); ABNT uses **no hanging indent** (flush-left) while APA/MLA/Chicago use a 0.5in hanging indent — see `specs/abnt.md` §6 and `guidelines.ts` `references`.
 
 ### Step 2.6 — Step B: apply hanging indent and spacing to reference entries
 - **Tool:** n8n Code node (JavaScript — XML manipulation)
@@ -111,17 +262,16 @@ Proofreading runs as a separate branch (same repack/upload/stamp step at the end
 - **Output:** same paragraphs with `<w:pPr>` updated: hanging indent values and inter-entry spacing per the guideline spec table above; heading paragraph gets correct heading style and alignment
 - **Notes:** this is fully deterministic — no AI involved.
 
-### Step 2.7 — Step C: AI reformat reference entries
-- **Tool:** n8n AI node (cheap/fast model — Claude Haiku or GPT-4o-mini)
-- **Input:** reference entry paragraphs (plain text, one per line) + `guideline` + prompt from Step 1.1
-- **Output:** reformatted entries as `<w:p>` XML fragments with correct author format, punctuation, bold/italic inline markup
-- **Notes:** merge reformatted entries back into `document.xml` at the position detected in Step 2.5, replacing the original entries.
+### Step 2.7 — Step C: AI reformat reference entries (chunked)
+- **Tool:** Code node (chunk by entry) → Loop Over Items → n8n AI node (cheap/fast model — Claude Haiku or GPT-4o-mini) → Code node (merge)
+- **Chunking:** group the reference entry paragraphs from Step 2.5 into chunks of N entries under the model budget; never split an entry. Each chunk carries its `chunkIndex` and the entries' absolute index range.
+- **AI input/output:** reference entries (plain text, one per line) + `guideline` + prompt from Step 1.1 → reformatted entries as `<w:p>` XML fragments with correct author format, punctuation, bold/italic markup.
+- **Merge:** concatenate reformatted chunks in `chunkIndex` order and splice them into `document.xml` over the range `[refStart..end]` detected in Step 2.5, replacing the originals in one shot.
 
-### Step 2.8 — Step D: AI heading reclassification
-- **Tool:** n8n AI node (same cheap/fast model as Step 2.7)
-- **Input:** paragraph-only slice of `document.xml` (excluding the references section) + guideline + prompt from Step 1.2
-- **Output:** same XML slice with corrected `<w:pStyle>` values on heading paragraphs
-- **Notes:** exclude the references section from this pass — it has its own heading treatment in Step 2.6. Merge result back into full `document.xml`.
+### Step 2.8 — Step D: AI heading reclassification (chunked)
+- **Tool:** Code node (Step D chunker) → Loop Over Items → n8n AI node (same model as Step 2.7) → Code node (apply + merge)
+- **Chunking & merge:** use the chunker and apply/merge nodes defined in the **Splitting & merge strategy** section. The model returns `[{ i, role }]` decisions; the merge node rewrites only `<w:pStyle>` on the original XML by absolute index.
+- **Notes:** exclude the references section from this pass (it gets its own heading treatment in Step 2.6) by passing `refStartIndex` to the chunker. No XML is reassembled from model output — decisions are applied to the original `document.xml`.
 
 ### Step 2.9 — Step E: repack into `.docx`
 - **Tool:** n8n Code node (JavaScript — fflate or jszip)
@@ -136,7 +286,16 @@ Proofreading runs as a separate branch (same repack/upload/stamp step at the end
 ### Step 2.11 — Step E: update project status in DB
 - **Tool:** n8n Supabase node (or HTTP Request to Supabase REST API)
 - **Input:** `project.id`, `processed_file_path` from Step 2.10
-- **Output:** `projects` row updated: `processed_file_path` stamped, `status = complete`, `completed_at = now()`
+- **Output:** `projects` row updated: `processed_file_path` stamped, `status = ready`, `completed_at = now()`
+
+### Step 2.12 — Service routing: run formatting and proofreading sequentially with a bifurcation condition
+- **Tool:** n8n IF / Switch nodes reading `project.services`
+- **Goal:** run the formatting and proofreading pipelines sequentially on the same file, gated by which services the project actually ordered. Decisions are driven by checking `project.services` at two branch points.
+- **Branch logic:**
+  - **Both `formatting` + `proofreading`:** follow the entire pipeline — formatting first, then proofreading on the formatted output.
+  - **Proofreading only:** skip the formatting section entirely and run the file straight through the proofreading pipeline.
+  - **Formatting only:** start the formatting flow; once formatting finishes, a second project-services check makes the flow skip the proofreading pipeline and finish the whole processing.
+- **Output:** one processed file written back regardless of path, with the same repack → upload → stamp DB steps (2.9–2.11) at the end of whichever branch runs last.
 
 ---
 
@@ -218,7 +377,7 @@ Proofreading runs as a separate branch (same repack/upload/stamp step at the end
 
 ### Step 5.3 — Verify processed file written back
 - **Tool:** Supabase Dashboard → Storage → `projects` bucket
-- **Expected output:** file at `processed/`; `projects.processed_file_path` stamped; `status = complete`; `completed_at` set
+- **Expected output:** file at `processed/`; `projects.processed_file_path` stamped; `status = ready`; `completed_at` set
 
 ### Step 5.4 — Download and inspect from the UI
 - **Tool:** ProjectDetailPage → "Baixar Arquivo Final"
@@ -246,7 +405,7 @@ Proofreading runs as a separate branch (same repack/upload/stamp step at the end
 
 ### Step 6.5 — Large document (50+ pages)
 - **Input:** full thesis-length DOCX
-- **Expected:** pipeline completes without timeout; check n8n timeout setting and AI model context window for Steps 2.7 and 2.8 — large reference lists may need to be batched
+- **Expected:** pipeline completes without timeout. Deterministic Steps A/B handle the full file in one pass. Steps C and D run chunked per the **Splitting & merge strategy** — verify chunk boundaries never split a `<w:p>`, merge restores correct order, and heading levels stay consistent across chunk boundaries (the context line carries prior headings). Confirm the n8n execution timeout is raised and DB status is updated asynchronously.
 
 ### Step 6.6 — All four guidelines
 - **Input:** same test DOCX, one run per guideline
@@ -257,7 +416,9 @@ Proofreading runs as a separate branch (same repack/upload/stamp step at the end
 ## Open questions
 
 - [ ] Which AI model for Steps 2.7 and 2.8? (should be cheap and fast — Claude Haiku or GPT-4o-mini)
-- [ ] Does the n8n webhook currently fire on `projects` insert or does it need a separate trigger?
-- [ ] What is the current n8n execution timeout? Large reference lists in Step 2.7 may need batching.
+- [ ] Trigger ownership: backend push (new `/api/processing/start`), n8n polling, or a Supabase DB webhook on `projects` insert? No trigger exists yet — `webhook.ts` only handles Stripe.
+- [ ] Confirm `NODE_FUNCTION_ALLOW_EXTERNAL` includes `fflate` and can add `fast-xml-parser` on the n8n host.
+- [ ] What is the current n8n execution timeout, and is queue mode available for concurrent jobs?
 - [ ] Should `completed_at` be stamped by n8n or by a Supabase trigger?
-- [ ] Should the references AI pass (Step 2.7) send all entries in one prompt or batch by entry type (book, article, etc.)?
+- [ ] Chunk budget tuning: confirm `MAX_CHARS` per chunk against the chosen model's context window; decide Loop Over Items batch size for rate limits.
+- [ ] Add the observability columns (`processing_started_at`, `error_message`, `processing_stage`) to `projects`, or defer?

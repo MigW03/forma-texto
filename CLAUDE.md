@@ -10,6 +10,17 @@ FormaTexto is an AI-powered document formatting and proofreading service. Users 
 
 **Writing or editing `.md` files**: use clear, readable prose. Full sentences, no jargon compression. These files are read by humans, not just AI. Use `/caveman light`.
 
+## Quick Reports
+
+When asked to produce a report, comparison, or decision document for the user to read (not code), default to a **designed standalone HTML file**, not plain markdown. Save decision records in `business_decisions/`.
+
+Reference template: [`business_decisions/n8n-vs-server.html`](business_decisions/n8n-vs-server.html). Match its approach:
+- **Answer up front** — dark header band, a status/recommendation pill, and a verdict card + scorecard so the conclusion lands in seconds.
+- **Consistent color language** — pick one accent for the recommended option (forest green), a contrasting tone for the alternative (amber), neutral for ties; reuse it across tags, table chips, and timeline dots so the lean is readable without reading.
+- **Scannable structure** — eyebrow labels over sections, comparison tables with a "favors" chip column, reasoning as individual cards (verdict tag pinned right), flows as connected timelines (not ASCII).
+- Use the project design tokens (sand/ink/forest/muted/border), Inter font, rounded cards, self-contained embedded CSS, responsive.
+- Keep it a **report, not a landing page** — no marketing fluff or scroll animation. Write report prose in clear readable language (not caveman).
+
 ---
 
 ## Tech Stack

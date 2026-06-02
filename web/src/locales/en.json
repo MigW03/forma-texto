@@ -166,7 +166,10 @@
       "countingPages": "counting pages…",
       "replace": "Replace",
       "invalidType": "Unsupported file type. Please upload a Word document (.docx).",
-      "docConvert": "Old .doc format is not supported. Please convert your file to .docx before uploading."
+      "docConvert": "Old .doc format is not supported. Please convert your file to .docx before uploading.",
+      "pageCountUnavailable": "page count unavailable",
+      "uncountableTitle": "We couldn't read this file's page count",
+      "uncountableBody": "This document has no page information — it was likely exported from Google Docs or converted by another tool. Please open it in Microsoft Word and save it again, or upload a PDF instead."
     },
     "termsPrefix": "I agree to the",
     "termsLink": "Terms of Service",
@@ -184,6 +187,7 @@
     "status": "Status",
     "createdAt": "Submitted",
     "pageCount": "Pages",
+    "referencesPages": "References pages",
     "cost": "Amount",
     "noPreview": "Preview not available for this file type.",
     "viewingFinal": "Viewing processed file",

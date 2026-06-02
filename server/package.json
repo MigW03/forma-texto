@@ -5,13 +5,15 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "vitest run"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.1",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^4.21.2",
+    "fflate": "^0.8.2",
     "resend": "^6.12.4",
     "stripe": "^22.1.0"
   },
@@ -20,6 +22,7 @@
     "@types/express": "^5.0.3",
     "@types/node": "^22.15.3",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.8"
   }
 }

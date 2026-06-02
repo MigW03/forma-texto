@@ -157,8 +157,17 @@
   - n8n workflow: unzips uploaded DOCX, extracts `word/document.xml`, runs AI proofreading pass, serializes corrected XML back, repacks as `.docx` and writes to Storage
 - [ ] DOCX formatting function — see `formattingPlan.md` for full breakdown
   - Five-step pipeline: (A) deterministic — rewrite `styles.xml` per guideline, strip direct overrides, fix margins; (B) deterministic — detect references section, apply hanging indent + spacing; (C) AI — reformat reference entries to guideline citation format (Haiku/GPT-4o-mini); (D) AI — heading reclassification; (E) repack → upload → stamp DB. AI only touches semantics; layout is deterministic XML.
+  - **Progress (migrating off n8n → server, per `business_decisions/n8n-vs-server.md`):** Steps A & B implemented server-side in `server/src/lib/formatting/` (pure transforms: `rewriteStyles`, `stripDirectOverrides`, `rewriteMargins` in `applyStepA`; `formatReferences` for Step B; zip via `docxZip`) + orchestrator `server/src/lib/processFormatting.ts` (download → Step A → Step B → re-zip → upload `processed/` → stamp `status='complete'` → ready email). Triggered by `POST /api/processing/start` (`x-webhook-secret`, in-process async, 202). 24 unit + real-fixture tests pass (vitest). Canonical guideline spec: `server/src/lib/formatting/specs/abnt.md`.
+  - **Architecture decision — references no longer split:** since processing left n8n, the separate references file is unnecessary. The plan is to store ONE file (selected pages incl. references); Step B detects the references section by heading text and `references_file_path` is deprecated (column kept, goes null). Step B is **bounded to the user-flagged `references_pages`** (not word-detection — "Referências" can appear in body text); flagged pages are mapped to paragraphs via pagination signals (manual page breaks / `sectPr` / `lastRenderedPageBreak` / 40-block fallback). Step C (AI reference reformatting) is confirmed in-scope for later. **Still pending:** frontend change in `CheckoutPage.tsx` to stop slicing references (upload `selectedPages` as one file) + verify `ProjectDetailPage` doesn't hard-depend on the separate ref file; Steps C–D; trigger cutover from the n8n webhook; reconcile ABNT heading font in `guidelines.ts`.
 - [x] Convert processed `.zip` back to `.docx` for delivery
   - n8n repacks the processed output as `.docx` and stamps `processed_file_path` + `status = complete` in the `projects` table
+
+---
+
+## Admin Dashboard (Analytics)
+
+- [ ] Internal admin dashboard for the owner
+  - A private dashboard for tracking how the app is doing overall — not user-facing. Should surface key metrics at a glance: total and active user count, sign-ups over time, revenue (total and over time, ideally split by service and trial vs paid), number of orders, number of files/projects processed, projects by status, conversion rate (sign-ups → paying), and trial usage. Data sources already exist: the `orders` table (revenue, `amount_brl`, `is_trial`), the `projects` table (file/project counts, statuses, services), and `user_profiles` / Supabase auth (user counts, trial usage); Stripe could be a secondary source for payment reconciliation. No concrete approach decided yet — it could live in this repo behind an admin-only route, or be a completely separate repo/app. Access must be restricted to the owner only (admin role check, not just authentication). To be scoped and discussed later.
 
 ---
 
