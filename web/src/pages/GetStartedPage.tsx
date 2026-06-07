@@ -6,6 +6,7 @@ import { ROUTES } from '../lib/routes'
 import { PRICING, formatBRL } from '../lib/pricing'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useGuidelines, localizedDescription } from '../lib/guidelines'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
@@ -108,10 +109,9 @@ async function getFilePageInfo(file: File): Promise<FilePageInfo> {
 }
 
 type ServiceType = 'proofreading' | 'formatting'
-type GuidelineId = 'abnt' | 'apa' | 'mla' | 'chicago'
+type GuidelineId = string
 type InputTab = 'upload' | 'link'
 
-const GUIDELINE_IDS: GuidelineId[] = ['abnt', 'apa', 'mla', 'chicago']
 export const SESSION_KEY = 'forma-texto-get-started'
 
 function loadSession() {
@@ -142,7 +142,7 @@ type RestoredState = {
 }
 
 export default function GetStartedPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -161,6 +161,14 @@ export default function GetStartedPage() {
     () => initServices.includes('formatting')
   )
   const [selectedGuideline, setSelectedGuideline] = useState<GuidelineId>(initGuideline)
+  const guidelines = useGuidelines()
+
+  // If the saved/selected guideline isn't in the loaded catalog, snap to the first.
+  useEffect(() => {
+    if (guidelines.length && !guidelines.some(g => g.id === selectedGuideline)) {
+      setSelectedGuideline(guidelines[0].id)
+    }
+  }, [guidelines, selectedGuideline])
 
   const toggleService = (service: ServiceType) => {
     setSelectedServices(prev => {
@@ -356,25 +364,25 @@ export default function GetStartedPage() {
               <p className="text-xs font-medium text-muted uppercase tracking-widest">
                 {t('getStarted.guidelineLabel')}
               </p>
-              {GUIDELINE_IDS.map((id) => (
+              {guidelines.map((g) => (
                 <button
-                  key={id}
-                  onClick={(e) => { e.stopPropagation(); setSelectedGuideline(id) }}
+                  key={g.id}
+                  onClick={(e) => { e.stopPropagation(); setSelectedGuideline(g.id) }}
                   className={`flex items-center justify-between rounded-xl px-3 py-3 text-left transition-colors ${
-                    selectedGuideline === id
+                    selectedGuideline === g.id
                       ? 'bg-forest text-white'
                       : 'border border-border hover:border-forest-mid/40 text-ink'
                   }`}
                 >
                   <div>
                     <p className="text-sm font-medium">
-                      {t(`services.guidelines.${id}.name`)}
+                      {g.name}
                     </p>
-                    <p className={`text-xs mt-0.5 ${selectedGuideline === id ? 'text-white/70' : 'text-muted'}`}>
-                      {t(`services.guidelines.${id}.description`)}
+                    <p className={`text-xs mt-0.5 ${selectedGuideline === g.id ? 'text-white/70' : 'text-muted'}`}>
+                      {localizedDescription(g.description, i18n.language)}
                     </p>
                   </div>
-                  {selectedGuideline === id && (
+                  {selectedGuideline === g.id && (
                     <Check size={14} className="shrink-0 ml-3" />
                   )}
                 </button>

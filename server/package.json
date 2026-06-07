@@ -4,7 +4,7 @@
   "type": "commonjs",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc",
+    "build": "tsc && node scripts/copySpecs.js",
     "start": "node dist/index.js",
     "test": "vitest run"
   },
@@ -14,8 +14,10 @@
     "dotenv": "^16.5.0",
     "express": "^4.21.2",
     "fflate": "^0.8.2",
+    "json5": "^2.2.3",
     "resend": "^6.12.4",
-    "stripe": "^22.1.0"
+    "stripe": "^22.1.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

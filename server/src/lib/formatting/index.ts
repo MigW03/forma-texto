@@ -1,5 +1,7 @@
-export { GUIDELINES, resolveGuideline, REFERENCES_HEADING_STYLE } from './guidelines'
+export { getGuideline, resolveGuideline, REFERENCES_HEADING_STYLE } from './guidelines'
 export type { Guideline, GuidelineSpec } from './guidelines'
+export { listGuidelines } from './loadGuideline'
+export type { GuidelineMeta } from './loadGuideline'
 export { formatReferences } from './references'
 export type { ReferencePagesInput } from './references'
 export { unzipDocx, zipDocx } from './docxZip'

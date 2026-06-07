@@ -9,6 +9,7 @@ import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useGuidelines } from '../lib/guidelines'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -271,7 +272,15 @@ export default function PageSelectionPage() {
     () => new Set(state?.services ?? [])
   )
   const [guideline, setGuideline] = useState<string>(state?.guideline ?? 'abnt')
+  const guidelines = useGuidelines()
   const [hasReferences, setHasReferences] = useState(true)
+
+  // If the carried-over guideline isn't in the loaded catalog, snap to the first.
+  useEffect(() => {
+    if (guidelines.length && !guidelines.some(g => g.id === guideline)) {
+      setGuideline(guidelines[0].id)
+    }
+  }, [guidelines, guideline])
   const [referencesPagesInput, setReferencesPagesInput] = useState('')
 
   const toggleService = (svc: string) => {
@@ -613,8 +622,8 @@ export default function PageSelectionPage() {
                     onChange={e => setGuideline(e.target.value)}
                     className="w-full text-sm border border-border rounded-xl px-3 py-2.5 pr-8 bg-white focus:outline-none focus:ring-2 focus:ring-forest-mid/30 appearance-none cursor-pointer"
                   >
-                    {(['abnt', 'apa', 'mla', 'chicago'] as const).map(id => (
-                      <option key={id} value={id}>{t(`services.guidelines.${id}.name`)}</option>
+                    {guidelines.map(g => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
                     ))}
                   </select>
                   <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />

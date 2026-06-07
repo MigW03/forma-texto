@@ -1,4 +1,4 @@
-import { GUIDELINES, REFERENCES_HEADING_STYLE, type Guideline, type GuidelineSpec } from './guidelines'
+import { getGuideline, REFERENCES_HEADING_STYLE, type Guideline, type GuidelineSpec } from './guidelines'
 
 /**
  * Step B (deterministic) — format the references section.
@@ -145,7 +145,7 @@ export function formatReferences(
   // No flagged pages (or no page metadata) → nothing to do.
   if (!referencePages?.length || !selectedPages?.length) return documentXml
 
-  const g = GUIDELINES[guideline]
+  const g = getGuideline(guideline)
   const blocks = getBlocks(documentXml)
   if (!blocks.length) return documentXml
 

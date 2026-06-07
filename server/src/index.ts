@@ -7,6 +7,7 @@ import documentsRouter from './routes/documents'
 import authRouter from './routes/auth'
 import notificationsRouter from './routes/notifications'
 import processingRouter from './routes/processing'
+import guidelinesRouter from './routes/guidelines'
 
 const app = express()
 const PORT = process.env.PORT ?? 3001
@@ -26,6 +27,7 @@ app.use('/api/documents', documentsRouter)
 app.use('/api/auth', authRouter)
 app.use('/api/notifications', notificationsRouter)
 app.use('/api/processing', processingRouter)
+app.use('/api/guidelines', guidelinesRouter)
 
 app.get('/health', (_req, res) => res.json({ ok: true }))
 

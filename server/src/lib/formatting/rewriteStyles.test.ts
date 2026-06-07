@@ -42,11 +42,11 @@ describe('rewriteStyles (ABNT)', () => {
     expect(normal).toContain('<w:jc w:val="both"/>')
   })
 
-  it('inserts Heading1 as Arial bold, left-aligned (not justified)', () => {
+  it('inserts Heading1 in the body font, bold, left-aligned (not justified)', () => {
     const out = rewriteStyles(STYLES(''), 'abnt')
     expect(out).toContain('w:styleId="Heading1"')
     const h1 = out.match(/<w:style[^>]*w:styleId="Heading1"[\s\S]*?<\/w:style>/)![0]
-    expect(h1).toContain('w:ascii="Arial"')
+    expect(h1).toContain('w:ascii="Times New Roman"') // one font throughout — matches body (§2)
     expect(h1).toContain('<w:b/>')
     expect(h1).toContain('<w:outlineLvl w:val="0"/>')
     expect(h1).toContain('w:firstLine="0"') // no first-line indent on headings

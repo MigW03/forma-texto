@@ -1,5 +1,23 @@
 # DOCX Formatting — Implementation & Test Plan
 
+> ## ⚠️ n8n is no longer used in this project
+>
+> The pipeline was migrated off n8n and is now built **server-side** in
+> `server/src/lib/formatting/` (Express + TypeScript). **Nothing runs on n8n anymore.**
+>
+> This document predates that migration, so the sections below that describe n8n nodes,
+> webhooks, Code-node JavaScript, `NODE_FUNCTION_ALLOW_EXTERNAL`, Loop-Over-Items, etc.
+> are **historical** — kept for the pipeline logic and test cases they describe, not as
+> build instructions. Wherever it says "n8n Code node," read it as "a server module in
+> `server/src/lib/formatting/`."
+>
+> Current state of the build:
+> - **Steps A, B, E** — built and tested server-side (`applyStepA`, `formatReferences`,
+>   `processFormatting`, repack/upload/stamp).
+> - **Steps C, D** (the AI passes) — **not built yet.** The server plan for them lives in
+>   **[`formattingPlan-stepsCD.md`](formattingPlan-stepsCD.md)**, which supersedes the
+>   Step C/D node instructions in this file.
+
 ## Scope — first release
 
 - **DOCX only.** No PDF support in the first release. Every input is a `.docx` (a zip of XML parts).

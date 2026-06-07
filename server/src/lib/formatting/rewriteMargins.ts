@@ -1,4 +1,4 @@
-import { GUIDELINES, type Guideline } from './guidelines'
+import { getGuideline, type Guideline } from './guidelines'
 
 /**
  * Step A — rewrite page margins in document.xml.
@@ -19,7 +19,7 @@ function setAttr(tag: string, name: string, value: number): string {
 }
 
 export function rewriteMargins(documentXml: string, guideline: Guideline): string {
-  const { top, right, bottom, left } = GUIDELINES[guideline].margins
+  const { top, right, bottom, left } = getGuideline(guideline).margins
 
   // 1) Rewrite existing <w:pgMar .../> tags.
   let xml = documentXml.replace(/<w:pgMar\b[^>]*\/>/g, tag => {

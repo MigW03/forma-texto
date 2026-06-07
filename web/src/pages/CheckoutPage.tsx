@@ -350,6 +350,22 @@ export default function CheckoutPage() {
         console.error('Project creation failed:', projectError)
       } else {
         console.log('[checkout] project created:', projectId)
+
+        // 5. Trigger processing (fire-and-forget). Formatting runs on our server's
+        //    pipeline; proofreading-only projects still go to the n8n webhook.
+        if (services.includes('formatting')) {
+          const token = (await supabase.auth.getSession()).data.session?.access_token
+          fetch(`${API_URL}/api/processing/start`, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ projectId }),
+          }).catch(() => {})
+        } else {
+          fetch(`${API_URL}/api/checkout/notify`, { method: 'POST' }).catch(() => {})
+        }
       }
     } catch (err) {
       console.error('Post-payment error:', err)

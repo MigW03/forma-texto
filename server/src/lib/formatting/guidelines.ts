@@ -1,6 +1,10 @@
 /**
- * Canonical guideline spec — single source of truth for the deterministic
- * formatting passes. Ported from n8nResources/nodes/_guidelines.js.
+ * Guideline specs for the deterministic formatting passes.
+ *
+ * The single source of truth is `specs/{id}.md` (the §8 machine block), loaded
+ * at runtime by `getGuideline()`. The `FALLBACK` table below is only a safety
+ * net used when a guideline has no spec file yet (apa/mla/chicago) or its spec
+ * fails to parse — it keeps jobs running. Edit the `.md` to change the rules.
  *
  * UNITS (OOXML / WordprocessingML):
  *  - Font size  -> half-points.  12pt = 24
@@ -10,6 +14,8 @@
  *      1.25cm first line = 709     0.5in = 720
  *      3cm = 1701   2cm = 1134     1in = 1440
  */
+
+import { loadGuidelineFromSpec } from './loadGuideline'
 
 export type Guideline = 'abnt' | 'apa' | 'mla' | 'chicago'
 
@@ -32,10 +38,14 @@ export interface GuidelineSpec {
 /** Word styleId used for the references section heading (REFERÊNCIAS / References / ...). */
 export const REFERENCES_HEADING_STYLE = 'ReferencesHeading'
 
-export const GUIDELINES: Record<Guideline, GuidelineSpec> = {
+/**
+ * Built-in fallback values. Used only when `specs/{id}.md` is absent or invalid.
+ * For guidelines that DO have a spec file (abnt), the `.md` wins via getGuideline().
+ */
+const FALLBACK: Record<Guideline, GuidelineSpec> = {
   abnt: {
     body: { font: 'Times New Roman', sz: 24, line: 360, firstLine: 709, align: 'both' }, // 1.5, 1.25cm, justified
-    heading: { font: 'Arial', sz: 24, bold: true },
+    heading: { font: 'Times New Roman', sz: 24, bold: true }, // one font throughout — matches body (§2)
     margins: { top: 1701, bottom: 1134, left: 1701, right: 1134 }, // 3/2/3/2 cm
     references: { entryAlign: 'left', entryLine: 240, entryAfter: 240, hangingIndent: 0 }, // single, blank line between, flush-left
   },
@@ -57,6 +67,22 @@ export const GUIDELINES: Record<Guideline, GuidelineSpec> = {
     margins: { top: 1440, bottom: 1440, left: 1440, right: 1440 },
     references: { entryAlign: 'left', entryLine: 240, entryAfter: 240, hangingIndent: 720 }, // single within, blank line between, 0.5in hanging
   },
+}
+
+/**
+ * Resolve a guideline's deterministic formatting values.
+ * Prefers the canonical `specs/{id}.md` spec; falls back to the built-in table
+ * if the spec is missing or invalid (logged, so jobs never fail on a bad edit).
+ */
+export function getGuideline(id: Guideline): GuidelineSpec {
+  try {
+    return loadGuidelineFromSpec(id)
+  } catch (err) {
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn(`[guidelines] spec for "${id}" unavailable, using fallback: ${(err as Error).message}`)
+    }
+    return FALLBACK[id]
+  }
 }
 
 /** Normalize whatever the projects table stores ("ABNT", "abnt", "APA 7th") to a key. */

@@ -1,4 +1,4 @@
-import { GUIDELINES, REFERENCES_HEADING_STYLE, type Guideline, type GuidelineSpec } from './guidelines'
+import { getGuideline, REFERENCES_HEADING_STYLE, type Guideline, type GuidelineSpec } from './guidelines'
 
 /**
  * Step A — rewrite styles.xml.
@@ -121,7 +121,7 @@ function upsertStyle(xml: string, styleId: string, block: string): string {
 }
 
 export function rewriteStyles(stylesXml: string | null, guideline: Guideline): string {
-  const g = GUIDELINES[guideline]
+  const g = getGuideline(guideline)
   let xml = stylesXml && stylesXml.includes('</w:styles>') ? stylesXml : EMPTY_STYLES
 
   xml = upsertStyle(xml, 'Normal', normalBlock(g))

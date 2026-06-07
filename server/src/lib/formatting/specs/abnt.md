@@ -35,14 +35,15 @@
 
 ## 2. Fonts `[DET]`
 
-ABNT accepts **two** font families. Both are fully compliant — the choice is the user's.
+ABNT accepts **two** font families — **Times New Roman** and **Arial**. Both are fully compliant; the choice of *which one* is the user's.
 
 | Role | Accepted families | Default |
 |---|---|---|
 | Whole document (body + headings) | **Times New Roman**, **Arial** | Times New Roman |
 
 **Rules:**
-- A single font family is used throughout the document (body, headings, captions). Headings are **not** distinguished by a different family — only by size policy, **bold**, CAPS, and numbering (see §4).
+- **Exactly one** family is used throughout the entire document — body, headings, and captions all share it. The user picks Times New Roman **or** Arial; that single choice then applies everywhere. The two families are never mixed within one document.
+- Headings are therefore **not** distinguished by a different family — only by size policy, **bold**, CAPS, and numbering (see §4).
 - **Font selection policy:**
   1. If the user explicitly chose a font, use it (must be one of the accepted families).
   2. Else, if the source document already uses one accepted family consistently, keep it.
@@ -175,9 +176,9 @@ These are **templates for the AI** (Step C). Each shows the abstract **pattern**
 
 ## 8. Machine-readable values
 
-The deterministic pipeline consumes this block. Values mirror the tables above; keep them in sync. (`server/src/lib/formatting/guidelines.ts` should derive from this.)
+**This block is the live source of truth.** At runtime `getGuideline('abnt')` (`server/src/lib/formatting/loadGuideline.ts`) reads *this file*, extracts the fenced block below, parses it (JSON5), validates it (zod), and feeds the deterministic passes. **Edit the values here and the next formatting job picks them up — no rebuild, no restart** (the loader re-reads when this file's mtime changes). A malformed edit is caught by `loadGuideline.test.ts` (`npm test`) before it can reach a job; if the file is ever unreadable, the pipeline falls back to the built-in table in `guidelines.ts`. The §1–§6 tables above are the human-readable mirror — keep them in sync when you edit the block.
 
-> **Note for human reviewers:** the values below are in Word's internal units. The `//` comments translate them to centimeters / points so they can be reviewed at a glance. This makes the block **JSONC** — a strict JSON parser must strip the comments first (or read the clean values from the tables in §1–§6).
+> **Note for human reviewers:** the values below are in Word's internal units. The `//` comments translate them to centimeters / points so they can be reviewed at a glance. This makes the block **JSONC**, parsed by JSON5 (comments and trailing commas are fine; do not put `//` inside a string value).
 >
 > **Conversions:** `1 cm = 567 twips` · `1 in = 1440 twips` · font size is in **half-points** (`24 = 12 pt`) · line spacing is in **twentieths of a point** (`240 = single`, `360 = 1.5`, `480 = double`).
 
@@ -186,6 +187,18 @@ The deterministic pipeline consumes this block. Values mirror the tables above; 
   "id": "abnt",
   "label": "ABNT",
   "language": "pt-BR",
+  // `display` drives the project-creation dropdown. The id (= this file's name)
+  // is the stored/lookup key. The name is universal (guideline names don't
+  // translate); the description is localized per UI locale. Add a new spec file
+  // with its own `display` block and it appears in the dropdown automatically.
+  "display": {
+    "name": "ABNT NBR 14724",
+    "description": {
+      "en": "Brazilian academic standard",
+      "pt-BR": "Padrão acadêmico brasileiro",
+      "pt-PT": "Padrão académico brasileiro"
+    }
+  },
   "page": {
     "size": "A4",
     "widthTwips": 11906,            // 21.0 cm (A4 width)
@@ -272,6 +285,6 @@ The deterministic pipeline consumes this block. Values mirror the tables above; 
 
 > Tracked here so deterministic code and this spec converge.
 
-- **Heading font:** `guidelines.ts` currently sets ABNT `heading.font = "Arial"` while body is Times New Roman. Per §2/§4 the heading font must equal the body font. Fix `guidelines.ts` to use the same family (and add `<w:caps/>` + level-specific bold).
+- ~~**Heading font** mismatch (heading Arial vs body Times).~~ **Resolved.** The loader now derives both body and heading font from a single `fonts.default` (§8), so they always match — one font throughout, per §2. Remaining heading work: add `<w:caps/>` + level-specific bold to the heading styles (the §8 block already carries per-level `bold`; Step A does not yet apply it).
 - **References heading alignment:** older `formattingPlan.md` table said "left-aligned"; correct ABNT value is **centered** (§6). This spec is authoritative.
 - **Heading sizes/caps & unnumbered-title style** are specified here but not yet implemented in Step A (only base font/size/spacing are). Implement when Step A is extended.
