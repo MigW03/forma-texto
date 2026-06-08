@@ -36,7 +36,10 @@ function normalBlock(g: GuidelineSpec): string {
 
 function headingBlock(g: GuidelineSpec, level: 1 | 2 | 3): string {
   const names = ['heading 1', 'heading 2', 'heading 3']
-  const bold = g.heading.bold ? '<w:b/><w:bCs/>' : ''
+  const lvl = g.heading.levels[level]
+  // Levels are distinguished by case + bold (ABNT uses one size for all headings).
+  const caps = lvl.case === 'upper' ? '<w:caps/>' : '' // non-destructive uppercase display
+  const bold = lvl.bold ? '<w:b/><w:bCs/>' : ''
   return (
     `<w:style w:type="paragraph" w:styleId="Heading${level}">` +
     `<w:name w:val="${names[level - 1]}"/>` +
@@ -51,6 +54,7 @@ function headingBlock(g: GuidelineSpec, level: 1 | 2 | 3): string {
     '</w:pPr>' +
     '<w:rPr>' +
     `<w:rFonts w:ascii="${g.heading.font}" w:hAnsi="${g.heading.font}" w:cs="${g.heading.font}"/>` +
+    caps +
     bold +
     `<w:sz w:val="${g.heading.sz}"/><w:szCs w:val="${g.heading.sz}"/>` +
     '</w:rPr>' +

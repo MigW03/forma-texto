@@ -22,9 +22,19 @@ export type Guideline = 'abnt' | 'apa' | 'mla' | 'chicago'
 /** Paragraph alignment (w:jc value). ABNT justifies body text; APA/MLA/Chicago are left-aligned (ragged right). */
 export type Align = 'both' | 'left'
 
+/** How a heading level's text case is displayed. `upper` → non-destructive `<w:caps/>`. */
+export type HeadingCase = 'upper' | 'sentence' | 'none'
+
+/** Per-level heading look. ABNT differentiates levels by case + bold, NOT by size (all 12pt). */
+export interface HeadingLevelSpec {
+  bold: boolean
+  case: HeadingCase
+}
+
 export interface GuidelineSpec {
   body: { font: string; sz: number; line: number; firstLine: number; align: Align }
-  heading: { font: string; sz: number; bold: boolean }
+  /** One font + size for all heading levels; levels differ by `bold` and `case`. */
+  heading: { font: string; sz: number; levels: Record<1 | 2 | 3, HeadingLevelSpec> }
   margins: { top: number; bottom: number; left: number; right: number }
   /** References section (Step B) — entry layout. Heading uses REFERENCES_HEADING_STYLE. */
   references: {
@@ -45,25 +55,42 @@ export const REFERENCES_HEADING_STYLE = 'ReferencesHeading'
 const FALLBACK: Record<Guideline, GuidelineSpec> = {
   abnt: {
     body: { font: 'Times New Roman', sz: 24, line: 360, firstLine: 709, align: 'both' }, // 1.5, 1.25cm, justified
-    heading: { font: 'Times New Roman', sz: 24, bold: true }, // one font throughout — matches body (§2)
+    // One font/size throughout (§2); levels differ by case + bold (§4): H1 caps+bold, H2 caps, H3 sentence+bold.
+    heading: {
+      font: 'Times New Roman',
+      sz: 24,
+      levels: { 1: { bold: true, case: 'upper' }, 2: { bold: false, case: 'upper' }, 3: { bold: true, case: 'sentence' } },
+    },
     margins: { top: 1701, bottom: 1134, left: 1701, right: 1134 }, // 3/2/3/2 cm
     references: { entryAlign: 'left', entryLine: 240, entryAfter: 240, hangingIndent: 0 }, // single, blank line between, flush-left
   },
   apa: {
     body: { font: 'Times New Roman', sz: 24, line: 480, firstLine: 720, align: 'left' }, // double, 0.5in, ragged right
-    heading: { font: 'Times New Roman', sz: 24, bold: true },
+    heading: {
+      font: 'Times New Roman',
+      sz: 24,
+      levels: { 1: { bold: true, case: 'none' }, 2: { bold: true, case: 'none' }, 3: { bold: true, case: 'none' } },
+    },
     margins: { top: 1440, bottom: 1440, left: 1440, right: 1440 }, // 1in all
     references: { entryAlign: 'left', entryLine: 480, entryAfter: 0, hangingIndent: 720 }, // double, 0.5in hanging
   },
   mla: {
     body: { font: 'Times New Roman', sz: 24, line: 480, firstLine: 720, align: 'left' },
-    heading: { font: 'Times New Roman', sz: 24, bold: false },
+    heading: {
+      font: 'Times New Roman',
+      sz: 24,
+      levels: { 1: { bold: false, case: 'none' }, 2: { bold: false, case: 'none' }, 3: { bold: false, case: 'none' } },
+    },
     margins: { top: 1440, bottom: 1440, left: 1440, right: 1440 },
     references: { entryAlign: 'left', entryLine: 480, entryAfter: 0, hangingIndent: 720 },
   },
   chicago: {
     body: { font: 'Times New Roman', sz: 24, line: 480, firstLine: 720, align: 'left' },
-    heading: { font: 'Times New Roman', sz: 24, bold: false },
+    heading: {
+      font: 'Times New Roman',
+      sz: 24,
+      levels: { 1: { bold: true, case: 'none' }, 2: { bold: true, case: 'none' }, 3: { bold: false, case: 'none' } },
+    },
     margins: { top: 1440, bottom: 1440, left: 1440, right: 1440 },
     references: { entryAlign: 'left', entryLine: 240, entryAfter: 240, hangingIndent: 720 }, // single within, blank line between, 0.5in hanging
   },

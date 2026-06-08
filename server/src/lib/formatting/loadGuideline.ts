@@ -50,7 +50,10 @@ const machineSchema = z.object({
   }),
   headings: z.object({
     sizeHalfPt: z.number(),
-    levels: z.record(z.string(), z.object({ bold: z.boolean() })),
+    levels: z.record(
+      z.string(),
+      z.object({ bold: z.boolean(), case: z.enum(['upper', 'sentence', 'none']).optional() }),
+    ),
   }),
   references: z.object({
     entryAlign: alignSchema,
@@ -76,6 +79,11 @@ function toSpec(m: Machine): GuidelineSpec {
   // between entries; only applies when the guideline separates entries that way.
   const entryAfter =
     m.references.betweenEntries === 'blank-line' ? m.references.entryLineTwentieths : 0
+  // Per-level heading look: case + bold straight from the spec's §8 levels block.
+  const level = (n: '1' | '2' | '3') => ({
+    bold: m.headings.levels[n]?.bold ?? true,
+    case: m.headings.levels[n]?.case ?? 'none',
+  })
   return {
     body: {
       font,
@@ -84,7 +92,7 @@ function toSpec(m: Machine): GuidelineSpec {
       firstLine: m.body.firstLineIndentTwips,
       align: m.body.align,
     },
-    heading: { font, sz: m.headings.sizeHalfPt, bold: m.headings.levels['1']?.bold ?? true },
+    heading: { font, sz: m.headings.sizeHalfPt, levels: { 1: level('1'), 2: level('2'), 3: level('3') } },
     margins: m.page.marginsTwips,
     references: {
       entryAlign: m.references.entryAlign,
@@ -126,6 +134,42 @@ export function loadGuidelineFromSpec(id: Guideline): GuidelineSpec {
 
   cache.set(id, { mtimeMs, spec })
   return spec
+}
+
+const docCache = new Map<string, { mtimeMs: number; md: string }>()
+
+/**
+ * Raw markdown of a guideline spec, mtime-cached. The AI passes (Step C/D) read
+ * the PROSE sections (not just the §8 machine block) to build their prompts, so
+ * the spec stays the single source of truth for both deterministic code and AI.
+ */
+export function loadGuidelineDoc(id: string): string {
+  const file = path.join(SPEC_DIR, `${id}.md`)
+  const { mtimeMs } = fs.statSync(file)
+  const cached = docCache.get(id)
+  if (cached && cached.mtimeMs === mtimeMs) return cached.md
+
+  const md = fs.readFileSync(file, 'utf8')
+  docCache.set(id, { mtimeMs, md })
+  return md
+}
+
+/**
+ * Slice one numbered section out of a spec's markdown, e.g. `guidelineSection(md, 4)`
+ * returns the `## 4. …` block up to (not including) the next level-2 `## ` heading.
+ * `### ` subsections inside the section are kept. Returns '' if absent.
+ */
+export function guidelineSection(md: string, n: number): string {
+  const lines = md.split(/\r?\n/)
+  const startRe = new RegExp(`^##\\s+${n}\\.`)
+  const level2Re = /^##\s+/ // matches "## " but not "### " (no whitespace after ## in level 3)
+  const start = lines.findIndex(l => startRe.test(l))
+  if (start < 0) return ''
+  let end = lines.length
+  for (let i = start + 1; i < lines.length; i++) {
+    if (level2Re.test(lines[i])) { end = i; break }
+  }
+  return lines.slice(start, end).join('\n').trim()
 }
 
 /** Dropdown entry for one guideline. `id` is the spec filename (= lookup key). */

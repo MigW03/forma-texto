@@ -37,7 +37,11 @@ describe('abnt spec values', () => {
   it('maps the §8 machine block to the pipeline shape', () => {
     expect(g).toEqual({
       body: { font: 'Times New Roman', sz: 24, line: 360, firstLine: 709, align: 'both' },
-      heading: { font: 'Times New Roman', sz: 24, bold: true },
+      heading: {
+        font: 'Times New Roman',
+        sz: 24,
+        levels: { 1: { bold: true, case: 'upper' }, 2: { bold: false, case: 'upper' }, 3: { bold: true, case: 'sentence' } },
+      },
       margins: { top: 1701, bottom: 1134, left: 1701, right: 1134 },
       references: { entryAlign: 'left', entryLine: 240, entryAfter: 240, hangingIndent: 0 },
     })

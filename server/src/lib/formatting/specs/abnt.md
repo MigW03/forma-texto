@@ -285,6 +285,7 @@ These are **templates for the AI** (Step C). Each shows the abstract **pattern**
 
 > Tracked here so deterministic code and this spec converge.
 
-- ~~**Heading font** mismatch (heading Arial vs body Times).~~ **Resolved.** The loader now derives both body and heading font from a single `fonts.default` (§8), so they always match — one font throughout, per §2. Remaining heading work: add `<w:caps/>` + level-specific bold to the heading styles (the §8 block already carries per-level `bold`; Step A does not yet apply it).
+- ~~**Heading font** mismatch (heading Arial vs body Times).~~ **Resolved.** The loader now derives both body and heading font from a single `fonts.default` (§8), so they always match — one font throughout, per §2.
+- ~~**Per-level heading case + bold** not applied in Step A (all levels looked identical).~~ **Resolved.** `rewriteStyles` now builds Heading1/2/3 from the §8 `headings.levels` block: H1 `<w:caps/>` + bold, H2 `<w:caps/>` (not bold), H3 sentence case + bold. Levels share one size (12pt) — ABNT differentiates by case + bold + numbering, not size.
 - **References heading alignment:** older `formattingPlan.md` table said "left-aligned"; correct ABNT value is **centered** (§6). This spec is authoritative.
-- **Heading sizes/caps & unnumbered-title style** are specified here but not yet implemented in Step A (only base font/size/spacing are). Implement when Step A is extended.
+- **Unnumbered-title style** (e.g. RESUMO, SUMÁRIO via `unnumberedTitle`) is specified in §8 but not yet applied in Step A — only the `Title` style is. Implement when those front-matter headings are handled.

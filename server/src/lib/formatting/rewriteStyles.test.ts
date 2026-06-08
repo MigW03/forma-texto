@@ -53,6 +53,21 @@ describe('rewriteStyles (ABNT)', () => {
     expect(h1).toContain('<w:jc w:val="left"/>') // does not inherit body justification
   })
 
+  it('differentiates heading levels by case + bold (H1 caps+bold, H2 caps, H3 sentence+bold)', () => {
+    const out = rewriteStyles(null, 'abnt')
+    const h = (n: number) => out.match(new RegExp(`<w:style[^>]*w:styleId="Heading${n}"[\\s\\S]*?</w:style>`))![0]
+    const h1 = h(1), h2 = h(2), h3 = h(3)
+    // H1: UPPERCASE + bold
+    expect(h1).toContain('<w:caps/>')
+    expect(h1).toContain('<w:b/>')
+    // H2: UPPERCASE, NOT bold
+    expect(h2).toContain('<w:caps/>')
+    expect(h2).not.toContain('<w:b/>')
+    // H3: sentence case (no caps) + bold
+    expect(h3).not.toContain('<w:caps/>')
+    expect(h3).toContain('<w:b/>')
+  })
+
   it('does not collide Heading1 with Heading10-style ids', () => {
     const src = STYLES('<w:style w:type="paragraph" w:styleId="Heading10"><w:name w:val="x"/></w:style>')
     const out = rewriteStyles(src, 'abnt')

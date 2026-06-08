@@ -1,4 +1,5 @@
 import { getGuideline, REFERENCES_HEADING_STYLE, type Guideline, type GuidelineSpec } from './guidelines'
+import { getBlocks, isParagraph, blockText, setParagraphStyle, replaceBlocks } from './blocks'
 
 /**
  * Step B (deterministic) — format the references section.
@@ -17,18 +18,7 @@ import { getGuideline, REFERENCES_HEADING_STYLE, type Guideline, type GuidelineS
  * section heading (→ REFERENCES_HEADING_STYLE); the rest get entry layout.
  */
 
-const BLOCK_RE =
-  /<w:tbl\b[\s\S]*?<\/w:tbl>|<w:sdt\b[\s\S]*?<\/w:sdt>|<w:p\b[^>]*\/>|<w:p\b[^>]*>[\s\S]*?<\/w:p>/g
 const BLOCKS_PER_PAGE = 40
-
-const isParagraph = (b: string) => /^<w:p\b/.test(b)
-const blockText = (b: string) =>
-  (b.match(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g) ?? []).map(t => t.replace(/<[^>]+>/g, '')).join('').trim()
-
-/** Top-level body blocks (paragraphs / tables / sdt), in document order. */
-function getBlocks(documentXml: string): string[] {
-  return documentXml.match(BLOCK_RE) ?? []
-}
 
 /**
  * Block indices that START a new page, in order (always includes 0).
@@ -97,20 +87,6 @@ function pageBlockIndices(blocks: string[]): number[][] {
   return pages
 }
 
-/** Set (or replace) the paragraph style id, creating <w:pPr>/<w:pStyle> if absent. */
-function setParagraphStyle(p: string, styleId: string): string {
-  if (/<w:pStyle\b[^>]*\/>/.test(p)) {
-    return p.replace(/<w:pStyle\b[^>]*\/>/, `<w:pStyle w:val="${styleId}"/>`)
-  }
-  if (/<w:pPr\b[^>]*>/.test(p)) {
-    return p.replace(/(<w:pPr\b[^>]*>)/, `$1<w:pStyle w:val="${styleId}"/>`)
-  }
-  if (/<w:pPr\b[^>]*\/>/.test(p)) {
-    return p.replace(/<w:pPr\b[^>]*\/>/, `<w:pPr><w:pStyle w:val="${styleId}"/></w:pPr>`)
-  }
-  return p.replace(/(<w:p\b[^>]*>)/, `$1<w:pPr><w:pStyle w:val="${styleId}"/></w:pPr>`)
-}
-
 /** Inject entry layout props into a paragraph's pPr, in WordprocessingML schema order. */
 function setEntryFormatting(p: string, g: GuidelineSpec): string {
   const r = g.references
@@ -137,17 +113,41 @@ export interface ReferencePagesInput {
   referencePages: number[]
 }
 
-export function formatReferences(
-  documentXml: string,
-  guideline: Guideline,
-  { selectedPages, referencePages }: ReferencePagesInput,
-): string {
-  // No flagged pages (or no page metadata) → nothing to do.
-  if (!referencePages?.length || !selectedPages?.length) return documentXml
-
-  const g = getGuideline(guideline)
+/**
+ * Map every top-level block to its 1-based virtual page within the document,
+ * using the same pagination detection Step B uses. Index = absolute block index.
+ * Page numbers in flow-based DOCX are approximate by nature.
+ */
+export function pageForBlock(documentXml: string): number[] {
   const blocks = getBlocks(documentXml)
-  if (!blocks.length) return documentXml
+  const pages = pageBlockIndices(blocks)
+  const map = new Array<number>(blocks.length).fill(1)
+  pages.forEach((idxs, p) => idxs.forEach(i => { map[i] = p + 1 }))
+  return map
+}
+
+/** The references region, located from the user-flagged pages. */
+export interface ReferenceRegion {
+  /** Absolute block index of the section heading (first non-empty paragraph in the region). */
+  headingIdx: number
+  /** Absolute block indices of the entry paragraphs (non-empty, heading excluded), in order. */
+  entryIndices: number[]
+}
+
+/**
+ * Locate the references region from the user-flagged pages. Shared by Step B
+ * (which formats heading + entries) and Step C (which reformats `entryIndices`)
+ * and Step D (which uses `headingIdx` as `refStartIndex` to exclude references
+ * from heading classification). Returns null when there is no references region.
+ */
+export function locateReferences(
+  documentXml: string,
+  { selectedPages, referencePages }: ReferencePagesInput,
+): ReferenceRegion | null {
+  if (!referencePages?.length || !selectedPages?.length) return null
+
+  const blocks = getBlocks(documentXml)
+  if (!blocks.length) return null
 
   const pages = pageBlockIndices(blocks)
   const sorted = [...selectedPages].sort((a, b) => a - b)
@@ -158,19 +158,29 @@ export function formatReferences(
     const pos = sorted.indexOf(original)
     if (pos >= 0) (pages[pos] ?? []).forEach(i => refBlocks.add(i))
   }
-  if (refBlocks.size === 0) return documentXml
+  if (refBlocks.size === 0) return null
 
-  // First non-empty paragraph in the flagged region = the references heading.
-  let headingIdx = -1
-  for (const i of [...refBlocks].sort((a, b) => a - b)) {
-    if (isParagraph(blocks[i]) && blockText(blocks[i])) { headingIdx = i; break }
-  }
+  const ordered = [...refBlocks].sort((a, b) => a - b)
+  const nonEmptyParas = ordered.filter(i => isParagraph(blocks[i]) && blockText(blocks[i]))
+  if (nonEmptyParas.length === 0) return null
 
-  let idx = 0
-  return documentXml.replace(BLOCK_RE, (m) => {
-    const i = idx++
-    if (i === headingIdx) return setParagraphStyle(m, REFERENCES_HEADING_STYLE)
-    if (refBlocks.has(i) && isParagraph(m) && blockText(m)) return setEntryFormatting(m, g)
-    return m
-  })
+  const [headingIdx, ...entryIndices] = nonEmptyParas // first non-empty paragraph = heading
+  return { headingIdx, entryIndices }
+}
+
+export function formatReferences(
+  documentXml: string,
+  guideline: Guideline,
+  input: ReferencePagesInput,
+): string {
+  const region = locateReferences(documentXml, input)
+  if (!region) return documentXml
+
+  const g = getGuideline(guideline)
+  const blocks = getBlocks(documentXml)
+
+  const byIndex = new Map<number, string>()
+  byIndex.set(region.headingIdx, setParagraphStyle(blocks[region.headingIdx], REFERENCES_HEADING_STYLE))
+  for (const i of region.entryIndices) byIndex.set(i, setEntryFormatting(blocks[i], g))
+  return replaceBlocks(documentXml, byIndex)
 }

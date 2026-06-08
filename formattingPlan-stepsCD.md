@@ -41,22 +41,43 @@ Build these foundations first. C and D both depend on most of them, so doing the
 front avoids reworking the passes later.
 
 ### 1. AI provider, key, and SDK
-- Use **Anthropic Claude** (consistent with the rest of the stack's direction). Install
-  `@anthropic-ai/sdk` in `server/`.
-- Add `ANTHROPIC_API_KEY` to `server/.env` and document it in `server/.env.example`.
-- **Model:** start with **Claude Haiku** (cheap, fast — both passes are simple,
-  high-volume classification/reformatting). Keep the model id in config so it can be
-  raised to Sonnet for hard documents without touching pass code.
-- **Structured output:** force a JSON schema with **tool use** (the model must call a
-  tool whose input schema is our decision shape). This removes "model wrote prose around
-  the JSON" parsing failures. Validate the tool input with **zod** anyway.
-- **Prompt caching:** the guideline rules go in the cached system prompt (they repeat
-  across every chunk of a document). Only the chunk data changes per call.
+- **Gateway: OpenRouter.** One API key reaches hundreds of models from every major lab,
+  so a model can be swapped from config without touching pass code or rotating keys.
+  OpenRouter speaks the **OpenAI-compatible `/v1/chat/completions` protocol**. Local /
+  self-hosted models are **out of scope for now** — not a design goal. We get portability
+  (swap gateway or host = change base URL + key only) for free because OpenRouter is
+  OpenAI-compatible regardless, so there is no need to design *toward* it.
+- **SDK: the Vercel AI SDK** (`ai` package) rather than a provider-specific SDK. It is
+  TypeScript-native (matches the Express + TS server), and its `generateObject` call takes
+  a **zod schema** and returns validated, typed data — which is exactly the "AI returns
+  validated decisions, never XML" contract this pipeline is built on. Point it at
+  OpenRouter through the OpenAI-compatible provider (`@ai-sdk/openai` with a custom
+  `baseURL`, or the `@openrouter/ai-sdk-provider` package). Because the boundary is the
+  `Decider` interface (Infra #6), the SDK never leaks into the passes; if the SDK choice
+  is ever revisited, only the decider implementation changes.
+- Add `OPENROUTER_API_KEY` to `server/.env` and document it in `server/.env.example`,
+  alongside the base URL (`https://openrouter.ai/api/v1`).
+- **Model:** start with a cheap, fast model — both passes are simple, high-volume
+  classification and reformatting. Keep the exact model id in config (see #2) so it can be
+  raised to a stronger model for hard documents without touching pass code. Do not hardcode
+  a model id anywhere in the passes.
+- **Structured output:** force a JSON schema and validate with **zod**. Use the SDK's
+  `generateObject`, which requests native structured output where the model supports it and
+  coaxes-then-validates where it does not — this is the one capability that genuinely
+  varies across models, so abstracting it here is the main maintenance win. Reject and
+  retry on a schema-validation failure rather than trusting partial output.
+- **Prompt caching:** put the guideline rules in the system prompt (they repeat across
+  every chunk of a document); only the chunk data changes per call. OpenRouter passes
+  prompt-cache hints through to providers that support them, so this stays worth doing.
 
 ### 2. Config module — `server/src/lib/formatting/ai/config.ts`
 A single place for the knobs, all env-overridable:
-- `model`, `maxTokens`
-- `maxCharsPerChunk` (chunk budget — keep well under the context window)
+- `baseUrl` (default `https://openrouter.ai/api/v1`) and `apiKey` (`OPENROUTER_API_KEY`) —
+  the two values that change when the gateway or host changes, and nothing else does.
+- `model` — the OpenRouter model id (e.g. an `org/model` slug). Per-pass override is
+  allowed so Step C and Step D can run on different models if one needs more capability.
+- `maxTokens`
+- `maxCharsPerChunk` (chunk budget — keep well under the chosen model's context window)
 - `concurrency` (parallel chunk calls; respects rate limits)
 - `maxRetries` + backoff
 - `enabled` feature flag — lets us ship the deterministic pipeline and turn C/D on
@@ -229,8 +250,12 @@ so the guideline remains the single source of truth.
 
 ## Decisions to confirm before we start coding
 
-- **Model:** Claude Haiku to start, config-swappable to Sonnet? (recommended)
-- **Structured output:** tool-use schema + zod validation? (recommended over free-text JSON)
+- **Gateway:** OpenRouter, accessed via the OpenAI-compatible protocol through the Vercel
+  AI SDK, with the `Decider` interface as the swap boundary. **(decided)**
+- **Model:** start on a cheap, fast model via OpenRouter, config-swappable per pass to a
+  stronger one for hard documents. Pick the exact starting model id when drafting the
+  prompts (steps 4–5), measured against the live eval — do not commit to one blind.
+- **Structured output:** `generateObject` with a zod schema? (recommended over free-text JSON)
 - **Block parser:** start on the existing hardened regex, move to `fast-xml-parser` only
   if real documents drift? (recommended — avoids premature complexity)
 - **Fallback policy:** on AI failure, keep the deterministic A/B result and finish (vs.

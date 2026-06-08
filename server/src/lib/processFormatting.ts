@@ -1,6 +1,44 @@
 import { supabase } from './supabase'
 import { sendProjectReadyEmail } from './notify'
-import { unzipDocx, zipDocx, applyStepA, formatReferences, resolveGuideline } from './formatting'
+import {
+  unzipDocx,
+  zipDocx,
+  applyStepA,
+  formatReferences,
+  locateReferences,
+  resolveGuideline,
+  stepD,
+  loadAiConfig,
+  createHeadingDecider,
+  pageForBlock,
+  getBlocks,
+  blockText,
+  type HeadingDecision,
+} from './formatting'
+
+/** Tier label for a heading role, e.g. 'h2' → 'H2', 'title' → 'TITLE'. */
+const tierLabel = (role: string) => role.toUpperCase()
+
+/**
+ * Log each identified heading on its own line: tier + page + text. Page is the
+ * 1-based virtual page within the processed doc, mapped back to the user's
+ * original page number when `selectedPages` is available.
+ */
+function logHeadings(projectId: string, documentXml: string, decisions: HeadingDecision[], selectedPages: number[]): void {
+  const heads = decisions.filter(d => d.role !== 'body').sort((a, b) => a.i - b.i)
+  console.log(`[processFormatting] ${projectId} Step D: ${heads.length} heading(s) identified`)
+  if (heads.length === 0) return
+
+  const pageOf = pageForBlock(documentXml)
+  const blocks = getBlocks(documentXml)
+  const sortedPages = [...selectedPages].sort((a, b) => a - b)
+  for (const h of heads) {
+    const virtualPage = pageOf[h.i] ?? 1
+    const page = sortedPages[virtualPage - 1] ?? virtualPage // map to original page when known
+    const text = blockText(blocks[h.i] ?? '').slice(0, 80)
+    console.log(`[Step D]   ${tierLabel(h.role).padEnd(5)} page ${page}  "${text}"`)
+  }
+}
 
 const BUCKET = 'projects'
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -63,11 +101,33 @@ export async function processFormatting(projectId: string): Promise<void> {
     const guideline = resolveGuideline(project.guideline)
     const { files, documentXml, stylesXml } = unzipDocx(inputBuf)
     const a = applyStepA({ documentXml, stylesXml, guideline }) // Step A: styles, overrides, margins
-    const documentXmlB = formatReferences(a.documentXml, guideline, {
+    const refInput = {
       selectedPages: project.selected_pages ?? [],
       referencePages: project.references_pages ?? [],
-    }) // Step B: references — bounded to user-flagged pages
-    const out = { documentXml: documentXmlB, stylesXml: a.stylesXml }
+    }
+    const documentXmlB = formatReferences(a.documentXml, guideline, refInput) // Step B: references
+
+    // Step D (AI): reclassify headings typed as plain text. Behind a feature flag,
+    // and wrapped so any AI failure keeps the deterministic A/B result — a paid job
+    // is never blocked by the model.
+    let documentXmlD = documentXmlB
+    const aiCfg = loadAiConfig()
+    if (aiCfg.enabled) {
+      try {
+        const region = locateReferences(documentXmlB, refInput)
+        const result = await stepD(documentXmlB, guideline, createHeadingDecider(aiCfg), {
+          refStartIndex: region?.headingIdx ?? -1,
+          maxChars: aiCfg.maxCharsPerChunk,
+        })
+        documentXmlD = result.documentXml
+        logHeadings(projectId, documentXmlD, result.decisions, refInput.selectedPages)
+      } catch (err) {
+        console.error(`[processFormatting] Step D failed for ${projectId} (non-fatal, keeping deterministic result):`, err)
+        documentXmlD = documentXmlB
+      }
+    }
+
+    const out = { documentXml: documentXmlD, stylesXml: a.stylesXml }
     const docxBuf = zipDocx(files, out)
 
     // 6. Upload processed .docx
