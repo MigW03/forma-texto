@@ -182,8 +182,8 @@
   - `TermsPage.tsx`, route `/terms`
 - [x] Privacy policy page
   - `PrivacyPage.tsx` created, registered in `App.tsx` under `ROUTES.privacy`. 10 sections in en/pt-BR/pt-PT, includes LGPD compliance section.
-- [ ] `TextExtractPage` route (page file exists, no route registered)
-  - Add `<Route path={ROUTES.textExtract} element={<TextExtractPage />} />` in `App.tsx`
+- [x] `TextExtractPage` removed
+  - The page was never routed and had no importers. Removed as dead code during the refactor, along with its `ROUTES.textExtract` constant.
 
 ---
 

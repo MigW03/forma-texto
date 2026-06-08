@@ -9,7 +9,6 @@ export const ROUTES = {
   terms: '/terms',
   privacy: '/privacy',
   pageSelection: '/page-selection',
-  textExtract: '/text-extract',
   project: '/projects/:id',
   profile: '/profile',
 } as const
