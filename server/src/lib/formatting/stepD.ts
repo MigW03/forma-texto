@@ -15,6 +15,7 @@
  *    to `body` and is never touched.
  */
 import { getBlocks, blockText, isParagraph, blockDescriptor, setParagraphStyle, replaceBlocks, type BlockDescriptor } from './blocks'
+import { pageForBlock } from './references'
 import type { Guideline } from './guidelines'
 
 export type HeadingRole = 'title' | 'h1' | 'h2' | 'h3' | 'body'
@@ -75,6 +76,15 @@ export function chunkHeadings(
     .map((b, i) => ({ b, i }))
     .filter(({ b, i }) => isParagraph(b) && blockText(b).length > 0 && (refStartIndex < 0 || i < refStartIndex))
 
+  // First non-empty paragraph on each page → a soft h1 cue the model can weigh.
+  const pageOf = pageForBlock(documentXml)
+  const pageStart = new Set<number>()
+  let seenPage = -1
+  for (const { i } of candidates) {
+    const pg = pageOf[i] ?? 1
+    if (pg !== seenPage) { pageStart.add(i); seenPage = pg }
+  }
+
   const packed: { blocks: BlockDescriptor[]; context: string[] }[] = []
   let cur: BlockDescriptor[] = []
   let size = 0
@@ -82,6 +92,7 @@ export function chunkHeadings(
 
   for (const { b, i } of candidates) {
     const d = blockDescriptor(b, i)
+    if (pageStart.has(i)) d.atPageStart = true
     const cost = d.text.length + 40
     if (size + cost > maxChars && cur.length) {
       packed.push({ blocks: cur, context: seenHeadings.slice(-2) })

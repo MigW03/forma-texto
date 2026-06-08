@@ -41,8 +41,9 @@ describe('docxZip + applyStepA round-trip', () => {
     // margins fixed
     expect(reopened.documentXml).toContain('w:top="1701"')
 
-    // styles rewritten
-    expect(reopened.stylesXml).toContain('w:ascii="Times New Roman"')
+    // styles rewritten; the source's accepted family (Arial) is kept, not forced to default
+    expect(reopened.stylesXml).toContain('w:ascii="Arial"')
+    expect(reopened.stylesXml).not.toContain('Times New Roman')
     expect(reopened.stylesXml).toContain('w:styleId="Heading1"')
 
     // untouched sibling part survived
@@ -61,6 +62,7 @@ describe('docxZip + applyStepA round-trip', () => {
     const out = applyStepA({ documentXml, stylesXml, guideline: 'abnt' })
     expect(out.stylesXml).toContain('w:styleId="Normal"')
     const rezipped = zipDocx(files, out)
-    expect(unzipDocx(rezipped).stylesXml).toContain('Times New Roman')
+    // source uses Arial (accepted) → kept even when there was no styles.xml
+    expect(unzipDocx(rezipped).stylesXml).toContain('w:ascii="Arial"')
   })
 })

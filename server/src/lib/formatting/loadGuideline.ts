@@ -85,6 +85,7 @@ function toSpec(m: Machine): GuidelineSpec {
     case: m.headings.levels[n]?.case ?? 'none',
   })
   return {
+    accepted: m.fonts.accepted,
     body: {
       font,
       sz: m.body.sizeHalfPt,

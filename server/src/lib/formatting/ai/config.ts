@@ -17,6 +17,17 @@ export interface AiConfig {
   /** Parallel chunk calls; respects rate limits. */
   concurrency: number
   maxRetries: number
+  /** Sampling temperature. 0 = greedy/deterministic; the default for the classification passes. */
+  temperature: number
+  /** Fixed RNG seed for reproducible output where the provider honours it. */
+  seed: number
+  /**
+   * Optional OpenRouter provider slug(s) to pin routing to (comma-separated, in
+   * preference order). When set, fallbacks are disabled so every call hits the
+   * same backend — same hardware/quantization → same output. Empty = let
+   * OpenRouter route freely (cheapest, but a source of run-to-run variance).
+   */
+  provider: string[]
   /** Feature flag — ship the deterministic pipeline and turn C/D on separately. */
   enabled: boolean
 }
@@ -36,6 +47,10 @@ export function loadAiConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
     maxCharsPerChunk: num(env.AI_MAX_CHARS_PER_CHUNK, 8000),
     concurrency: num(env.AI_CONCURRENCY, 2),
     maxRetries: num(env.AI_MAX_RETRIES, 2),
+    // Deterministic by default: greedy decode + a fixed seed. num() rejects 0, so read temperature directly.
+    temperature: Number.isFinite(Number(env.AI_TEMPERATURE)) ? Number(env.AI_TEMPERATURE) : 0,
+    seed: num(env.AI_SEED, 7),
+    provider: (env.AI_PROVIDER ?? '').split(',').map(s => s.trim()).filter(Boolean),
     enabled: env.AI_FORMATTING_ENABLED === 'true',
   }
 }

@@ -124,9 +124,43 @@ function upsertStyle(xml: string, styleId: string, block: string): string {
   return xml.replace('</w:styles>', block + '</w:styles>')
 }
 
-export function rewriteStyles(stylesXml: string | null, guideline: Guideline): string {
-  const g = getGuideline(guideline)
+/**
+ * Make `fam` the document-wide default font: drop any existing `<w:docDefaults>`
+ * and insert a fresh one (correct schema position — right after `<w:styles>`).
+ * Combined with clearing every style's own `<w:rFonts>`, this guarantees that any
+ * paragraph style we do NOT rebuild (e.g. a custom body style) inherits the one
+ * accepted family instead of carrying a second one.
+ */
+function setDocDefaultsFont(xml: string, fam: string): string {
+  const rFonts = `<w:rFonts w:ascii="${fam}" w:hAnsi="${fam}" w:cs="${fam}"/>`
+  const dd = `<w:docDefaults><w:rPrDefault><w:rPr>${rFonts}</w:rPr></w:rPrDefault></w:docDefaults>`
+  const cleaned = xml.replace(/<w:docDefaults>[\s\S]*?<\/w:docDefaults>/, '')
+  return cleaned.replace(/(<w:styles\b[^>]*>)/, `$1${dd}`)
+}
+
+/**
+ * Rewrite styles.xml to the guideline.
+ *
+ * @param font - the single family to use everywhere (from `resolveDocumentFont`).
+ *   Omitted → the guideline default. ABNT permits Times New Roman OR Arial but
+ *   never mixed, so body, headings, title and references all use this one family.
+ */
+export function rewriteStyles(stylesXml: string | null, guideline: Guideline, font?: string): string {
+  const base = getGuideline(guideline)
+  const fam = font ?? base.body.font
+  // Override only the font family; sizes/spacing/case stay from the guideline.
+  const g: GuidelineSpec = {
+    ...base,
+    body: { ...base.body, font: fam },
+    heading: { ...base.heading, font: fam },
+  }
+
   let xml = stylesXml && stylesXml.includes('</w:styles>') ? stylesXml : EMPTY_STYLES
+
+  // Enforce one family doc-wide: clear every style's font, then set the default.
+  // (Our six rebuilt styles below re-add explicit `fam`; everything else inherits.)
+  xml = xml.replace(/<w:rFonts\b[^>]*\/>/g, '')
+  xml = setDocDefaultsFont(xml, fam)
 
   xml = upsertStyle(xml, 'Normal', normalBlock(g))
   xml = upsertStyle(xml, 'Title', titleBlock(g))

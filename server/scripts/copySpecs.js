@@ -1,16 +1,20 @@
 /**
- * Copies guideline spec files (`src/lib/formatting/specs/*.md`) into the build
- * output so `getGuideline()` can read them at runtime under `node dist/...`.
+ * Copies the formatting data files that tsc does not emit into the build output,
+ * so they can be read at runtime under `node dist/...`:
+ *   - guideline spec files   (`src/lib/formatting/specs/*.md`)   → read by getGuideline()
+ *   - AI prompt files        (`src/lib/formatting/prompts/*.md`) → read by the AI passes
  * tsc only emits `.js`; these `.md` files are data and must be copied verbatim.
  * Runs after `tsc` (see package.json "build").
  */
 const fs = require('fs')
 const path = require('path')
 
-const src = path.join(__dirname, '..', 'src', 'lib', 'formatting', 'specs')
-const dest = path.join(__dirname, '..', 'dist', 'lib', 'formatting', 'specs')
+const base = path.join(__dirname, '..')
 
-fs.mkdirSync(dest, { recursive: true })
-fs.cpSync(src, dest, { recursive: true })
-
-console.log(`[copySpecs] ${src} -> ${dest}`)
+for (const dir of ['specs', 'prompts']) {
+  const src = path.join(base, 'src', 'lib', 'formatting', dir)
+  const dest = path.join(base, 'dist', 'lib', 'formatting', dir)
+  fs.mkdirSync(dest, { recursive: true })
+  fs.cpSync(src, dest, { recursive: true })
+  console.log(`[copySpecs] ${src} -> ${dest}`)
+}

@@ -32,6 +32,8 @@ export interface HeadingLevelSpec {
 }
 
 export interface GuidelineSpec {
+  /** Accepted font families for this guideline. The document is normalized to one of these (the source's own family when it already uses one, else `body.font`). */
+  accepted: string[]
   body: { font: string; sz: number; line: number; firstLine: number; align: Align }
   /** One font + size for all heading levels; levels differ by `bold` and `case`. */
   heading: { font: string; sz: number; levels: Record<1 | 2 | 3, HeadingLevelSpec> }
@@ -54,6 +56,7 @@ export const REFERENCES_HEADING_STYLE = 'ReferencesHeading'
  */
 const FALLBACK: Record<Guideline, GuidelineSpec> = {
   abnt: {
+    accepted: ['Times New Roman', 'Arial'],
     body: { font: 'Times New Roman', sz: 24, line: 360, firstLine: 709, align: 'both' }, // 1.5, 1.25cm, justified
     // One font/size throughout (§2); levels differ by case + bold (§4): H1 caps+bold, H2 caps, H3 sentence+bold.
     heading: {
@@ -65,6 +68,7 @@ const FALLBACK: Record<Guideline, GuidelineSpec> = {
     references: { entryAlign: 'left', entryLine: 240, entryAfter: 240, hangingIndent: 0 }, // single, blank line between, flush-left
   },
   apa: {
+    accepted: ['Times New Roman', 'Arial', 'Calibri'],
     body: { font: 'Times New Roman', sz: 24, line: 480, firstLine: 720, align: 'left' }, // double, 0.5in, ragged right
     heading: {
       font: 'Times New Roman',
@@ -75,6 +79,7 @@ const FALLBACK: Record<Guideline, GuidelineSpec> = {
     references: { entryAlign: 'left', entryLine: 480, entryAfter: 0, hangingIndent: 720 }, // double, 0.5in hanging
   },
   mla: {
+    accepted: ['Times New Roman', 'Arial'],
     body: { font: 'Times New Roman', sz: 24, line: 480, firstLine: 720, align: 'left' },
     heading: {
       font: 'Times New Roman',
@@ -85,6 +90,7 @@ const FALLBACK: Record<Guideline, GuidelineSpec> = {
     references: { entryAlign: 'left', entryLine: 480, entryAfter: 0, hangingIndent: 720 },
   },
   chicago: {
+    accepted: ['Times New Roman', 'Arial'],
     body: { font: 'Times New Roman', sz: 24, line: 480, firstLine: 720, align: 'left' },
     heading: {
       font: 'Times New Roman',

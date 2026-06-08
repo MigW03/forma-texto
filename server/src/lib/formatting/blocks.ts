@@ -37,6 +37,8 @@ export interface BlockDescriptor {
   style: string
   bold: boolean
   len: number
+  /** True when this is the first non-empty paragraph on its page — a soft h1 cue. Set by the chunker (needs whole-doc pagination), not by `blockDescriptor`. */
+  atPageStart?: boolean
 }
 
 /** Reduce a block to its descriptor at absolute index `i`. */
