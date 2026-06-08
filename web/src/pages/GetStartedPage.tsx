@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Check, Upload, Link as LinkIcon, ChevronDown, FileText, X, Clock, Loader2, AlertTriangle } from 'lucide-react'
 import { ROUTES } from '../lib/routes'
-import { PRICING, formatBRL } from '../lib/pricing'
+import { PRICING, formatBRL, type ServiceKey } from '../lib/pricing'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useGuidelines, localizedDescription } from '../lib/guidelines'
@@ -108,7 +108,6 @@ async function getFilePageInfo(file: File): Promise<FilePageInfo> {
   return { count: null, reliable: false }
 }
 
-type ServiceType = 'proofreading' | 'formatting'
 type GuidelineId = string
 type InputTab = 'upload' | 'link'
 
@@ -119,7 +118,7 @@ function loadSession() {
     const raw = sessionStorage.getItem(SESSION_KEY)
     if (!raw) return null
     return JSON.parse(raw) as {
-      services: ServiceType[]
+      services: ServiceKey[]
       guideline: GuidelineId
       inputTab: InputTab
       pasteUrl: string
@@ -135,7 +134,7 @@ type RestoredState = {
   file: File | null
   pasteUrl: string
   inputTab: InputTab
-  services: ServiceType[]
+  services: ServiceKey[]
   guideline: GuidelineId
   pageCount: number | null
   title: string
@@ -154,7 +153,7 @@ export default function GetStartedPage() {
   const initGuideline = (navState?.guideline ?? saved?.guideline ?? 'abnt') as GuidelineId
   const initTab = (navState?.inputTab ?? saved?.inputTab ?? 'upload') as InputTab
 
-  const [selectedServices, setSelectedServices] = useState<Set<ServiceType>>(
+  const [selectedServices, setSelectedServices] = useState<Set<ServiceKey>>(
     () => new Set(initServices)
   )
   const [guidelinesOpen, setGuidelinesOpen] = useState(
@@ -170,7 +169,7 @@ export default function GetStartedPage() {
     }
   }, [guidelines, selectedGuideline])
 
-  const toggleService = (service: ServiceType) => {
+  const toggleService = (service: ServiceKey) => {
     setSelectedServices(prev => {
       const next = new Set(prev)
       if (next.has(service)) {

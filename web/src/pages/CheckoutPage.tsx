@@ -8,15 +8,13 @@ import {
   useElements,
 } from '@stripe/react-stripe-js'
 import { Check, ArrowLeft, Gift, Clock, Loader2 } from 'lucide-react'
-import { calcPrice, trialDiscountBRL, formatBRL } from '../lib/pricing'
+import { calcPrice, trialDiscountBRL, formatBRL, type ServiceKey } from '../lib/pricing'
 import { useAuth } from '../lib/auth-context'
 import { supabase } from '../lib/supabase'
 import { getStoredFile } from '../lib/file-store'
 import { slicePdf } from '../lib/pdf-slice'
 import { sliceDocx } from '../lib/docx-slice'
 import { ROUTES } from '../lib/routes'
-
-type ServiceKey = 'formatting' | 'proofreading'
 
 const SERVICE_LABELS: Record<ServiceKey, string> = {
   formatting: 'Formatação',

@@ -8,6 +8,8 @@ import { useAuth } from '../lib/auth-context'
 import { supabase } from '../lib/supabase'
 import { toTimeAgo, type TimeAgo } from '../lib/format'
 import { normalizeStatus, STATUS_BADGE_VARIANT, type ProjectStatus } from '../lib/status'
+import type { ServiceKey } from '../lib/pricing'
+import type { GuidelineId } from '../lib/guidelines'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -16,14 +18,12 @@ function clearGetStartedSession() {
   sessionStorage.removeItem(SESSION_KEY)
 }
 
-type ServiceType = 'proofreading' | 'formatting'
-type GuidelineId = 'abnt' | 'apa' | 'mla' | 'chicago'
 
 interface Project {
   id: string
   title: string | null
   fileName: string
-  service: ServiceType
+  service: ServiceKey
   guideline?: GuidelineId
   status: ProjectStatus
   submittedAt: TimeAgo
@@ -33,7 +33,7 @@ interface DbProject {
   id: string
   title: string | null
   original_file_name: string
-  services: ServiceType[]
+  services: ServiceKey[]
   guideline: GuidelineId | null
   status: string
   created_at: string
@@ -170,7 +170,7 @@ function ServiceBadge({
   service,
   guideline,
 }: {
-  service: ServiceType
+  service: ServiceKey
   guideline?: GuidelineId
 }) {
   const { t } = useTranslation()

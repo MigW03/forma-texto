@@ -11,12 +11,11 @@ import { calcPrice, formatBRL } from '../lib/pricing'
 import type { ServiceKey } from '../lib/pricing'
 import { formatPageRanges } from '../lib/format'
 import { normalizeStatus, STATUS_BADGE_VARIANT } from '../lib/status'
+import type { GuidelineId } from '../lib/guidelines'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
-
-type GuidelineId = 'abnt' | 'apa' | 'mla' | 'chicago'
 
 interface ProjectDetail {
   id: string

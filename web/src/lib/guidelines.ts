@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
+/** The guidelines with built-in display support. Server specs may add more at runtime. */
+export type GuidelineId = 'abnt' | 'apa' | 'mla' | 'chicago'
+
 /** Dropdown entry served by GET /api/guidelines — one per server specs/*.md file. */
 export type GuidelineMeta = { id: string; name: string; description: Record<string, string> }
 
