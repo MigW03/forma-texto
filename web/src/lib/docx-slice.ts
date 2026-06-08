@@ -109,5 +109,5 @@ export async function sliceDocx(file: File, pages: number[]): Promise<File> {
 
   const zipped = zipSync(newZip)
   const mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  return new File([zipped], file.name, { type: mimeType })
+  return new File([new Uint8Array(zipped)], file.name, { type: mimeType })
 }

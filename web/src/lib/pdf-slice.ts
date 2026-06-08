@@ -22,5 +22,5 @@ export async function slicePdf(file: File, pages: number[]): Promise<File> {
   copied.forEach(page => newDoc.addPage(page))
 
   const pdfBytes = await newDoc.save()
-  return new File([pdfBytes], file.name, { type: 'application/pdf' })
+  return new File([new Uint8Array(pdfBytes)], file.name, { type: 'application/pdf' })
 }

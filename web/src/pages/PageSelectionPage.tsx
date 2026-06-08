@@ -98,7 +98,7 @@ function PdfPageCanvas({
         canvas.width = Math.round(scaled.width)
         canvas.height = Math.round(scaled.height)
         const ctx = canvas.getContext('2d')!
-        renderTask = page.render({ canvasContext: ctx, viewport: scaled })
+        renderTask = page.render({ canvas, canvasContext: ctx, viewport: scaled })
         await renderTask.promise
       } catch {
         // cancelled or render error
@@ -220,7 +220,7 @@ export default function PageSelectionPage() {
       if (cancelled) return
       return pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise
     }).then(d => {
-      if (!cancelled) { doc = d; setPdfDoc(d) }
+      if (!cancelled && d) { doc = d; setPdfDoc(d) }
     }).catch(() => {})
     return () => { cancelled = true; doc?.destroy() }
   // eslint-disable-next-line react-hooks/exhaustive-deps

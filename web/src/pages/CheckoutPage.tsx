@@ -210,7 +210,6 @@ type PageStatus = 'idle' | 'saving' | 'done'
 
 export default function CheckoutPage() {
   const location = useLocation()
-  const navigate = useNavigate()
   const { user } = useAuth()
 
   const searchParams = new URLSearchParams(location.search)

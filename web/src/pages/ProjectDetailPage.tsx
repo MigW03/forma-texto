@@ -114,6 +114,7 @@ function PdfPage({
         canvas.style.height = 'auto'
 
         renderTask = page.render({
+          canvas,
           canvasContext: canvas.getContext('2d')!,
           viewport: renderViewport,
         })
@@ -217,6 +218,7 @@ function PdfViewer({
   url,
   selectedPages,
   referencesPages,
+  pageCount,
   zoom,
   referencesUrl,
 }: {
