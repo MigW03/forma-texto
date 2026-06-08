@@ -31,10 +31,10 @@ Only the two AI passes (C, D) can exceed a model's context window, so **chunking
 confined to C and D**; each does its own chunking before the model call and its own
 merge after.
 
-**Build status:** A, B, D, E are built and tested. **Step C is not built yet** — it
-is the next pipeline feature (it mirrors Step D's design).
+**Build status:** A, B, C, D, E are all built and tested. (Step C mirrors Step D's
+design — see "Chunk-and-merge" below.)
 
-Orchestrator: `processFormatting.ts`. Trigger: `POST /api/processing/start`
+Orchestrator: `processFormatting.ts` (runs A → B → C → D → re-zip). Trigger: `POST /api/processing/start`
 (fire-and-forget, returns 202). Proofreading is a separate service and has not yet
 moved off n8n.
 
@@ -68,9 +68,11 @@ moved off n8n.
   `[{ i, role: title|h1|h2|h3|body }]`, rewrites only `<w:pStyle>`. Each chunk
   carries the last 1–2 headings seen before it so a level decision survives a
   mid-document cut. `body` = leave as-is; D only promotes, never demotes.
-- **Step C** (planned) chunks reference entries, returns
+- **Step C** chunks reference entries, returns
   `[{ i, segments: [{ text, emphasis? }] }]`; deterministic code renders segments
-  into `<w:r>` runs (emphasis → `<w:b/>`/`<w:i/>`) and splices over the entry range.
+  into `<w:r>` runs (emphasis → `<w:b/>`/`<w:i/>`) and splices over the entry range,
+  keeping the `<w:pPr>` Step B applied. An entry with no usable segments is left
+  unchanged. Each entry is independent, so Step C carries no cross-chunk context.
 
 ## References detection
 
@@ -95,16 +97,19 @@ interface is the seam. Determinism knobs (`AI_TEMPERATURE=0`, `AI_SEED`, optiona
 
 | File | Role |
 |---|---|
-| `processFormatting.ts` | Orchestrator: download → A → B → D → re-zip → upload → stamp |
+| `processFormatting.ts` | Orchestrator: download → A → B → C → D → re-zip → upload → stamp |
 | `applyStepA.ts` | Step A (rewriteStyles · stripOverrides · rewriteMargins · fontPolicy) |
 | `references.ts` | Step B + shared `locateReferences` / `pageForBlock` |
+| `stepC.ts` | Step C chunk + apply (model-agnostic) |
 | `stepD.ts` | Step D chunk + apply (model-agnostic) |
+| `ai/referencesDecider.ts` | Real Step C decider (OpenRouter) |
 | `ai/headingDecider.ts` | Real Step D decider (OpenRouter) |
 | `ai/config.ts` | AI knobs, all env-overridable |
 | `blocks.ts` | Shared top-level block parser (indices, descriptors, splice) |
 | `loadGuideline.ts` | Reads `specs/{id}.md` (machine block + prose sections) |
 | `specs/abnt.md` | Canonical ABNT spec — single source of truth |
 | `prompts/heading-classification.md` | Step D system-prompt body |
+| `prompts/reference-reformatting.md` | Step C system-prompt body |
 
 ## Guideline coverage
 

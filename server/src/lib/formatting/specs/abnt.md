@@ -128,9 +128,9 @@ Heading levels map to Word styles `Heading1`/`Heading2`/`Heading3`. The differen
 
 ## 7. Reference examples
 
-These are **templates for the AI** (Step C). Each shows the abstract **pattern**, a concrete **example**, and the **XML mapping** for emphasis. Bold is encoded as `<w:b/>` inside the run properties; italic as `<w:i/>`. Output is one `<w:p>` per entry.
+These are **templates for the AI** (Step C). Each shows the abstract **pattern** and a concrete **example**, defining the field order, punctuation, and which span is emphasised. In the examples below, the emphasised span is written in **bold** purely so you can see which span it is — that is the span you mark with `"emphasis": "bold"` in your `segments` output. Step C returns each entry as text segments with an `emphasis` field, exactly as described in the task instructions above. **Do not output XML, and do not copy the `**` markers into a segment's text.**
 
-> Emphasis convention in ABNT: the **title of the work** is **bold**. Italic is used only for foreign/Latin terms (e.g. *et al.*, *apud*).
+> Emphasis convention in ABNT: the **title of the work** is emphasised (bold). Italic is used only for foreign/Latin terms (e.g. *et al.*, *apud*).
 > **Author names use standard name casing** — `Sobrenome, Nome` (the surname is NOT uppercased). Institutional/acronym authors keep their natural casing (e.g. `IBGE`).
 
 ### 7.1 Book
@@ -161,16 +161,6 @@ These are **templates for the AI** (Step C). Each shows the abstract **pattern**
 ### 7.6 Article with DOI (DOI optional in ABNT)
 **Example:**
 > Nunes, Ana. Aprendizado de máquina aplicado à saúde. **Revista de Informática Médica**, São Paulo, v. 10, n. 1, p. 5-22, 2022. DOI: https://doi.org/10.1234/rim.2022.001.
-
-**XML mapping example** (entry 7.1, ready to splice into `document.xml`):
-```xml
-<w:p>
-  <w:pPr><w:jc w:val="left"/><w:spacing w:line="240" w:lineRule="auto"/></w:pPr>
-  <w:r><w:t xml:space="preserve">Gil, Antônio Carlos. </w:t></w:r>
-  <w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Como elaborar projetos de pesquisa</w:t></w:r>
-  <w:r><w:t xml:space="preserve">. 6. ed. São Paulo: Atlas, 2017.</w:t></w:r>
-</w:p>
-```
 
 ---
 

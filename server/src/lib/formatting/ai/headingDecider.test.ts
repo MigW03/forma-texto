@@ -37,4 +37,17 @@ describe('repairDecisions', () => {
   it('returns null when there is nothing salvageable', async () => {
     expect(await repairDecisions({ text: 'no json here' })).toBeNull()
   })
+
+  it('salvages complete decisions from a response truncated mid-JSON (finishReason length)', async () => {
+    // Two complete decisions, then a third cut off mid-string (the observed failure).
+    const truncated =
+      '{"decisions": [' +
+      '{"i": 12, "segments": [{"text": "Dos, C. "}, {"text": "Título", "emphasis": "bold"}, {"text": "."}]}, ' +
+      '{"i": 15, "segments": [{"text": "ABNT. "}, {"text": "ABNT NBR 16175", "emphasis": "bold"}]}, ' +
+      '{"i": 16, "segments": [{"text": "**AIRBAG: TUDO SOBRE ES'
+    const out = await repairDecisions({ text: truncated })
+    const parsed = JSON.parse(out!)
+    expect(parsed.decisions.map((d: { i: number }) => d.i)).toEqual([12, 15]) // 16 dropped (incomplete)
+    expect(parsed.decisions[0].segments[1]).toEqual({ text: 'Título', emphasis: 'bold' })
+  })
 })

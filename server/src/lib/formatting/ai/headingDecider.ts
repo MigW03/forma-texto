@@ -25,10 +25,54 @@ const decisionsSchema = z.object({
 })
 
 /**
+ * Pull every COMPLETE decision object out of a (possibly truncated) decisions array.
+ * Reasoning models can hit the output-token ceiling and stop mid-JSON (finishReason
+ * "length"), which makes a strict parse fail and lose the whole chunk — even the
+ * entries that finished cleanly. This scans the array element-by-element (tracking
+ * string/escape/brace state) and keeps each `{...}` that closes and parses, dropping
+ * only the final partial one. Applying a partial set is safe: both passes act by
+ * index, so a missing decision just leaves that block as the deterministic result.
+ */
+function salvageCompleteDecisions(text: string): unknown[] | null {
+  const key = text.indexOf('"decisions"')
+  const arrStart = text.indexOf('[', key < 0 ? 0 : key)
+  if (arrStart < 0) return null
+  const objs: unknown[] = []
+  let depth = 0
+  let start = -1
+  let inStr = false
+  let esc = false
+  for (let k = arrStart + 1; k < text.length; k++) {
+    const c = text[k]
+    if (inStr) {
+      if (esc) esc = false
+      else if (c === '\\') esc = true
+      else if (c === '"') inStr = false
+      continue
+    }
+    if (c === '"') inStr = true
+    else if (c === '{') { if (depth === 0) start = k; depth++ }
+    else if (c === '}') {
+      depth--
+      if (depth === 0 && start >= 0) {
+        try {
+          const parsed = JSON.parse(text.slice(start, k + 1))
+          if (parsed && typeof (parsed as { i?: unknown }).i === 'number') objs.push(parsed)
+        } catch { /* skip a malformed element */ }
+        start = -1
+      }
+    } else if (c === ']' && depth === 0) break
+  }
+  return objs.length ? objs : null
+}
+
+/**
  * Weak models routinely ignore the `{ decisions: [...] }` wrapper and return the
  * bare array `[{ i, role }, ...]` (or wrap it under a different key, or fence it in
  * markdown). Re-shape any of those into the schema before validation fails the job.
- * Returns null when nothing salvageable is found (the SDK then errors as before).
+ * If the JSON is truncated (reasoning model hit the token ceiling), salvage the
+ * complete decisions instead of losing the whole chunk. Returns null when nothing
+ * salvageable is found (the SDK then errors as before).
  */
 export async function repairDecisions({ text }: { text: string }): Promise<string | null> {
   const wrap = (v: unknown): string | null => {
@@ -52,7 +96,9 @@ export async function repairDecisions({ text }: { text: string }): Promise<strin
         /* fall through */
       }
     }
-    return null
+    // Last resort: the response was cut off mid-JSON — keep the complete decisions.
+    const salvaged = salvageCompleteDecisions(text)
+    return salvaged ? JSON.stringify({ decisions: salvaged }) : null
   }
 }
 

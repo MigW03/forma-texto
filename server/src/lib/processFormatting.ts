@@ -7,13 +7,16 @@ import {
   formatReferences,
   locateReferences,
   resolveGuideline,
+  stepC,
   stepD,
   loadAiConfig,
   createHeadingDecider,
+  createReferenceDecider,
   pageForBlock,
   getBlocks,
   blockText,
   type HeadingDecision,
+  type ReferenceDecision,
 } from './formatting'
 
 /** Tier label for a heading role, e.g. 'h2' → 'H2', 'title' → 'TITLE'. */
@@ -37,6 +40,22 @@ function logHeadings(projectId: string, documentXml: string, decisions: HeadingD
     const page = sortedPages[virtualPage - 1] ?? virtualPage // map to original page when known
     const text = blockText(blocks[h.i] ?? '').slice(0, 80)
     console.log(`[Step D]   ${tierLabel(h.role).padEnd(5)} page ${page}  "${text}"`)
+  }
+}
+
+/**
+ * Log each reformatted reference entry as the model returned it, with emphasis
+ * made visible (`**bold**`, `_italic_`). Lets us see the raw Step C decision —
+ * field order, punctuation, and which span was bolded — without opening the docx.
+ */
+function logReferences(projectId: string, decisions: ReferenceDecision[]): void {
+  console.log(`[processFormatting] ${projectId} Step C: ${decisions.length} entr(ies) returned by the model`)
+  for (const d of decisions) {
+    const rendered = d.segments
+      .map(s => (s.emphasis === 'bold' ? `**${s.text}**` : s.emphasis === 'italic' ? `_${s.text}_` : s.text))
+      .join('')
+    const emph = d.segments.filter(s => s.emphasis).length
+    console.log(`[Step C]   #${d.i} (${emph} emphasis run(s)): ${rendered}`)
   }
 }
 
@@ -107,27 +126,50 @@ export async function processFormatting(projectId: string): Promise<void> {
     }
     const documentXmlB = formatReferences(a.documentXml, guideline, refInput) // Step B: references
 
-    // Step D (AI): reclassify headings typed as plain text. Behind a feature flag,
-    // and wrapped so any AI failure keeps the deterministic A/B result — a paid job
-    // is never blocked by the model.
-    let documentXmlD = documentXmlB
+    // Steps C & D (AI). Both are behind one feature flag, each wrapped on its own so
+    // any AI failure keeps the deterministic A/B result — a paid job is never blocked
+    // by the model. They share the references region: C reformats its entries, D uses
+    // its heading index to exclude references from heading classification. Both pass
+    // by absolute block index (count never changes), so the region stays valid across C.
+    let documentXmlAI = documentXmlB
     const aiCfg = loadAiConfig()
     if (aiCfg.enabled) {
+      const region = locateReferences(documentXmlB, refInput)
+
+      // Diagnose why Step C might do nothing, so "references unchanged" is never
+      // ambiguous in the logs: no page flagged vs flagged-but-not-located vs ran.
+      if (refInput.referencePages.length === 0) {
+        console.log(`[processFormatting] ${projectId} Step C: no references page flagged — skipping`)
+      } else if (!region) {
+        console.warn(`[processFormatting] ${projectId} Step C: references page(s) [${refInput.referencePages.join(', ')}] flagged but no references region located in the document`)
+      } else {
+        // Step C: reformat each reference entry into the guideline citation format.
+        try {
+          const result = await stepC(documentXmlAI, guideline, createReferenceDecider(aiCfg), region, {
+            maxChars: aiCfg.maxCharsPerChunk,
+          })
+          documentXmlAI = result.documentXml
+          console.log(`[processFormatting] ${projectId} Step C: located ${region.entryIndices.length} entr(ies), reformatted ${result.decisions.length}`)
+          logReferences(projectId, result.decisions)
+        } catch (err) {
+          console.error(`[processFormatting] Step C failed for ${projectId} (non-fatal, keeping deterministic result):`, err)
+        }
+      }
+
+      // Step D: reclassify headings typed as plain text.
       try {
-        const region = locateReferences(documentXmlB, refInput)
-        const result = await stepD(documentXmlB, guideline, createHeadingDecider(aiCfg), {
+        const result = await stepD(documentXmlAI, guideline, createHeadingDecider(aiCfg), {
           refStartIndex: region?.headingIdx ?? -1,
           maxChars: aiCfg.maxCharsPerChunk,
         })
-        documentXmlD = result.documentXml
-        logHeadings(projectId, documentXmlD, result.decisions, refInput.selectedPages)
+        documentXmlAI = result.documentXml
+        logHeadings(projectId, documentXmlAI, result.decisions, refInput.selectedPages)
       } catch (err) {
         console.error(`[processFormatting] Step D failed for ${projectId} (non-fatal, keeping deterministic result):`, err)
-        documentXmlD = documentXmlB
       }
     }
 
-    const out = { documentXml: documentXmlD, stylesXml: a.stylesXml }
+    const out = { documentXml: documentXmlAI, stylesXml: a.stylesXml }
     const docxBuf = zipDocx(files, out)
 
     // 6. Upload processed .docx
