@@ -196,7 +196,7 @@
 - [ ] End-to-end tests
   - Playwright — cover auth flow, full order flow, dashboard
 - [ ] Unit tests
-  - Vitest — cover `pricing.ts`, `extract.ts`, `pdf-slice.ts`, `docx-slice.ts`
+  - Vitest — cover `pricing.ts`, `pdf-slice.ts`, `docx-slice.ts`
 - [ ] Final code refactor
   - Pass over the entire codebase before deploy: remove dead code, consolidate duplicated logic, enforce consistent naming, split any components that grew too large, ensure all strings go through `t()`, and confirm no `any` types or unused vars remain
 

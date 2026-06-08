@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Navbar from './components/layout/Navbar'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -5,16 +6,27 @@ import LandingPage from './pages/LandingPage'
 import AuthPage from './pages/AuthPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import GetStartedPage from './pages/GetStartedPage'
-import CheckoutPage from './pages/CheckoutPage'
 import DashboardPage from './pages/DashboardPage'
 import TermsPage from './pages/TermsPage'
 import PrivacyPage from './pages/PrivacyPage'
-import PageSelectionPage from './pages/PageSelectionPage'
-import ProjectDetailPage from './pages/ProjectDetailPage'
 import ProfilePage from './pages/ProfilePage'
 import { AuthProvider, useAuth } from './lib/auth-context'
 import { ROUTES } from './lib/routes'
 import './index.css'
+
+// Heavy routes (pdfjs / docx-preview / pdf-lib) are code-split so the initial
+// load stays light for visitors who only see the landing / auth pages.
+const CheckoutPage = lazy(() => import('./pages/CheckoutPage'))
+const PageSelectionPage = lazy(() => import('./pages/PageSelectionPage'))
+const ProjectDetailPage = lazy(() => import('./pages/ProjectDetailPage'))
+
+function PageLoader() {
+  return (
+    <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
+      <div className="w-6 h-6 rounded-full border-2 border-forest border-t-transparent animate-spin" />
+    </div>
+  )
+}
 
 function HomeRoute() {
   const { user, loading } = useAuth()
@@ -28,6 +40,7 @@ export default function App() {
       <AuthProvider>
         <div className="min-h-screen bg-sand">
           <Navbar />
+          <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path={ROUTES.home} element={<HomeRoute />} />
             <Route path={ROUTES.signIn} element={<AuthPage mode="sign-in" />} />
@@ -60,6 +73,7 @@ export default function App() {
               element={<ProtectedRoute><ProfilePage /></ProtectedRoute>}
             />
           </Routes>
+          </Suspense>
         </div>
       </AuthProvider>
     </BrowserRouter>

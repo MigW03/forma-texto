@@ -188,7 +188,6 @@ web/src/
 │   ├── routes.ts               — ROUTES constants
 │   ├── i18n.ts                 — i18next config, 3 locales
 │   ├── guidelines.ts           — useGuidelines() hook (catalog from /api/guidelines)
-│   ├── extract.ts              — PDF/DOCX text extraction
 │   ├── pdf-slice.ts            — pdf-lib page slicer
 │   ├── docx-slice.ts           — DOCX virtual page slicer
 │   ├── file-store.ts           — client-side temp file ref
@@ -320,13 +319,13 @@ All user-visible strings go through `t()`. Never hardcode UI text.
 
 ---
 
-## Document Processing
+## Document Processing (client-side)
 
-- **PDF text**: `pdfjs-dist` → by Y-position → classify by font size (h1/h2/h3/paragraph/caption)
-- **DOCX text**: unzip → parse `<w:t>` XML → detect headings by style ID
-- **PDF slicing**: `pdf-lib` copies selected pages → new `File`
-- **DOCX slicing**: 40 blocks/virtual-page → filter XML → re-zip → new `File`
-- **Page count (PDF)**: regex `/Count` on raw bytes. DOCX: `docProps/app.xml` `<Pages>`
+- **PDF slicing**: `pdf-lib` copies the selected pages into a new `File` (`pdf-slice.ts`).
+- **DOCX slicing**: 40 blocks per virtual page → filter the XML → re-zip into a new `File` (`docx-slice.ts`).
+- **Page count**: PDF via `pdfjs-dist` `getDocument().numPages`; DOCX via `docProps/app.xml` `<Pages>` (with a `docx-preview` render fallback).
+
+The academic formatting/correction itself runs server-side — see [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md).
 
 ---
 
