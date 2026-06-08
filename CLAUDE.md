@@ -1,8 +1,15 @@
-# FormaTexto — Web Frontend
+# FormaTexto
 
 ## What Is This
 
 FormaTexto is an AI-powered document formatting and proofreading service. Users upload a `.docx` or `.pdf`, choose services (academic formatting and/or grammatical revision/correction), select which pages to process, and pay. The backend processes the file using a multi-model AI pipeline — making the service faster and cheaper than traditional human-based alternatives.
+
+## Repository Layout
+
+- **`web/`** — React + Vite frontend (this file is mostly about it). See [`web/README.md`](web/README.md).
+- **`server/`** — Express + TypeScript backend: Stripe, Supabase service-role, email, and the DOCX formatting pipeline.
+- **`docs/`** — architecture docs. The formatting pipeline is documented in [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md).
+- **`business_decisions/`** — decision records (designed HTML, see Quick Reports).
 
 ## Communication Style
 
@@ -31,11 +38,13 @@ Reference template: [`business_decisions/n8n-vs-server.html`](business_decisions
 | Build | Vite |
 | Routing | React Router v7 |
 | Styling | Tailwind CSS v3 |
+| UI components | shadcn/ui (Radix primitives) in `components/ui/` |
 | Auth + DB | Supabase |
 | Payments | Stripe (`@stripe/react-stripe-js`) |
 | i18n | i18next + react-i18next |
 | Icons | lucide-react |
-| Doc processing | pdfjs-dist, mammoth, pdf-lib, tesseract.js, fflate |
+| Doc processing | pdfjs-dist, pdf-lib, docx-preview, fflate |
+| Backend | Express + TypeScript (`server/`) |
 
 **No Redux, no Zustand.** State = React Context + local `useState` + `sessionStorage` for multi-step flow.
 
@@ -44,6 +53,8 @@ Reference template: [`business_decisions/n8n-vs-server.html`](business_decisions
 ## Design System — ALWAYS FOLLOW THIS
 
 Full design system in [`DESIGN.md`](DESIGN.md). Summary below.
+
+UI is built on **shadcn/ui** primitives (`components/ui/`: button, card, badge, input, label) — the official component layer. Compose and extend those primitives rather than hand-rolling new base elements, and always style them with the design tokens below.
 
 ### Colors
 
@@ -156,6 +167,8 @@ web/src/
 │   ├── layout/
 │   │   ├── Navbar.tsx          — sticky top nav, auth-aware
 │   │   └── LanguageSwitcher.tsx
+│   ├── sections/              — landing-page sections (Hero, Services, Pricing)
+│   ├── ui/                    — shadcn/ui primitives (button, card, badge, input, label)
 │   └── ProtectedRoute.tsx      — redirects unauthenticated → /sign-in
 ├── pages/
 │   ├── LandingPage.tsx
@@ -166,13 +179,15 @@ web/src/
 │   ├── CheckoutPage.tsx        — step 3: Stripe payment
 │   ├── DashboardPage.tsx       — project list
 │   ├── ProjectDetailPage.tsx   — /projects/:id
+│   ├── ProfilePage.tsx         — /profile (account details)
 │   ├── TermsPage.tsx
-│   └── TextExtractPage.tsx     — exists, no route yet
+│   └── PrivacyPage.tsx
 ├── lib/
 │   ├── auth-context.tsx        — AuthProvider + useAuth()
 │   ├── supabase.ts             — Supabase client (env vars)
 │   ├── routes.ts               — ROUTES constants
 │   ├── i18n.ts                 — i18next config, 3 locales
+│   ├── guidelines.ts           — useGuidelines() hook (catalog from /api/guidelines)
 │   ├── extract.ts              — PDF/DOCX text extraction
 │   ├── pdf-slice.ts            — pdf-lib page slicer
 │   ├── docx-slice.ts           — DOCX virtual page slicer
@@ -183,6 +198,8 @@ web/src/
     ├── pt-BR.json
     └── pt-PT.json
 ```
+
+Backend structure lives under `server/src/` (`routes/`, `lib/`, `lib/formatting/`); see [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md).
 
 ---
 
@@ -199,7 +216,9 @@ web/src/
 '/checkout'       → CheckoutPage (protected)
 '/dashboard'      → DashboardPage (protected)
 '/projects/:id'   → ProjectDetailPage (protected)
+'/profile'        → ProfilePage (protected)
 '/terms'          → TermsPage
+'/privacy'        → PrivacyPage
 ```
 
 Always use `ROUTES` constants, never string literals.
@@ -236,7 +255,7 @@ const supabase = createClient(
 
 Full table definitions in [`supabase_tables.md`](supabase_tables.md). Quick ref:
 
-- **projects** — core table. `id`, `user_id`, `title`, `original_file_name`, `original_file_path`, `processed_file_path`, `services` (text[]), `guideline`, `status` (`pending|processing|ready|delivered`), `page_count`, `selected_pages`, `order_id`, `created_at`, `completed_at`, `delete_files_at`, `files_deleted_at`
+- **projects** — core table. `id`, `user_id`, `title`, `original_file_name`, `original_file_path`, `processed_file_path`, `services` (text[]), `guideline`, `status` (`pending|processing|complete` — the backend stamps `complete` and the UI gates the final download on it), `page_count`, `selected_pages`, `references_pages`, `order_id`, `created_at`, `completed_at`, `delete_files_at`, `files_deleted_at`. (`references_file_path` exists but is deprecated — references now stay in the single original file.)
 - **orders** — payment record. `id`, `stripe_payment_intent_id`, `user_id`, `services`, `page_count`, `amount_brl`, `status`, `is_trial`, `created_at`
 - **user_profiles** — one row per user. `id`, `trial_used_at` (null = trial available; set on first free order)
 
@@ -246,17 +265,23 @@ Storage bucket: `projects`. Upload path: `{userId}/{filename}`. Processed output
 
 ## Backend API
 
-Base URL: `VITE_API_URL` (default `http://localhost:3001`)
+Express server in `server/`, base URL `VITE_API_URL` (default `http://localhost:3001`). Main routes:
 
 ```
-POST /api/checkout/create-payment-intent
-  body: { services: string[], pageCount: number, userId: string }
-  resp: { clientSecret?, isTrial?, discountBRL?, isFree?, error? }
-
-POST /api/checkout/complete-free-order
-  body: { services: string[], pageCount: number, userId: string }
-  resp: { orderId: string, error? }
+POST /api/checkout/create-payment-intent   { services, pageCount, userId }
+  → { clientSecret?, isTrial?, discountBRL?, isFree?, error? }
+POST /api/checkout/complete-free-order      { services, pageCount, userId }
+  → { orderId, error? }                     (re-verifies trial server-side)
+POST /api/webhook                           Stripe events (raw body) → inserts order
+POST /api/processing/start                  { projectId } → 202; runs formatting pipeline
+                                            (auth: owner Bearer token OR x-webhook-secret)
+GET  /api/guidelines                        catalog from specs/*.md (drives dropdown)
+POST /api/notifications/project-ready       { projectId } → sends "ready" email (x-webhook-secret)
+GET  /api/documents/fetch?url=              Google Docs → .docx binary
+POST /api/auth/notify-password-change       password-changed email (Bearer)
 ```
+
+The formatting pipeline behind `/api/processing/start` is documented in [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md). Secrets (Stripe secret key, Supabase **service-role** key, Resend, OpenRouter) live only in `server/.env` — never in the frontend.
 
 ---
 
@@ -330,58 +355,12 @@ npm run preview  # preview prod build
 
 ---
 
-## Environment Setup (New Collaborator)
+## New Collaborator Setup
 
-> **AI agent instruction:** Before walking through these steps, ask the user directly: _"Have you already set up Node.js, installed dependencies, and configured the environment variables? Or are we starting from scratch?"_ Skip steps they confirm are already done.
-
-### 1. Prerequisites
-
-- **Node.js** ≥ 18 (project uses Vite 8 + React 19 + TypeScript 6)
-- **npm** ≥ 9
-- Any AI coding agent that can read this file (Claude Code, Cursor, Copilot, Windsurf, etc.)
-
-### 2. Install Frontend Dependencies
-
-```sh
-cd web
-npm install
-```
-
-### 3. Configure Environment Variables
-
-Create `web/.env.local` — this file is gitignored. Ask a teammate for the values.
-
-```sh
-VITE_SUPABASE_URL=              # Supabase project URL
-VITE_SUPABASE_PUBLISHABLE_KEY=  # Supabase anon/publishable key
-VITE_STRIPE_PUBLISHABLE_KEY=    # Stripe publishable key (pk_test_... or pk_live_...)
-VITE_API_URL=http://localhost:3001  # Backend API base URL
-```
-
-### 4. Start the Dev Server
-
-```sh
-cd web
-npm run dev
-# → http://localhost:5173
-```
-
-### 5. Backend
-
-The backend runs separately on port `3001`. See the backend folder for its own setup instructions. The frontend works without it for most UI work, but payment flow and trial eligibility checks will fail.
-
-### 6. AI Agent Skills
-
-This project uses the **caveman** communication style for conversational responses (terse, no filler). If your agent supports installable skills, install the caveman skill before starting:
-
-```sh
-# Claude Code
-/install-skill caveman
-```
-
-For other agents, the style rules are defined in the **Communication Style** section of this file — paste them into your agent's system prompt or custom instructions if needed.
-
-The style activates automatically when the agent reads this `CLAUDE.md`. If responses drift verbose, remind the agent: _"use caveman full mode"_.
+- **Frontend:** `cd web && npm install && npm run dev` (→ http://localhost:5173). Env vars in `web/.env.local` (see [`web/README.md`](web/README.md)).
+- **Backend:** runs separately on port 3001; env in `server/.env` (copy from `server/.env.example`). The frontend works without it for most UI work, but the payment flow and trial checks need it.
+- **Prerequisites:** Node.js ≥ 18, npm ≥ 9.
+- **Communication style:** the caveman style (see above) activates automatically when an agent reads this file; if responses drift verbose, say _"use caveman full mode"_.
 
 ---
 
@@ -399,11 +378,11 @@ Brazil-first. Implications:
 ## Key Rules
 
 1. **Design system mandatory** — always use color tokens, border radii, card patterns above. No deviation.
-2. **No component library (current branch)** — all UI built custom with Tailwind. Shadcn migration planned for a future branch — do not introduce it here.
+2. **shadcn/ui is the component layer** — build on the primitives in `components/ui/`, styled with the design tokens. Don't hand-roll base elements that a primitive already covers.
 3. **No Redux** — local state + Context + sessionStorage only.
 4. **Always use `ROUTES` constants** — never hardcode paths.
 5. **Always use `t()` for UI text** — update `locales/*.json` when adding strings.
 6. **TypeScript strict** — no `any`, no unused vars.
 7. **`ProtectedRoute` wraps all auth-required pages** — already wired in `App.tsx`.
-8. **Missing**: `TextExtractPage` has no route. `PrivacyPage` has route but no file. No tests configured.
+8. **Tests:** the server has a vitest suite (`cd server && npm test`) — keep it green. The frontend has no test suite yet (planned).
 9. **Keep `PLAN.md` current** — after every major feature implementation, bug fix, or test, mark the corresponding pre-existing task as completed (`[ ]` → `[x]`) and update its description to reflect what was actually built. Never add new tasks during this update — only mark what already existed. New tasks go in a separate, deliberate edit.
