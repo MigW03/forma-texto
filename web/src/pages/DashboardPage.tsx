@@ -6,6 +6,7 @@ import { ROUTES } from '../lib/routes'
 import { SESSION_KEY } from './GetStartedPage'
 import { useAuth } from '../lib/auth-context'
 import { supabase } from '../lib/supabase'
+import { toTimeAgo, type TimeAgo } from '../lib/format'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -17,11 +18,6 @@ function clearGetStartedSession() {
 type ServiceType = 'proofreading' | 'formatting'
 type StatusType = 'inQueue' | 'processing' | 'ready' | 'delivered'
 type GuidelineId = 'abnt' | 'apa' | 'mla' | 'chicago'
-
-type TimeAgo =
-  | { kind: 'justNow' }
-  | { kind: 'hours'; count: number }
-  | { kind: 'days'; count: number }
 
 interface Project {
   id: string
@@ -49,14 +45,6 @@ const DB_STATUS_MAP: Record<string, StatusType> = {
   ready: 'ready',
   complete: 'ready',
   delivered: 'delivered',
-}
-
-function toTimeAgo(isoDate: string): TimeAgo {
-  const diffMs = Date.now() - new Date(isoDate).getTime()
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-  if (diffHours < 1) return { kind: 'justNow' }
-  if (diffHours < 24) return { kind: 'hours', count: diffHours }
-  return { kind: 'days', count: Math.floor(diffHours / 24) }
 }
 
 function mapDbProject(row: DbProject): Project {
