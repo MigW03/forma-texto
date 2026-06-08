@@ -277,10 +277,6 @@ export default function CheckoutPage() {
       let storagePath: string | null = null
       const fileName = rawFile?.name ?? state?.fileName ?? null
 
-      console.log('[checkout] rawFile:', rawFile ? `${rawFile.name} (${rawFile.size} bytes)` : 'NULL')
-      console.log('[checkout] selectedPages:', selectedPages)
-      console.log('[checkout] referencePages:', state?.referencePages)
-
       // 1. Prepare the file to upload — slice to ALL selected pages (references included).
       //    References are no longer split into a separate file; the server's Step B
       //    detects the references section by heading text inside the single document.
@@ -293,7 +289,6 @@ export default function CheckoutPage() {
         try {
           if (isPdfFile) fileToUpload = await slicePdf(rawFile, selectedPages)
           else if (isDocxFile) fileToUpload = await sliceDocx(rawFile, selectedPages)
-          console.log('[checkout] sliced file:', fileToUpload ? `${fileToUpload.name} (${fileToUpload.size} bytes)` : 'NULL')
         } catch (err) {
           console.error('File slicing failed, uploading full file:', err)
         }
@@ -309,7 +304,6 @@ export default function CheckoutPage() {
           .normalize('NFD')
           .replace(/[̀-ͯ]/g, '')
           .replace(/\s+/g, '_')
-          .replace(/[̀-ͯ]/g, '')
         const path = `${user.id}/${projectId}/original/${safeName}`
         const { error: uploadError } = await supabase.storage
           .from('projects')
@@ -342,13 +336,9 @@ export default function CheckoutPage() {
         title: state?.title?.trim() || fileName || null,
       })
 
-      console.log('[checkout] storagePath:', storagePath)
-
       if (projectError) {
         console.error('Project creation failed:', projectError)
       } else {
-        console.log('[checkout] project created:', projectId)
-
         // 5. Trigger processing (fire-and-forget). Formatting runs on our server's
         //    pipeline; proofreading-only projects still go to the n8n webhook.
         if (services.includes('formatting')) {
