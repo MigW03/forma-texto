@@ -33,7 +33,6 @@
 | `delete_files_at` | `timestamptz` |  Nullable |
 | `files_deleted_at` | `timestamptz` |  Nullable |
 | `references_pages` | `_int4` |  Nullable |
-| `references_file_path` | `text` |  Nullable |
 | `completed_at` | `timestamptz` |  Nullable |
 | `created_at` | `timestamptz` |  |
 | `selected_pages` | `_int4` |  Nullable |

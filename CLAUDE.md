@@ -255,7 +255,7 @@ const supabase = createClient(
 
 Full table definitions in [`supabase_tables.md`](supabase_tables.md). Quick ref:
 
-- **projects** — core table. `id`, `user_id`, `title`, `original_file_name`, `original_file_path`, `processed_file_path`, `services` (text[]), `guideline`, `status` (`pending|processing|complete` — the backend stamps `complete` and the UI gates the final download on it), `page_count`, `selected_pages`, `references_pages`, `order_id`, `created_at`, `completed_at`, `delete_files_at`, `files_deleted_at`. (`references_file_path` exists but is deprecated — references now stay in the single original file.)
+- **projects** — core table. `id`, `user_id`, `title`, `original_file_name`, `original_file_path`, `processed_file_path`, `services` (text[]), `guideline`, `status` (`pending|processing|complete` — the backend stamps `complete` and the UI gates the final download on it), `page_count`, `selected_pages`, `references_pages`, `order_id`, `created_at`, `completed_at`, `delete_files_at`, `files_deleted_at`. (References stay inline in the single original file; the old `references_file_path` column has been removed.)
 - **orders** — payment record. `id`, `stripe_payment_intent_id`, `user_id`, `services`, `page_count`, `amount_brl`, `status`, `is_trial`, `created_at`
 - **user_profiles** — one row per user. `id`, `trial_used_at` (null = trial available; set on first free order)
 

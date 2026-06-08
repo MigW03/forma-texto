@@ -79,7 +79,7 @@ scanning for the word "Referências" (which can appear in body text). DOCX has n
 page metadata, so flagged page numbers are mapped to paragraphs using pagination
 signals (manual page breaks, inline `<w:sectPr>`, `<w:lastRenderedPageBreak>`, then
 a 40-block fallback). The whole document — references included — lives in one stored
-file; `references_file_path` is deprecated. `locateReferences()` is shared by Step B
+file; the separate references file (column `references_file_path`) has been removed. `locateReferences()` is shared by Step B
 (formats), Step C (reformats entries), and Step D (excludes the references region).
 
 ## AI configuration

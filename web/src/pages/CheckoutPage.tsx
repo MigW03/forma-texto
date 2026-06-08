@@ -338,7 +338,6 @@ export default function CheckoutPage() {
         original_file_name: fileName,
         original_file_path: storagePath,
         references_pages: referencePages.length > 0 ? referencePages : null,
-        references_file_path: null, // deprecated — references kept in the single original file
         delete_files_at: deleteAt,
         title: state?.title?.trim() || fileName || null,
       })

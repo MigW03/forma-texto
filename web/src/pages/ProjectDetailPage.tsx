@@ -24,7 +24,6 @@ interface ProjectDetail {
   original_file_path: string | null
   processed_file_path: string | null
   references_pages: number[] | null
-  references_file_path: string | null
   services: ServiceKey[]
   guideline: GuidelineId | null
   status: string
@@ -217,21 +216,16 @@ function ZoomControls({ zoom, setZoom }: { zoom: number; setZoom: (z: number) =>
 function PdfViewer({
   url,
   selectedPages,
-  referencesPages,
   pageCount,
   zoom,
-  referencesUrl,
 }: {
   url: string
   selectedPages: number[]
-  referencesPages: number[]
   pageCount: number
   zoom: number
-  referencesUrl?: string | null
 }) {
   const outerRef = useRef<HTMLDivElement>(null)
   const [doc, setDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null)
-  const [refsDoc, setRefsDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null)
   const [containerWidth, setContainerWidth] = useState(0)
   const [loadError, setLoadError] = useState(false)
 
@@ -256,49 +250,33 @@ function PdfViewer({
     return () => { pdfDoc?.destroy() }
   }, [url])
 
-  useEffect(() => {
-    if (!referencesUrl) return
-    let refDoc: pdfjsLib.PDFDocumentProxy | null = null
-    pdfjsLib.getDocument({ url: referencesUrl }).promise
-      .then((d) => { refDoc = d; setRefsDoc(d) })
-      .catch(() => {})
-    return () => { refDoc?.destroy() }
-  }, [referencesUrl])
-
   if (loadError) return null
 
   const pageWidth = containerWidth * zoom
 
-  // Build index maps: original page number → page number within each file.
-  // References are only a SEPARATE file for legacy projects (referencesUrl set).
-  // New projects keep references in the single file, so all selected pages map there.
-  const hasSeparateRefs = !!referencesUrl
-  const refPagesSet = hasSeparateRefs ? new Set(referencesPages) : new Set<number>()
-  const mainFilePages = selectedPages.filter(p => !refPagesSet.has(p))
-  const mainPageMap = new Map(mainFilePages.map((p, i) => [p, i + 1]))
-  const refPageMap = new Map(referencesPages.map((p, i) => [p, i + 1]))
-
-  // Display order = selectedPages sorted. Falls back to sequential 1..pageCount for old records without selected_pages.
+  // The stored file is sliced to the selected pages in ascending order, so each
+  // selected page maps to its position within that file. (References live inline
+  // in this single file.) Falls back to a sequential 1..pageCount for old records
+  // without selected_pages.
   const displayOrder = selectedPages.length > 0
     ? [...selectedPages].sort((a, b) => a - b)
     : Array.from({ length: pageCount }, (_, i) => i + 1)
+  const pageMap = new Map(displayOrder.map((p, i) => [p, i + 1]))
 
   return (
     <div ref={outerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-auto relative">
       <div className="flex flex-col items-center gap-6 py-4 pb-8 min-w-fit px-8">
         {pageWidth > 0
           ? displayOrder.map((origPage, displayIdx) => {
-              const isRef = refPagesSet.has(origPage)
-              const docToUse = isRef ? refsDoc : doc
-              const pageNum = isRef ? refPageMap.get(origPage)! : mainPageMap.get(origPage)!
-              if (!docToUse) {
+              const pageNum = pageMap.get(origPage)!
+              if (!doc) {
                 return (
                   <div key={origPage} className="bg-white rounded-xl shadow-sm animate-pulse"
                     style={{ width: pageWidth, height: pageWidth * 1.414 }} />
                 )
               }
               return (
-                <PdfPage key={origPage} doc={docToUse} pageNum={pageNum} containerWidth={pageWidth} label={displayIdx + 1} />
+                <PdfPage key={origPage} doc={doc} pageNum={pageNum} containerWidth={pageWidth} label={displayIdx + 1} />
               )
             })
           : Array.from({ length: Math.min(selectedPages.length, 3) }, (_, i) => (
@@ -421,7 +399,6 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<ProjectDetail | null>(null)
   const [fileUrl, setFileUrl] = useState<string | null>(null)
   const [processedFileUrl, setProcessedFileUrl] = useState<string | null>(null)
-  const [referencesFileUrl, setReferencesFileUrl] = useState<string | null>(null)
   const [zoom, setZoom] = useState(ZOOM_DEFAULT)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
@@ -432,27 +409,23 @@ export default function ProjectDetailPage() {
     if (!id) return
     supabase
       .from('projects')
-      .select('id, title, original_file_name, original_file_path, processed_file_path, references_file_path, references_pages, selected_pages, services, guideline, status, page_count, created_at')
+      .select('id, title, original_file_name, original_file_path, processed_file_path, references_pages, selected_pages, services, guideline, status, page_count, created_at')
       .eq('id', id)
       .single()
       .then(async ({ data, error }) => {
         if (error || !data) { setNotFound(true); setLoading(false); return }
         setProject(data as ProjectDetail)
         setZoom(data.original_file_name.toLowerCase().endsWith('.docx') ? DOCX_ZOOM_DEFAULT : ZOOM_DEFAULT)
-        const [origSigned, procSigned, refSigned] = await Promise.all([
+        const [origSigned, procSigned] = await Promise.all([
           data.original_file_path
             ? supabase.storage.from('projects').createSignedUrl(data.original_file_path, 3600)
             : Promise.resolve({ data: null }),
           data.processed_file_path
             ? supabase.storage.from('projects').createSignedUrl(data.processed_file_path, 3600)
             : Promise.resolve({ data: null }),
-          data.references_file_path
-            ? supabase.storage.from('projects').createSignedUrl(data.references_file_path, 3600)
-            : Promise.resolve({ data: null }),
         ])
         if (origSigned.data?.signedUrl) setFileUrl(origSigned.data.signedUrl)
         if (procSigned.data?.signedUrl) setProcessedFileUrl(procSigned.data.signedUrl)
-        if (refSigned.data?.signedUrl) setReferencesFileUrl(refSigned.data.signedUrl)
         setLoading(false)
       })
   }, [id])
@@ -553,10 +526,8 @@ export default function ProjectDetailPage() {
           <PdfViewer
             url={previewUrl}
             selectedPages={selectedPages}
-            referencesPages={referencesPages}
             pageCount={project.page_count}
             zoom={zoom}
-            referencesUrl={referencesFileUrl}
           />
         ) : previewUrl && isDocx ? (
           <DocxViewer url={previewUrl} zoom={zoom} />
