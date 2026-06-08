@@ -6,6 +6,7 @@ FormaTexto is an AI-powered document formatting and proofreading service. Users 
 
 ## Repository Layout
 
+- **[`HANDOFF.md`](HANDOFF.md)** — living snapshot of current project state, gotchas, and open work. **Read it first**, and update it at the end of each session.
 - **`web/`** — React + Vite frontend (this file is mostly about it). See [`web/README.md`](web/README.md).
 - **`server/`** — Express + TypeScript backend: Stripe, Supabase service-role, email, and the DOCX formatting pipeline.
 - **`docs/`** — architecture docs. The formatting pipeline is documented in [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md).
