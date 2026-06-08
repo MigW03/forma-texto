@@ -7,6 +7,7 @@ import { SESSION_KEY } from './GetStartedPage'
 import { useAuth } from '../lib/auth-context'
 import { supabase } from '../lib/supabase'
 import { toTimeAgo, type TimeAgo } from '../lib/format'
+import { normalizeStatus, STATUS_BADGE_VARIANT, type ProjectStatus } from '../lib/status'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -16,7 +17,6 @@ function clearGetStartedSession() {
 }
 
 type ServiceType = 'proofreading' | 'formatting'
-type StatusType = 'inQueue' | 'processing' | 'ready' | 'delivered'
 type GuidelineId = 'abnt' | 'apa' | 'mla' | 'chicago'
 
 interface Project {
@@ -25,7 +25,7 @@ interface Project {
   fileName: string
   service: ServiceType
   guideline?: GuidelineId
-  status: StatusType
+  status: ProjectStatus
   submittedAt: TimeAgo
 }
 
@@ -39,14 +39,6 @@ interface DbProject {
   created_at: string
 }
 
-const DB_STATUS_MAP: Record<string, StatusType> = {
-  pending: 'inQueue',
-  processing: 'processing',
-  ready: 'ready',
-  complete: 'ready',
-  delivered: 'delivered',
-}
-
 function mapDbProject(row: DbProject): Project {
   return {
     id: row.id,
@@ -54,16 +46,9 @@ function mapDbProject(row: DbProject): Project {
     fileName: row.original_file_name,
     service: row.services[0] ?? 'formatting',
     guideline: row.guideline ?? undefined,
-    status: DB_STATUS_MAP[row.status] ?? 'inQueue',
+    status: normalizeStatus(row.status),
     submittedAt: toTimeAgo(row.created_at),
   }
-}
-
-const STATUS_VARIANT: Record<StatusType, 'default' | 'processing' | 'ready' | 'delivered'> = {
-  inQueue: 'default',
-  processing: 'processing',
-  ready: 'ready',
-  delivered: 'delivered',
 }
 
 export default function DashboardPage() {
@@ -105,7 +90,7 @@ export default function DashboardPage() {
   }, [user])
 
   const activeCount = projects.filter(
-    (p) => p.status === 'inQueue' || p.status === 'processing',
+    (p) => p.status === 'pending' || p.status === 'processing',
   ).length
 
   return (
@@ -172,7 +157,7 @@ function ProjectRow({ project }: { project: Project }) {
 
       <div className="flex items-center gap-2 shrink-0">
         <ServiceBadge service={project.service} guideline={project.guideline} />
-        <Badge variant={STATUS_VARIANT[project.status]}>
+        <Badge variant={STATUS_BADGE_VARIANT[project.status]}>
           {t(`dashboard.status.${project.status}`)}
         </Badge>
         <ChevronRight size={14} className="text-muted/40 group-hover:text-muted transition-colors ml-1" />

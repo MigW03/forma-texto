@@ -134,10 +134,9 @@
       "formatting": "Formatação"
     },
     "status": {
-      "inQueue": "Na fila",
+      "pending": "Na fila",
       "processing": "Em andamento",
-      "ready": "Pronto para revisão",
-      "delivered": "Entregue"
+      "complete": "Pronto para revisão"
     },
     "time": {
       "justNow": "Agora mesmo",

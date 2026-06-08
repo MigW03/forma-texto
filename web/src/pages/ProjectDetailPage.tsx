@@ -10,13 +10,13 @@ import { supabase } from '../lib/supabase'
 import { calcPrice, formatBRL } from '../lib/pricing'
 import type { ServiceKey } from '../lib/pricing'
 import { formatPageRanges } from '../lib/format'
+import { normalizeStatus, STATUS_BADGE_VARIANT } from '../lib/status'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 type GuidelineId = 'abnt' | 'apa' | 'mla' | 'chicago'
-type StatusType = 'inQueue' | 'processing' | 'ready' | 'delivered'
 
 interface ProjectDetail {
   id: string
@@ -31,21 +31,6 @@ interface ProjectDetail {
   page_count: number
   selected_pages: number[] | null
   created_at: string
-}
-
-const DB_STATUS_MAP: Record<string, StatusType> = {
-  pending: 'inQueue',
-  processing: 'processing',
-  ready: 'ready',
-  complete: 'ready',
-  delivered: 'delivered',
-}
-
-const STATUS_VARIANT: Record<StatusType, 'default' | 'processing' | 'ready' | 'delivered'> = {
-  inQueue: 'default',
-  processing: 'processing',
-  ready: 'ready',
-  delivered: 'delivered',
 }
 
 function formatDate(iso: string): string {
@@ -468,7 +453,7 @@ export default function ProjectDetailPage() {
     )
   }
 
-  const status = DB_STATUS_MAP[project.status] ?? 'inQueue'
+  const status = normalizeStatus(project.status)
   const nameLower = project.original_file_name.toLowerCase()
   const isPdf = nameLower.endsWith('.pdf')
   const isDocx = nameLower.endsWith('.docx')
@@ -544,7 +529,7 @@ export default function ProjectDetailPage() {
           {project.title && (
             <p className="text-xs text-muted truncate mb-3">{project.original_file_name}</p>
           )}
-          <Badge variant={STATUS_VARIANT[status]}>
+          <Badge variant={STATUS_BADGE_VARIANT[status]}>
             {t(`dashboard.status.${status}`)}
           </Badge>
         </div>
