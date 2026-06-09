@@ -201,6 +201,12 @@
       "pagesLabel": "Páginas das referências",
       "pagesPlaceholder": "Ex: 45-60 ou 45, 46, 47",
       "disclaimer": "As referências não serão revistas gramaticalmente. A secção será apenas formatada conforme as normas. As citações no corpo do texto continuam a ser corrigidas.",
+      "accuracyDisclaimer": "O FormaTexto não verifica a exatidão das referências. Autores, títulos, datas, números de página e demais campos são formatados como estão — a correção das informações é da sua responsabilidade.",
+      "formatChoice": {
+        "label": "Quero que o FormaTexto formate as minhas referências",
+        "yes": "Sim",
+        "no": "Não"
+      },
       "save": "Guardar",
       "saving": "A guardar…",
       "saved": "Guardado",
@@ -290,6 +296,7 @@
     "prevPage": "Anterior",
     "nextPage": "Próxima",
     "select": "Selecionar página",
-    "selected": "Selecionada"
+    "selected": "Selecionada",
+    "refBadge": "Referência"
   }
 }

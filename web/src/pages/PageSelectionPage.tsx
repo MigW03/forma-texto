@@ -274,6 +274,7 @@ export default function PageSelectionPage() {
   const [guideline, setGuideline] = useState<string>(state?.guideline ?? 'abnt')
   const guidelines = useGuidelines()
   const [hasReferences, setHasReferences] = useState(true)
+  const [formatReferences, setFormatReferences] = useState<boolean | null>(null)
 
   // If the carried-over guideline isn't in the loaded catalog, snap to the first.
   useEffect(() => {
@@ -354,7 +355,11 @@ export default function PageSelectionPage() {
     : new Set<number>()
   const validRefPages = new Set([...parsedRefPages].filter(p => selected.has(p)))
   const excludedRefPages = new Set([...parsedRefPages].filter(p => !selected.has(p)))
-  const referencesValid = !hasReferences || (referencesPagesInput.trim() !== '' && validRefPages.size > 0)
+  const referencesValid = !hasReferences || (
+    referencesPagesInput.trim() !== '' &&
+    validRefPages.size > 0 &&
+    formatReferences !== null
+  )
   const canContinue = selected.size > 0 && activeServices.size > 0 && referencesValid
 
   if (!state) {
@@ -420,6 +425,8 @@ export default function PageSelectionPage() {
         <div className={`grid ${gridClass} gap-5`}>
           {Array.from({ length: effectiveTotal }, (_, i) => i + 1).map(page => {
             const isSelected = selected.has(page)
+            const isRefPage = parsedRefPages.has(page)
+            const isSelectedRef = isSelected && isRefPage
             return (
               <div
                 key={page}
@@ -433,15 +440,19 @@ export default function PageSelectionPage() {
                 {/* Thumbnail card */}
                 <div
                   className={`relative w-full aspect-[3/4] rounded-lg overflow-hidden transition-all border-2 shadow-sm ${
-                    isSelected
-                      ? 'border-forest shadow-forest/10'
-                      : 'border-transparent hover:border-forest-mid/30'
+                    isSelectedRef
+                      ? 'border-amber-500'
+                      : isSelected
+                        ? 'border-forest shadow-forest/10'
+                        : 'border-transparent hover:border-forest-mid/30'
                   }`}
                   style={{
                     outline: isSelected ? 'none' : undefined,
-                    boxShadow: isSelected
-                      ? '0 0 0 3px rgba(30,60,40,0.08)'
-                      : '0 1px 4px rgba(0,0,0,0.08)',
+                    boxShadow: isSelectedRef
+                      ? '0 0 0 3px rgba(180,83,9,0.10)'
+                      : isSelected
+                        ? '0 0 0 3px rgba(30,60,40,0.08)'
+                        : '0 1px 4px rgba(0,0,0,0.08)',
                   }}
                 >
                   {pdfDoc
@@ -451,20 +462,29 @@ export default function PageSelectionPage() {
                       : <SkeletonThumbnail />
                   }
 
-                  {/* Checkbox overlay */}
-                  <div
-                    className={`absolute top-2 left-2 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
-                      isSelected
-                        ? 'bg-forest border-forest'
-                        : 'bg-white/80 border-border group-hover:border-forest-mid/50'
-                    }`}
-                  >
-                    {isSelected && (
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                        <path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    )}
-                  </div>
+                  {/* Checkbox / ref-badge overlay */}
+                  {isSelectedRef ? (
+                    <div className="absolute top-2 left-2 flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-semibold pl-1.5 pr-2 py-1 rounded-full">
+                      <Check size={10} strokeWidth={2.5} />
+                      <span>{t('pageSelection.refBadge')}</span>
+                    </div>
+                  ) : (
+                    <div
+                      className={`absolute top-2 left-2 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                        isSelected
+                          ? 'bg-forest border-forest'
+                          : isRefPage
+                            ? 'bg-white/80 border-amber-600 group-hover:border-amber-700'
+                            : 'bg-white/80 border-border group-hover:border-forest-mid/50'
+                      }`}
+                    >
+                      {isSelected && (
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                          <path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </div>
+                  )}
 
                   {/* Expand button (hover) */}
                   <button
@@ -507,9 +527,13 @@ export default function PageSelectionPage() {
                   className="flex items-center gap-2.5 group/sel select-none"
                 >
                   <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
-                    selected.has(previewPage)
-                      ? 'bg-forest border-forest'
-                      : 'bg-white border-border group-hover/sel:border-forest-mid/50'
+                    selected.has(previewPage) && parsedRefPages.has(previewPage)
+                      ? 'bg-amber-600 border-amber-600'
+                      : selected.has(previewPage)
+                        ? 'bg-forest border-forest'
+                        : parsedRefPages.has(previewPage)
+                          ? 'bg-white border-amber-600 group-hover/sel:border-amber-700'
+                          : 'bg-white border-border group-hover/sel:border-forest-mid/50'
                   }`}>
                     {selected.has(previewPage) && (
                       <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
@@ -521,6 +545,12 @@ export default function PageSelectionPage() {
                     {t('pageSelection.page')} {previewPage}
                     <span className="text-muted font-normal"> / {effectiveTotal}</span>
                   </span>
+                  {selected.has(previewPage) && parsedRefPages.has(previewPage) && (
+                    <div className="flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-semibold pl-1.5 pr-2 py-1 rounded-full">
+                      <Check size={10} strokeWidth={2.5} />
+                      <span>{t('pageSelection.refBadge')}</span>
+                    </div>
+                  )}
                 </button>
                 <button
                   onClick={() => setPreviewPage(null)}
@@ -569,7 +599,7 @@ export default function PageSelectionPage() {
       </div>
 
       {/* Right panel */}
-      <div className="w-[300px] shrink-0 border-l border-border bg-white flex flex-col">
+      <div className="w-[400px] shrink-0 border-l border-border bg-white flex flex-col">
         <div className="flex-1 overflow-y-auto px-6 py-8 flex flex-col gap-6">
           {/* Info tip */}
           <div className="flex gap-2.5 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
@@ -698,7 +728,11 @@ export default function PageSelectionPage() {
             </p>
             <label
               className="flex items-start gap-2.5 cursor-pointer w-fit"
-              onClick={() => setHasReferences(v => !v)}
+              onClick={() => {
+                const next = !hasReferences
+                setHasReferences(next)
+                if (!next) setFormatReferences(null)
+              }}
             >
               <div className={`mt-0.5 w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
                 hasReferences ? 'bg-forest border-forest' : 'border-border'
@@ -738,7 +772,39 @@ export default function PageSelectionPage() {
                   </div>
                 )}
 
+                {/* Radio: does user want FormaTexto to format the references? */}
+                <div className="flex flex-col gap-1.5 mt-1">
+                  <p className="text-xs font-medium text-ink leading-snug">
+                    {t('project.references.formatChoice.label')}
+                  </p>
+                  <div className="flex flex-col gap-1">
+                    {([true, false] as const).map(value => (
+                      <button
+                        key={String(value)}
+                        type="button"
+                        onClick={() => setFormatReferences(value)}
+                        className="flex items-center gap-2 px-1 py-1.5 rounded-lg transition-colors hover:bg-border/30"
+                      >
+                        <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                          formatReferences === value ? 'border-forest' : 'border-border'
+                        }`}>
+                          {formatReferences === value && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-forest" />
+                          )}
+                        </div>
+                        <span className="text-sm text-ink">
+                          {t(value
+                            ? 'project.references.formatChoice.yes'
+                            : 'project.references.formatChoice.no'
+                          )}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <p className="text-xs text-muted/80 leading-relaxed">{t('project.references.disclaimer')}</p>
+                <p className="text-xs text-muted/80 leading-relaxed">{t('project.references.accuracyDisclaimer')}</p>
               </div>
             )}
           </div>
@@ -761,9 +827,10 @@ export default function PageSelectionPage() {
                   guideline,
                   fileName: state.file?.name ?? null,
                   title: state.title ?? '',
-                  referencePages: validRefPages.size > 0
+                  referencePages: formatReferences && validRefPages.size > 0
                     ? Array.from(validRefPages).sort((a, b) => a - b)
                     : undefined,
+                  formatReferences: hasReferences ? formatReferences ?? undefined : undefined,
                 }
               })
             }}

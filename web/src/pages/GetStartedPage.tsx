@@ -689,7 +689,9 @@ export default function GetStartedPage() {
                 setFetchingLink(false)
                 return
               }
-              setFetchingLink(false)
+              // Don't reset fetchingLink here — keep the loading state visible
+              // until navigation unmounts the component. Resetting it before
+              // navigate() causes a brief flash back to the input.
             }
 
             sessionStorage.removeItem(SESSION_KEY)

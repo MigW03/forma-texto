@@ -201,6 +201,12 @@
       "pagesLabel": "References pages",
       "pagesPlaceholder": "e.g. 45-60 or 45, 46, 47",
       "disclaimer": "References will not be proofread. Only the references section formatting will be adjusted. In-text citations will still be corrected.",
+      "accuracyDisclaimer": "FormaTexto does not verify the accuracy of your references. Authors, titles, dates, page numbers and other fields are formatted as-is — correctness is your responsibility.",
+      "formatChoice": {
+        "label": "I want FormaTexto to format my references",
+        "yes": "Yes",
+        "no": "No"
+      },
       "save": "Save",
       "saving": "Saving…",
       "saved": "Saved",
@@ -290,6 +296,7 @@
     "prevPage": "Previous",
     "nextPage": "Next",
     "select": "Select page",
-    "selected": "Selected"
+    "selected": "Selected",
+    "refBadge": "Reference"
   }
 }

@@ -6,7 +6,7 @@
 > bottom, and adjust **Open work** as things land. Keep it short and current —
 > deep reference lives in the docs linked below, not here.
 
-**Last updated:** 2026-06-08 (later session)
+**Last updated:** 2026-06-09
 
 ---
 
@@ -98,6 +98,20 @@ Deeper docs (keep these as the real source of truth):
 ---
 
 ## Session log
+
+### 2026-06-09 — PageSelection reference badge + URL fetch bug fix
+
+**Reference page visual feedback (`PageSelectionPage.tsx`):**
+- Each page thumbnail now derives two booleans: `isRefPage` (`parsedRefPages.has(page)`) and `isSelectedRef` (`isSelected && isRefPage`).
+- Selected + ref: circular checkbox replaced by an amber pill badge (`bg-amber-50 text-amber-700 border border-amber-200`, Check icon size 10 + "Referência"/"Reference" label); card border and shadow ring switch to amber tones.
+- Unselected + ref: circle keeps its shape but gains an amber-600 border (no fill, no icon).
+- All other pages: unchanged green/forest treatment.
+- Same badge logic added to the **lightbox expanded view** header. Header order: amber circle checkbox → "Page X / Y" → ref badge (badge only when selected + ref; checkbox fills amber when selected + ref, amber border when unselected + ref).
+- Added `pageSelection.refBadge` i18n key to all three locale files: `"Reference"` (en), `"Referência"` (pt-BR, pt-PT).
+
+**URL fetch flash bug (`GetStartedPage.tsx`):**
+- `setFetchingLink(false)` was called on the success path before `navigate()`, causing React to re-render the input for a tick before navigation, making it look broken.
+- Fix: removed the success-path reset. `fetchingLink` now stays `true` until the component unmounts on navigation. Error/early-return paths still reset it correctly. No stale-state risk — `fetchingLink` is local `useState` that re-initialises to `false` on every mount.
 
 ### 2026-06-08 (later 2) — Step C prompt fix: free model now works
 - Symptom: live Step C returned **0 emphasis** on every reference (free `gpt-oss-120b:free`).

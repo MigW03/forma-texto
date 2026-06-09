@@ -197,6 +197,7 @@ interface CheckoutState {
   fileName?: string | null
   title?: string
   referencePages?: number[]
+  formatReferences?: boolean
 }
 
 type IntentResponse =
