@@ -76,15 +76,22 @@ async function getDocxPageInfo(file: File): Promise<FilePageInfo> {
     const lastRendered = (docXml.match(/<w:lastRenderedPageBreak/g) ?? []).length
     const explicitBreaks = (docXml.match(/w:type=["']page["']/g) ?? []).length
 
-    // 1. A stored page count is the strongest signal.
-    if (appPages > 0) return { count: appPages, reliable: true }
-    // 2. Word's cached layout markers are reliable too.
+    // 1. Word's cached layout markers are most reliable.
     if (lastRendered > 0) return { count: Math.max(lastRendered, explicitBreaks) + 1, reliable: true }
 
-    // 3. Count by breaks, then verify the content fits.
-    const pageBreakBefore = (docXml.match(/<w:pageBreakBefore/g) ?? []).length
+    // 2. Structural count: sectPr (one per page in Google Docs exports) and explicit
+    //    breaks (used by simple Word docs). pageBreakBefore is intentionally excluded —
+    //    it is set on heading styles and would massively over-count.
     const sectionBreaks = Math.max(0, (docXml.match(/<w:sectPr/g) ?? []).length - 1)
-    const detectedPages = explicitBreaks + pageBreakBefore + sectionBreaks + 1
+    const sectPrPages = sectionBreaks + 1          // Google Docs: 1 sectPr per page
+    const explicitBreakPages = explicitBreaks + 1  // Simple Word: explicit breaks only
+    const structuralPages = Math.max(sectPrPages, explicitBreakPages)
+
+    // 3. Take the higher of app.xml and structural count. Non-Word editors (e.g.
+    //    Google Docs) under-report app.xml based on their own renderer; Word docs
+    //    without lastRenderedPageBreak may have structural under-counts. The higher
+    //    value is the safer choice.
+    const detectedPages = appPages > 0 ? Math.max(appPages, structuralPages) : structuralPages
 
     const textChars = (docXml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) ?? [])
       .reduce((sum, seg) => sum + seg.replace(/<[^>]+>/g, '').length, 0)
@@ -674,15 +681,22 @@ export default function GetStartedPage() {
                 const blob = await res.blob()
                 const filename = res.headers.get('X-Filename') ?? 'document.docx'
                 resolvedFile = new File([blob], filename, { type: blob.type })
-                const info = await getFilePageInfo(resolvedFile)
-                if (!info.reliable) {
-                  // Converted file's page count can't be trusted — show the same
-                  // warning banner as the file-upload path and stop.
-                  setLinkUncountable(true)
-                  setFetchingLink(false)
-                  return
+                // X-Page-Count is the PDF-derived page count from Google's own renderer —
+                // the authoritative value for Google Docs URLs.
+                const serverPageCount = res.headers.get('X-Page-Count')
+                if (serverPageCount) {
+                  resolvedPageCount = parseInt(serverPageCount, 10)
+                } else {
+                  const info = await getFilePageInfo(resolvedFile)
+                  if (!info.reliable) {
+                    // Converted file's page count can't be trusted — show the same
+                    // warning banner as the file-upload path and stop.
+                    setLinkUncountable(true)
+                    setFetchingLink(false)
+                    return
+                  }
+                  resolvedPageCount = info.count
                 }
-                resolvedPageCount = info.count
                 if (!title) setTitle(filename.replace(/\.[^.]+$/, ''))
               } catch {
                 setLinkError('Could not connect to server')

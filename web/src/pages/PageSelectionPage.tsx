@@ -209,6 +209,10 @@ export default function PageSelectionPage() {
   const total = state?.pageCount ?? FALLBACK_PAGE_COUNT
   const [effectiveTotal, setEffectiveTotal] = useState(total)
 
+  // PDF-derived page count (from server X-Page-Count for Google Docs URLs).
+  // May be higher than effectiveTotal when DOCX sections span multiple pages each.
+  const reportedPageCount = state?.pageCount ?? null
+
   // PDF
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null)
   useEffect(() => {
@@ -361,6 +365,15 @@ export default function PageSelectionPage() {
     formatReferences !== null
   )
   const canContinue = selected.size > 0 && activeServices.size > 0 && referencesValid
+
+  // When the PDF-derived count exceeds the rendered section count (common for
+  // Google Docs exports where sections span multiple visual pages), scale billing
+  // proportionally so the user is charged for the correct number of pages.
+  const billingPageCount = (
+    reportedPageCount && effectiveTotal > 0 && reportedPageCount > effectiveTotal
+  )
+    ? Math.max(1, Math.round(reportedPageCount * selected.size / effectiveTotal))
+    : selected.size
 
   if (!state) {
     return (
@@ -670,12 +683,14 @@ export default function PageSelectionPage() {
             <div className="flex flex-col gap-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted">{t('pageSelection.totalPages')}</span>
-                <span className="font-medium text-ink">{effectiveTotal}</span>
+                <span className="font-medium text-ink">
+                  {reportedPageCount && reportedPageCount > effectiveTotal ? reportedPageCount : effectiveTotal}
+                </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted">{t('pageSelection.selectedPages')}</span>
                 <span className={`font-medium ${selected.size > 0 ? 'text-forest' : 'text-muted'}`}>
-                  {selected.size}
+                  {billingPageCount}
                 </span>
               </div>
             </div>
@@ -822,7 +837,7 @@ export default function PageSelectionPage() {
               navigate(ROUTES.checkout, {
                 state: {
                   services: Array.from(activeServices),
-                  pageCount: selected.size,
+                  pageCount: billingPageCount,
                   selectedPages: Array.from(selected).sort((a, b) => a - b),
                   guideline,
                   fileName: state.file?.name ?? null,
@@ -840,7 +855,7 @@ export default function PageSelectionPage() {
           </Button>
           {canContinue && (
             <p className="text-center text-xs text-muted mt-2">
-              {selected.size} {selected.size === 1 ? t('pageSelection.pageCount_one') : t('pageSelection.pageCount_other')}
+              {billingPageCount} {billingPageCount === 1 ? t('pageSelection.pageCount_one') : t('pageSelection.pageCount_other')}
             </p>
           )}
         </div>
