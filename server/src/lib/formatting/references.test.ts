@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatReferences } from './references'
+import { formatReferences, autoLocateReferences, locateReferences } from './references'
 import { rewriteStyles } from './rewriteStyles'
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
@@ -94,5 +94,56 @@ describe('references heading style is registered by rewriteStyles', () => {
     expect(block).toContain('<w:jc w:val="center"/>')
     expect(block).toContain('<w:b/>')
     expect(block).toContain('<w:caps/>')
+  })
+})
+
+describe('autoLocateReferences — continuous DOCX mode', () => {
+  const manyBodyBlocks = (n: number) =>
+    Array.from({ length: n }, (_, i) => p(`Body paragraph ${i + 1}.`)).join('')
+
+  it('finds "Referências" heading in the latter half and returns the region', () => {
+    const xml = doc(
+      manyBodyBlocks(20),
+      p('Referências'),
+      p('Gil, A. C. Como elaborar projetos de pesquisa. São Paulo: Atlas, 2017.'),
+      p('Santos, M. Métodos. São Paulo: Cortez, 2019.'),
+    )
+    const region = autoLocateReferences(xml)
+    expect(region).not.toBeNull()
+    expect(region!.entryIndices).toHaveLength(2)
+  })
+
+  it('ignores "referências" mentioned in body text', () => {
+    const xml = doc(
+      p('Este trabalho cita várias referências ao longo do texto.'),
+      manyBodyBlocks(20),
+      p('Referências'),
+      p('Gil, A. C. Como elaborar projetos de pesquisa. São Paulo: Atlas, 2017.'),
+    )
+    const region = autoLocateReferences(xml)
+    expect(region).not.toBeNull()
+    expect(region!.entryIndices).toHaveLength(1)
+  })
+
+  it('returns null when heading has no entries after it', () => {
+    const xml = doc(manyBodyBlocks(20), p('Referências'))
+    expect(autoLocateReferences(xml)).toBeNull()
+  })
+
+  it('returns null when heading is in the first 40% of the document', () => {
+    // 3 blocks total → heading at index 0 is before 40% cutoff of 3 blocks
+    const xml = doc(p('Referências'), p('Entry 1.'), p('Entry 2.'))
+    expect(autoLocateReferences(xml)).toBeNull()
+  })
+
+  it('sentinel [0] in locateReferences triggers auto-detect', () => {
+    const xml = doc(
+      manyBodyBlocks(20),
+      p('References'),
+      p('Smith, J. Title. 2020.'),
+    )
+    const region = locateReferences(xml, { selectedPages: [], referencePages: [0] })
+    expect(region).not.toBeNull()
+    expect(region!.entryIndices).toHaveLength(1)
   })
 })

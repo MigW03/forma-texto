@@ -192,6 +192,44 @@ function SkeletonThumbnail() {
   )
 }
 
+function DocxContinuousPreview({ file }: { file: File }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    let cancelled = false
+    import('docx-preview').then(({ renderAsync }) => {
+      if (cancelled) return
+      return renderAsync(file, el, undefined, {
+        breakPages: false,
+        inWrapper: true,
+        ignoreLastRenderedPageBreak: true,
+      })
+    }).then(() => {
+      if (!cancelled) setLoading(false)
+    }).catch(() => {
+      if (!cancelled) setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [file])
+
+  return (
+    <div className="relative min-h-[300px]">
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center py-16">
+          <div className="w-6 h-6 border-2 border-forest/30 border-t-forest rounded-full animate-spin" />
+        </div>
+      )}
+      <div
+        ref={containerRef}
+        className={`transition-opacity duration-300 ${loading ? 'opacity-0' : 'opacity-100'}`}
+      />
+    </div>
+  )
+}
+
 export default function PageSelectionPage() {
   const { t } = useTranslation()
   const location = useLocation()
@@ -205,6 +243,8 @@ export default function PageSelectionPage() {
     pageCount: number | null
     title?: string
   } | null
+
+  const isDocx = !!(state?.file?.name?.toLowerCase().endsWith('.docx'))
 
   const total = state?.pageCount ?? FALLBACK_PAGE_COUNT
   const [effectiveTotal, setEffectiveTotal] = useState(total)
@@ -227,9 +267,11 @@ export default function PageSelectionPage() {
   }, [])
 
   // Docx — render with breakPages:true so each sectPr becomes its own <section>
+  // Skipped in continuous DOCX mode (isDocx) — DocxContinuousPreview handles rendering instead.
   const hiddenDocxRef = useRef<HTMLDivElement | null>(null)
   const [docxPages, setDocxPages] = useState<HTMLElement[]>([])
   useEffect(() => {
+    if (isDocx) return
     const file = state?.file
     if (!file) return
     const name = file.name.toLowerCase()
@@ -355,12 +397,19 @@ export default function PageSelectionPage() {
     : new Set<number>()
   const validRefPages = new Set([...parsedRefPages].filter(p => selected.has(p)))
   const excludedRefPages = new Set([...parsedRefPages].filter(p => !selected.has(p)))
-  const referencesValid = !hasReferences || (
-    referencesPagesInput.trim() !== '' &&
-    validRefPages.size > 0 &&
-    formatReferences !== null
-  )
-  const canContinue = selected.size > 0 && activeServices.size > 0 && referencesValid
+
+  // DOCX continuous mode: no page validation needed — just require the radio choice
+  const referencesValid = isDocx
+    ? !hasReferences || formatReferences !== null
+    : !hasReferences || (
+      referencesPagesInput.trim() !== '' &&
+      validRefPages.size > 0 &&
+      formatReferences !== null
+    )
+
+  const canContinue = isDocx
+    ? activeServices.size > 0 && referencesValid
+    : selected.size > 0 && activeServices.size > 0 && referencesValid
 
   if (!state) {
     return (
@@ -377,7 +426,7 @@ export default function PageSelectionPage() {
 
   return (
     <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
-      {/* Main — page grid */}
+      {/* Main — page grid or continuous preview */}
       <div className="flex-1 overflow-y-auto px-8 py-8">
         <div className="mb-6 flex items-center gap-3">
           <Button
@@ -400,114 +449,124 @@ export default function PageSelectionPage() {
         </div>
 
         <div className="flex items-start justify-between mb-1">
-          <h1 className="text-xl font-semibold text-ink">{t('pageSelection.title')}</h1>
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              onClick={() => setZoomLevel(z => Math.max(1, z - 1))}
-              disabled={zoomLevel === 1}
-              aria-label={t('pageSelection.zoomOut')}
-              className="w-8 h-8 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-border/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              <ZoomOut size={16} />
-            </button>
-            <button
-              onClick={() => setZoomLevel(z => Math.min(4, z + 1))}
-              disabled={zoomLevel === 4}
-              aria-label={t('pageSelection.zoomIn')}
-              className="w-8 h-8 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-border/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              <ZoomIn size={16} />
-            </button>
-          </div>
-        </div>
-        <p className="text-sm text-muted mb-8">{t('pageSelection.subtitle')}</p>
-
-        <div className={`grid ${gridClass} gap-5`}>
-          {Array.from({ length: effectiveTotal }, (_, i) => i + 1).map(page => {
-            const isSelected = selected.has(page)
-            const isRefPage = parsedRefPages.has(page)
-            const isSelectedRef = isSelected && isRefPage
-            return (
-              <div
-                key={page}
-                role="checkbox"
-                aria-checked={isSelected}
-                tabIndex={0}
-                onClick={(e) => togglePage(page, e.shiftKey)}
-                onKeyDown={(e) => e.key === 'Enter' && togglePage(page, false)}
-                className="flex flex-col items-center gap-2 cursor-pointer group select-none"
+          <h1 className="text-xl font-semibold text-ink">
+            {isDocx ? t('pageSelection.titleDocx') : t('pageSelection.title')}
+          </h1>
+          {!isDocx && (
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                onClick={() => setZoomLevel(z => Math.max(1, z - 1))}
+                disabled={zoomLevel === 1}
+                aria-label={t('pageSelection.zoomOut')}
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-border/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
-                {/* Thumbnail card */}
-                <div
-                  className={`relative w-full aspect-[3/4] rounded-lg overflow-hidden transition-all border-2 shadow-sm ${
-                    isSelectedRef
-                      ? 'border-amber-500'
-                      : isSelected
-                        ? 'border-forest shadow-forest/10'
-                        : 'border-transparent hover:border-forest-mid/30'
-                  }`}
-                  style={{
-                    outline: isSelected ? 'none' : undefined,
-                    boxShadow: isSelectedRef
-                      ? '0 0 0 3px rgba(180,83,9,0.10)'
-                      : isSelected
-                        ? '0 0 0 3px rgba(30,60,40,0.08)'
-                        : '0 1px 4px rgba(0,0,0,0.08)',
-                  }}
-                >
-                  {pdfDoc
-                    ? <PdfPageCanvas doc={pdfDoc} pageNumber={page} targetWidth={pdfTargetWidth} />
-                    : docxPages[page - 1]
-                      ? <DocxPageThumbnail pageEl={docxPages[page - 1]} />
-                      : <SkeletonThumbnail />
-                  }
-
-                  {/* Checkbox / ref-badge overlay */}
-                  {isSelectedRef ? (
-                    <div className="absolute top-2 left-2 flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-semibold pl-1.5 pr-2 py-1 rounded-full">
-                      <Check size={10} strokeWidth={2.5} />
-                      <span>{t('pageSelection.refBadge')}</span>
-                    </div>
-                  ) : (
-                    <div
-                      className={`absolute top-2 left-2 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
-                        isSelected
-                          ? 'bg-forest border-forest'
-                          : isRefPage
-                            ? 'bg-white/80 border-amber-600 group-hover:border-amber-700'
-                            : 'bg-white/80 border-border group-hover:border-forest-mid/50'
-                      }`}
-                    >
-                      {isSelected && (
-                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                          <path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Expand button (hover) */}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setPreviewPage(page) }}
-                    aria-label={t('pageSelection.expandPage', { page })}
-                    className="absolute bottom-2 right-2 w-7 h-7 flex items-center justify-center rounded-md bg-white/80 border border-border text-muted opacity-0 group-hover:opacity-100 hover:bg-white hover:text-ink transition-all"
-                  >
-                    <Maximize2 size={13} />
-                  </button>
-
-                  {/* Dim overlay when unselected */}
-                  {!isSelected && (
-                    <div className="absolute inset-0 bg-white/50" />
-                  )}
-                </div>
-
-                <span className="text-xs text-muted">
-                  {t('pageSelection.page')} {page}
-                </span>
-              </div>
-            )
-          })}
+                <ZoomOut size={16} />
+              </button>
+              <button
+                onClick={() => setZoomLevel(z => Math.min(4, z + 1))}
+                disabled={zoomLevel === 4}
+                aria-label={t('pageSelection.zoomIn')}
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-border/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <ZoomIn size={16} />
+              </button>
+            </div>
+          )}
         </div>
+        <p className="text-sm text-muted mb-8">
+          {isDocx ? t('pageSelection.subtitleDocx') : t('pageSelection.subtitle')}
+        </p>
+
+        {isDocx ? (
+          state.file && <DocxContinuousPreview file={state.file} />
+        ) : (
+          <div className={`grid ${gridClass} gap-5`}>
+            {Array.from({ length: effectiveTotal }, (_, i) => i + 1).map(page => {
+              const isSelected = selected.has(page)
+              const isRefPage = parsedRefPages.has(page)
+              const isSelectedRef = isSelected && isRefPage
+              return (
+                <div
+                  key={page}
+                  role="checkbox"
+                  aria-checked={isSelected}
+                  tabIndex={0}
+                  onClick={(e) => togglePage(page, e.shiftKey)}
+                  onKeyDown={(e) => e.key === 'Enter' && togglePage(page, false)}
+                  className="flex flex-col items-center gap-2 cursor-pointer group select-none"
+                >
+                  {/* Thumbnail card */}
+                  <div
+                    className={`relative w-full aspect-[3/4] rounded-lg overflow-hidden transition-all border-2 shadow-sm ${
+                      isSelectedRef
+                        ? 'border-amber-500'
+                        : isSelected
+                          ? 'border-forest shadow-forest/10'
+                          : 'border-transparent hover:border-forest-mid/30'
+                    }`}
+                    style={{
+                      outline: isSelected ? 'none' : undefined,
+                      boxShadow: isSelectedRef
+                        ? '0 0 0 3px rgba(180,83,9,0.10)'
+                        : isSelected
+                          ? '0 0 0 3px rgba(30,60,40,0.08)'
+                          : '0 1px 4px rgba(0,0,0,0.08)',
+                    }}
+                  >
+                    {pdfDoc
+                      ? <PdfPageCanvas doc={pdfDoc} pageNumber={page} targetWidth={pdfTargetWidth} />
+                      : docxPages[page - 1]
+                        ? <DocxPageThumbnail pageEl={docxPages[page - 1]} />
+                        : <SkeletonThumbnail />
+                    }
+
+                    {/* Checkbox / ref-badge overlay */}
+                    {isSelectedRef ? (
+                      <div className="absolute top-2 left-2 flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-semibold pl-1.5 pr-2 py-1 rounded-full">
+                        <Check size={10} strokeWidth={2.5} />
+                        <span>{t('pageSelection.refBadge')}</span>
+                      </div>
+                    ) : (
+                      <div
+                        className={`absolute top-2 left-2 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                          isSelected
+                            ? 'bg-forest border-forest'
+                            : isRefPage
+                              ? 'bg-white/80 border-amber-600 group-hover:border-amber-700'
+                              : 'bg-white/80 border-border group-hover:border-forest-mid/50'
+                        }`}
+                      >
+                        {isSelected && (
+                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                            <path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Expand button (hover) */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setPreviewPage(page) }}
+                      aria-label={t('pageSelection.expandPage', { page })}
+                      className="absolute bottom-2 right-2 w-7 h-7 flex items-center justify-center rounded-md bg-white/80 border border-border text-muted opacity-0 group-hover:opacity-100 hover:bg-white hover:text-ink transition-all"
+                    >
+                      <Maximize2 size={13} />
+                    </button>
+
+                    {/* Dim overlay when unselected */}
+                    {!isSelected && (
+                      <div className="absolute inset-0 bg-white/50" />
+                    )}
+                  </div>
+
+                  <span className="text-xs text-muted">
+                    {t('pageSelection.page')} {page}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        )}
 
         {/* Lightbox */}
         {previewPage !== null && (
@@ -605,7 +664,7 @@ export default function PageSelectionPage() {
           <div className="flex gap-2.5 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
             <Info size={14} className="shrink-0 text-blue-500 mt-0.5" />
             <p className="text-xs text-blue-700 leading-relaxed">
-              {t('pageSelection.tip')}
+              {isDocx ? t('pageSelection.tipDocx') : t('pageSelection.tip')}
             </p>
           </div>
 
@@ -631,7 +690,7 @@ export default function PageSelectionPage() {
                       <span className="text-sm text-ink">{t(`services.${svc}.label`)}</span>
                     </div>
                     <span className="text-xs font-semibold text-ink">
-                      {formatBRL(calcPrice(svc, selected.size))}
+                      {formatBRL(calcPrice(svc, isDocx ? effectiveTotal : selected.size))}
                     </span>
                   </div>
                   <span className="text-xs text-muted/60 leading-none mt-1 self-end">
@@ -672,54 +731,60 @@ export default function PageSelectionPage() {
                 <span className="text-muted">{t('pageSelection.totalPages')}</span>
                 <span className="font-medium text-ink">{effectiveTotal}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted">{t('pageSelection.selectedPages')}</span>
-                <span className={`font-medium ${selected.size > 0 ? 'text-forest' : 'text-muted'}`}>
-                  {selected.size}
-                </span>
-              </div>
+              {!isDocx && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted">{t('pageSelection.selectedPages')}</span>
+                  <span className={`font-medium ${selected.size > 0 ? 'text-forest' : 'text-muted'}`}>
+                    {selected.size}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Range input */}
-          <div>
-            <label className="text-xs font-medium text-muted uppercase tracking-widest block mb-2">
-              {t('pageSelection.rangeLabel')}
-            </label>
-            <Input
-              type="text"
-              value={rangeInput}
-              onChange={(e) => setRangeInput(e.target.value)}
-              onBlur={(e) => applyRange(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && applyRange(rangeInput)}
-              placeholder={t('pageSelection.rangePlaceholder')}
-              className={`py-2.5 ${rangeError ? 'border-red-300 focus:ring-red-200' : ''}`}
-            />
-            {rangeError && (
-              <p className="text-xs text-red-500 mt-1.5">{t('pageSelection.rangeError')}</p>
-            )}
-            <p className="text-xs text-muted mt-1.5">{t('pageSelection.rangeHint')}</p>
-          </div>
+          {/* Range input — PDF only */}
+          {!isDocx && (
+            <div>
+              <label className="text-xs font-medium text-muted uppercase tracking-widest block mb-2">
+                {t('pageSelection.rangeLabel')}
+              </label>
+              <Input
+                type="text"
+                value={rangeInput}
+                onChange={(e) => setRangeInput(e.target.value)}
+                onBlur={(e) => applyRange(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && applyRange(rangeInput)}
+                placeholder={t('pageSelection.rangePlaceholder')}
+                className={`py-2.5 ${rangeError ? 'border-red-300 focus:ring-red-200' : ''}`}
+              />
+              {rangeError && (
+                <p className="text-xs text-red-500 mt-1.5">{t('pageSelection.rangeError')}</p>
+              )}
+              <p className="text-xs text-muted mt-1.5">{t('pageSelection.rangeHint')}</p>
+            </div>
+          )}
 
-          {/* Select all / clear */}
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex-1 text-xs"
-              onClick={() => setSelected(new Set(Array.from({ length: effectiveTotal }, (_, i) => i + 1)))}
-            >
-              {t('pageSelection.selectAll')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex-1 text-xs"
-              onClick={() => setSelected(new Set())}
-            >
-              {t('pageSelection.clearAll')}
-            </Button>
-          </div>
+          {/* Select all / clear — PDF only */}
+          {!isDocx && (
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 text-xs"
+                onClick={() => setSelected(new Set(Array.from({ length: effectiveTotal }, (_, i) => i + 1)))}
+              >
+                {t('pageSelection.selectAll')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 text-xs"
+                onClick={() => setSelected(new Set())}
+              >
+                {t('pageSelection.clearAll')}
+              </Button>
+            </div>
+          )}
 
           {/* References */}
           <div className="bg-sand/50 rounded-xl px-4 py-4">
@@ -744,32 +809,37 @@ export default function PageSelectionPage() {
 
             {hasReferences && (
               <div className="flex flex-col gap-2 mt-3">
-                <label className="text-xs font-medium text-muted">{t('project.references.pagesLabel')}</label>
-                <Input
-                  type="text"
-                  value={referencesPagesInput}
-                  onChange={e => setReferencesPagesInput(e.target.value)}
-                  onBlur={() => {
-                    if (parsedRefPages.size > 0) {
-                      setReferencesPagesInput(selectionToRangeString(parsedRefPages, effectiveTotal))
-                    }
-                  }}
-                  placeholder={t('project.references.pagesPlaceholder')}
-                  className={`py-2 ${referencesPagesInput.trim() && validRefPages.size === 0 ? 'border-red-300 focus-visible:ring-red-200' : ''}`}
-                />
-                {referencesPagesInput.trim() && validRefPages.size === 0 && (
-                  <p className="text-xs text-red-500">{t('project.references.noValidPages')}</p>
-                )}
+                {/* Page input — PDF only */}
+                {!isDocx && (
+                  <>
+                    <label className="text-xs font-medium text-muted">{t('project.references.pagesLabel')}</label>
+                    <Input
+                      type="text"
+                      value={referencesPagesInput}
+                      onChange={e => setReferencesPagesInput(e.target.value)}
+                      onBlur={() => {
+                        if (parsedRefPages.size > 0) {
+                          setReferencesPagesInput(selectionToRangeString(parsedRefPages, effectiveTotal))
+                        }
+                      }}
+                      placeholder={t('project.references.pagesPlaceholder')}
+                      className={`py-2 ${referencesPagesInput.trim() && validRefPages.size === 0 ? 'border-red-300 focus-visible:ring-red-200' : ''}`}
+                    />
+                    {referencesPagesInput.trim() && validRefPages.size === 0 && (
+                      <p className="text-xs text-red-500">{t('project.references.noValidPages')}</p>
+                    )}
 
-                {excludedRefPages.size > 0 && validRefPages.size > 0 && (
-                  <div className="flex gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
-                    <AlertTriangle size={12} className="shrink-0 text-amber-600 mt-0.5" />
-                    <p className="text-xs text-amber-800 leading-relaxed">
-                      {t('project.references.partialWarning', {
-                        pages: selectionToRangeString(excludedRefPages, effectiveTotal),
-                      })}
-                    </p>
-                  </div>
+                    {excludedRefPages.size > 0 && validRefPages.size > 0 && (
+                      <div className="flex gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                        <AlertTriangle size={12} className="shrink-0 text-amber-600 mt-0.5" />
+                        <p className="text-xs text-amber-800 leading-relaxed">
+                          {t('project.references.partialWarning', {
+                            pages: selectionToRangeString(excludedRefPages, effectiveTotal),
+                          })}
+                        </p>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* Radio: does user want FormaTexto to format the references? */}
@@ -819,20 +889,35 @@ export default function PageSelectionPage() {
             className="w-full font-semibold"
             onClick={() => {
               storeFile(state.file)
-              navigate(ROUTES.checkout, {
-                state: {
-                  services: Array.from(activeServices),
-                  pageCount: selected.size,
-                  selectedPages: Array.from(selected).sort((a, b) => a - b),
-                  guideline,
-                  fileName: state.file?.name ?? null,
-                  title: state.title ?? '',
-                  referencePages: formatReferences && validRefPages.size > 0
-                    ? Array.from(validRefPages).sort((a, b) => a - b)
-                    : undefined,
-                  formatReferences: hasReferences ? formatReferences ?? undefined : undefined,
-                }
-              })
+              if (isDocx) {
+                navigate(ROUTES.checkout, {
+                  state: {
+                    services: Array.from(activeServices),
+                    pageCount: effectiveTotal,
+                    selectedPages: [],
+                    guideline,
+                    fileName: state.file?.name ?? null,
+                    title: state.title ?? '',
+                    referencePages: undefined,
+                    formatReferences: hasReferences ? formatReferences ?? undefined : undefined,
+                  }
+                })
+              } else {
+                navigate(ROUTES.checkout, {
+                  state: {
+                    services: Array.from(activeServices),
+                    pageCount: selected.size,
+                    selectedPages: Array.from(selected).sort((a, b) => a - b),
+                    guideline,
+                    fileName: state.file?.name ?? null,
+                    title: state.title ?? '',
+                    referencePages: formatReferences && validRefPages.size > 0
+                      ? Array.from(validRefPages).sort((a, b) => a - b)
+                      : undefined,
+                    formatReferences: hasReferences ? formatReferences ?? undefined : undefined,
+                  }
+                })
+              }
             }}
           >
             {t('pageSelection.continue')}
@@ -840,7 +925,8 @@ export default function PageSelectionPage() {
           </Button>
           {canContinue && (
             <p className="text-center text-xs text-muted mt-2">
-              {selected.size} {selected.size === 1 ? t('pageSelection.pageCount_one') : t('pageSelection.pageCount_other')}
+              {isDocx ? effectiveTotal : selected.size}{' '}
+              {(isDocx ? effectiveTotal : selected.size) === 1 ? t('pageSelection.pageCount_one') : t('pageSelection.pageCount_other')}
             </p>
           )}
         </div>
