@@ -135,6 +135,38 @@ export interface ReferenceRegion {
 }
 
 /**
+ * Continuous-DOCX mode: locate the references section by scanning for a
+ * recognized heading string, without page-number metadata.
+ *
+ * Only searches in the latter 40 % of the document (references are never
+ * in the first half of a thesis). The first matching paragraph is the
+ * heading; every non-empty paragraph after it is an entry.
+ */
+const REFERENCE_HEADING_RE = /^(?:references?|refer[eê]nci[ao]s?|bibliography|bibliografía|bibliographie)\s*$/i
+
+export function autoLocateReferences(documentXml: string): ReferenceRegion | null {
+  const blocks = getBlocks(documentXml)
+  const searchFrom = Math.floor(blocks.length * 0.4)
+
+  for (let i = searchFrom; i < blocks.length; i++) {
+    if (!isParagraph(blocks[i])) continue
+    const text = blockText(blocks[i]).trim()
+    if (!text || text.length > 80) continue
+    if (REFERENCE_HEADING_RE.test(text)) {
+      const entryIndices: number[] = []
+      for (let j = i + 1; j < blocks.length; j++) {
+        if (isParagraph(blocks[j]) && blockText(blocks[j]).trim()) {
+          entryIndices.push(j)
+        }
+      }
+      if (entryIndices.length === 0) return null
+      return { headingIdx: i, entryIndices }
+    }
+  }
+  return null
+}
+
+/**
  * Locate the references region from the user-flagged pages. Shared by Step B
  * (which formats heading + entries) and Step C (which reformats `entryIndices`)
  * and Step D (which uses `headingIdx` as `refStartIndex` to exclude references
@@ -144,7 +176,14 @@ export function locateReferences(
   documentXml: string,
   { selectedPages, referencePages }: ReferencePagesInput,
 ): ReferenceRegion | null {
-  if (!referencePages?.length || !selectedPages?.length) return null
+  if (!referencePages?.length) return null
+
+  // Sentinel [0] = continuous DOCX mode — locate by heading text, not page number
+  if (referencePages.length === 1 && referencePages[0] === 0) {
+    return autoLocateReferences(documentXml)
+  }
+
+  if (!selectedPages?.length) return null
 
   const blocks = getBlocks(documentXml)
   if (!blocks.length) return null

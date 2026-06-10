@@ -2,7 +2,7 @@ export { getGuideline, resolveGuideline, REFERENCES_HEADING_STYLE } from './guid
 export type { Guideline, GuidelineSpec } from './guidelines'
 export { listGuidelines } from './loadGuideline'
 export type { GuidelineMeta } from './loadGuideline'
-export { formatReferences, locateReferences, pageForBlock } from './references'
+export { formatReferences, locateReferences, autoLocateReferences, pageForBlock } from './references'
 export type { ReferencePagesInput, ReferenceRegion } from './references'
 export { getBlocks, blockText } from './blocks'
 export { stepD, chunkHeadings, applyHeadingDecisions } from './stepD'
