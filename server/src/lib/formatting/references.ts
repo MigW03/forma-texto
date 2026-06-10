@@ -142,7 +142,7 @@ export interface ReferenceRegion {
  * in the first half of a thesis). The first matching paragraph is the
  * heading; every non-empty paragraph after it is an entry.
  */
-const REFERENCE_HEADING_RE = /^(?:references?|refer[eê]nci[ao]s?|bibliography|bibliografía|bibliographie)\s*$/i
+const REFERENCE_HEADING_RE = /^(?:\d+[\.\s]+\s*)?(?:references?|refer[eê]nci[ao]s?(?:\s+bibliogr[aá]ficas?)?|lista\s+de\s+refer[eê]nci[ao]s?|bibliography|bibliografía|bibliographie)\s*$/i
 
 export function autoLocateReferences(documentXml: string): ReferenceRegion | null {
   const blocks = getBlocks(documentXml)
