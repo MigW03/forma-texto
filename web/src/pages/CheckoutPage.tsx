@@ -283,6 +283,8 @@ export default function CheckoutPage() {
       const fileName2 = rawFile?.name.toLowerCase() ?? ''
       const isDocxFile = fileName2.endsWith('.docx')
       const isPdfFile = fileName2.endsWith('.pdf')
+      // Continuous DOCX mode: selectedPages is empty, full file is uploaded as-is
+      const isDocxContinuous = isDocxFile && selectedPages.length === 0
       let fileToUpload: File | null = rawFile
       if (rawFile && selectedPages.length > 0) {
         try {
@@ -330,7 +332,11 @@ export default function CheckoutPage() {
         status: 'pending',
         original_file_name: fileName,
         original_file_path: storagePath,
-        references_pages: referencePages.length > 0 ? referencePages : null,
+        // Continuous DOCX: sentinel [0] tells the server to auto-detect the references heading.
+        // Page-based: use the explicit page numbers from the user's selection.
+        references_pages: isDocxContinuous
+          ? (state?.formatReferences === true ? [0] : null)
+          : (referencePages.length > 0 ? referencePages : null),
         delete_files_at: deleteAt,
         title: state?.title?.trim() || fileName || null,
       })

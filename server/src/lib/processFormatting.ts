@@ -141,7 +141,12 @@ export async function processFormatting(projectId: string): Promise<void> {
       if (refInput.referencePages.length === 0) {
         console.log(`[processFormatting] ${projectId} Step C: no references page flagged — skipping`)
       } else if (!region) {
-        console.warn(`[processFormatting] ${projectId} Step C: references page(s) [${refInput.referencePages.join(', ')}] flagged but no references region located in the document`)
+        const isContinuous = refInput.referencePages.length === 1 && refInput.referencePages[0] === 0
+        if (isContinuous) {
+          console.log(`[processFormatting] ${projectId} Step C: continuous mode — references heading not found in document, skipping`)
+        } else {
+          console.warn(`[processFormatting] ${projectId} Step C: references page(s) [${refInput.referencePages.join(', ')}] flagged but no references region located in the document`)
+        }
       } else {
         // Step C: reformat each reference entry into the guideline citation format.
         try {

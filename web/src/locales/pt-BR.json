@@ -272,7 +272,10 @@
   "pageSelection": {
     "title": "Selecione as páginas a processar",
     "subtitle": "Escolha quais páginas você quer que trabalhemos. Sua primeira página é grátis.",
+    "titleDocx": "Revise seu documento",
+    "subtitleDocx": "Todo o seu documento será processado.",
     "tip": "Clique nas páginas para selecioná-las ou desmarcá-las. Segure Shift para selecionar um intervalo.",
+    "tipDocx": "Role pelo documento para visualizá-lo. Todas as páginas serão processadas.",
     "summary": "Resumo",
     "totalPages": "Total de páginas",
     "selectedPages": "Páginas selecionadas",
