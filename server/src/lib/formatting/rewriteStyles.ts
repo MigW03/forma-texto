@@ -1,4 +1,4 @@
-import { getGuideline, REFERENCES_HEADING_STYLE, type Guideline, type GuidelineSpec } from './guidelines'
+import { getGuideline, REFERENCES_HEADING_STYLE, CAPTION_STYLE, type Guideline, type GuidelineSpec } from './guidelines'
 
 /**
  * Step A — rewrite styles.xml.
@@ -40,12 +40,14 @@ function headingBlock(g: GuidelineSpec, level: 1 | 2 | 3): string {
   // Levels are distinguished by case + bold (ABNT uses one size for all headings).
   const caps = lvl.case === 'upper' ? '<w:caps/>' : '' // non-destructive uppercase display
   const bold = lvl.bold ? '<w:b/><w:bCs/>' : ''
+  const pageBreak = lvl.newPage ? '<w:pageBreakBefore/>' : ''
   return (
     `<w:style w:type="paragraph" w:styleId="Heading${level}">` +
     `<w:name w:val="${names[level - 1]}"/>` +
     '<w:basedOn w:val="Normal"/>' +
     '<w:next w:val="Normal"/>' +
     '<w:pPr>' +
+    pageBreak +
     '<w:keepNext/><w:keepLines/>' +
     `<w:spacing w:before="240" w:after="120" w:line="${g.body.line}" w:lineRule="auto"/>` +
     '<w:ind w:firstLine="0"/>' + // headings have no first-line indent
@@ -117,6 +119,30 @@ function referencesHeadingBlock(g: GuidelineSpec): string {
   )
 }
 
+/**
+ * Image/figure caption style. Applied (by the caption pass) to the lines
+ * immediately before and after an image: centered, 10pt, single line spacing,
+ * same font family as the body, no indent.
+ */
+function captionBlock(g: GuidelineSpec): string {
+  return (
+    `<w:style w:type="paragraph" w:styleId="${CAPTION_STYLE}">` +
+    '<w:name w:val="Caption"/>' +
+    '<w:basedOn w:val="Normal"/>' +
+    '<w:next w:val="Normal"/>' +
+    '<w:pPr>' +
+    `<w:spacing w:before="0" w:after="0" w:line="${g.caption.line}" w:lineRule="auto"/>` +
+    '<w:ind w:left="0" w:firstLine="0"/>' + // captions are not indented
+    '<w:jc w:val="center"/>' +
+    '</w:pPr>' +
+    '<w:rPr>' +
+    `<w:rFonts w:ascii="${g.body.font}" w:hAnsi="${g.body.font}" w:cs="${g.body.font}"/>` +
+    `<w:sz w:val="${g.caption.sz}"/><w:szCs w:val="${g.caption.sz}"/>` +
+    '</w:rPr>' +
+    '</w:style>'
+  )
+}
+
 /** Replace the <w:style> whose styleId matches, else insert before </w:styles>. */
 function upsertStyle(xml: string, styleId: string, block: string): string {
   const re = new RegExp(`<w:style\\b[^>]*\\bw:styleId="${styleId}"[\\s\\S]*?</w:style>`, 'i')
@@ -168,6 +194,7 @@ export function rewriteStyles(stylesXml: string | null, guideline: Guideline, fo
   xml = upsertStyle(xml, 'Heading2', headingBlock(g, 2))
   xml = upsertStyle(xml, 'Heading3', headingBlock(g, 3))
   xml = upsertStyle(xml, REFERENCES_HEADING_STYLE, referencesHeadingBlock(g))
+  xml = upsertStyle(xml, CAPTION_STYLE, captionBlock(g))
 
   return xml
 }

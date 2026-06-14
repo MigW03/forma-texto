@@ -41,10 +41,11 @@ describe('abnt spec values', () => {
       heading: {
         font: 'Times New Roman',
         sz: 24,
-        levels: { 1: { bold: true, case: 'upper' }, 2: { bold: false, case: 'upper' }, 3: { bold: true, case: 'sentence' } },
+        levels: { 1: { bold: true, case: 'upper', newPage: true }, 2: { bold: false, case: 'upper', newPage: false }, 3: { bold: true, case: 'sentence', newPage: false } },
       },
       margins: { top: 1701, bottom: 1134, left: 1701, right: 1134 },
       references: { entryAlign: 'left', entryLine: 240, entryAfter: 240, hangingIndent: 0 },
+      caption: { sz: 20, line: 240 },
     })
   })
 

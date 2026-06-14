@@ -52,7 +52,7 @@ const machineSchema = z.object({
     sizeHalfPt: z.number(),
     levels: z.record(
       z.string(),
-      z.object({ bold: z.boolean(), case: z.enum(['upper', 'sentence', 'none']).optional() }),
+      z.object({ bold: z.boolean(), case: z.enum(['upper', 'sentence', 'none']).optional(), newPage: z.boolean().optional() }),
     ),
   }),
   references: z.object({
@@ -61,6 +61,8 @@ const machineSchema = z.object({
     betweenEntries: z.string(),
     hangingIndent: z.union([z.boolean(), z.number()]),
   }),
+  // Image/figure captions. Optional in the spec — defaults to 10pt / single below.
+  caption: z.object({ sizeHalfPt: z.number(), lineTwentieths: z.number() }).optional(),
 })
 
 type Machine = z.infer<typeof machineSchema>
@@ -83,6 +85,7 @@ function toSpec(m: Machine): GuidelineSpec {
   const level = (n: '1' | '2' | '3') => ({
     bold: m.headings.levels[n]?.bold ?? true,
     case: m.headings.levels[n]?.case ?? 'none',
+    newPage: m.headings.levels[n]?.newPage,
   })
   return {
     accepted: m.fonts.accepted,
@@ -101,6 +104,7 @@ function toSpec(m: Machine): GuidelineSpec {
       entryAfter,
       hangingIndent,
     },
+    caption: { sz: m.caption?.sizeHalfPt ?? 20, line: m.caption?.lineTwentieths ?? 240 },
   }
 }
 

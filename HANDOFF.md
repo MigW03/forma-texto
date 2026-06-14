@@ -6,7 +6,7 @@
 > bottom, and adjust **Open work** as things land. Keep it short and current —
 > deep reference lives in the docs linked below, not here.
 
-**Last updated:** 2026-06-09
+**Last updated:** 2026-06-14 (later)
 
 ---
 
@@ -32,11 +32,13 @@ Deeper docs (keep these as the real source of truth):
 
 ## Current status
 
-- **Branch:** `main` — the `refactor/codebase-cleanup` work has been **merged**. Working tree clean.
-- **Build:** web `npm run build` is green. Server `tsc` is green.
-- **Tests:** web **32** passing (Vitest + Testing Library), server **77** passing (+14 for Step C; 2 live AI evals skipped).
+- **Branch:** `feature/docx-page-detection` — lauda-based billing migration (in progress, uncommitted changes).
+- **Build:** not verified on this branch yet (`laudas.ts` is untracked; run `npm run build` to confirm).
+- **Tests:** server **103** passing; web tests not re-run after lauda changes.
 - **Working:** auth, onboarding flow, checkout (Stripe), dashboard, project detail/viewer,
   and the DOCX formatting pipeline Steps A/B/C/D (both AI passes: reference reformatting + headings).
+- **Key change:** billing unit moved from pages to laudas (~300-word units). Only `.docx` files accepted
+  now (PDF removed as input). See session log 2026-06-13.
 
 ## Pipeline state (formatting)
 
@@ -55,6 +57,22 @@ Deeper docs (keep these as the real source of truth):
   real end-to-end upload (bold actually rendering in the output `.docx`).
 - **Step D** (AI heading reclassification) — built, tested, and confirmed working live.
 - **Step E** (re-zip / upload / stamp / email) — built.
+- **Image captions** (deterministic) — built, unit-tested. Around each image
+  (`<w:drawing>`/`<w:pict>`/`<w:object>`) the pass styles the paragraph **before** as
+  `Caption` only when it opens with a figure label (`Figura 1 —`, `Imagem 2 -`, `Gráfico 3:`)
+  and the paragraph **after** only when it opens with a source label (`Fonte:`). Label-anchored
+  so body text wrapped around an inline image isn't shrunk. `Caption` = centered, 10pt, single.
+  Runs last in the orchestrator so an AI heading promotion can never override it.
+  **No real-doc check yet** (no test fixture has an image).
+- **List indentation** (deterministic) — `normalizeNumberingXml` rewrites every `<w:lvl>` in
+  `word/numbering.xml` before any other pass runs. Per-level step is 480 twips (≈ 0.85 cm),
+  down from Word's default 720 twips/level; hanging = 240 for all levels. Applied in
+  `processFormatting` right after `unzipDocx`. 5 unit tests in `normalizeNumbering.test.ts`.
+  Adjust the `STEP` constant in `normalizeNumbering.ts` to tune.
+- **First-H1 page break** (deterministic) — `Heading1`'s style carries `<w:pageBreakBefore/>`
+  (every H1 starts a new page), but `suppressFirstHeadingPageBreak` cancels it on the **first**
+  H1 via an inline `<w:pageBreakBefore w:val="false"/>` override. Runs after the AI heading pass
+  (the first H1 may be one Step D promoted). Avoids a lone-title page / blank page after a cover.
 - Proofreading still runs on the old n8n webhook (not yet migrated to the server).
 
 ---
@@ -89,15 +107,129 @@ Deeper docs (keep these as the real source of truth):
 
 - [ ] **Confirm Step C live** against a real references fixture (set the eval's page flags), then
       promote off the free `AI_MODEL`. Code + unit tests are done; only the live check remains.
+- [ ] **Commit the lauda branch** — `web/src/lib/laudas.ts` is still untracked. Verify build
+      + server tests green, then commit and merge `feature/docx-page-detection`.
+- [ ] **Fix `/pg` suffix** in `GetStartedPage.tsx` pricing cards — lines 242 and 318 show
+      `{formatBRL(...)}/pg`; should say `/lauda` now that billing is lauda-based.
 - [ ] Migrate proofreading off n8n into the server.
 - [ ] File auto-deletion cron (`projects.delete_files_at` is set but nothing acts on it).
 - [ ] Switch `AI_MODEL` off the free model before relying on Step D in production.
 - [ ] Optional cleanup: extract `SESSION_KEY` out of `GetStartedPage` into a light module so
-      that route can also be lazy-loaded; add tests for the PDF/DOCX slicers.
+      that route can also be lazy-loaded; add tests for the DOCX slicer (pdf-slice.ts deleted).
 
 ---
 
 ## Session log
+
+### 2026-06-14 (later 2) — Compact list indentation
+
+Word's default `numbering.xml` adds 720 twips per indent level, making deeply-nested list
+items very wide. New `normalizeNumbering.ts` → `normalizeNumberingXml(xml)` rewrites every
+`<w:lvl>` in `word/numbering.xml`: level N gets `left = (N+1) × 480` twips, `hanging = 240`.
+Applied in `processFormatting` immediately after `unzipDocx` (before Step A), so all later
+passes see the normalised numbering. 5 unit tests. Tune via the `STEP` constant in the file.
+Suite **103 passing**, `tsc` clean.
+
+### 2026-06-14 (later) — Suppress page break before the first H1
+
+`Heading1`'s style has `<w:pageBreakBefore/>` so every top-level section starts on a new
+page. That is wrong for the **first** H1: it isolates a lone title on its own page, or adds
+a blank page after a cover the source already paginated. New `pageBreaks.ts` →
+`suppressFirstHeadingPageBreak(documentXml)`: finds the first `Heading1` paragraph and injects
+a direct `<w:pageBreakBefore w:val="false"/>` (overrides the style for that one paragraph;
+later H1s keep the break). Wired into `processFormatting` after the AI passes + `formatCaptions`,
+because the first H1 may be a paragraph Step D just promoted. 4 unit tests; spec §4/§9 notes
+updated. Suite **98 passing**, `tsc` clean.
+
+### 2026-06-14 — Deterministic image captions
+
+Added a deterministic image-caption pass (centered, 10 pt, single line spacing). It is
+**label-anchored**: around each image, the paragraph **before** is styled `Caption` only
+when it opens with a figure label (`Figura 1 —`, `Imagem 2 -`, `Gráfico 3:`), and the
+paragraph **after** only when it opens with a source label (`Fonte:`). This avoids shrinking
+ordinary body text that happens to wrap around an inline image.
+
+- New `Caption` paragraph style built in `rewriteStyles` (Step A ships it in `styles.xml`).
+  Values come from the spec — `GuidelineSpec.caption {sz,line}`, parsed from the §8 `caption`
+  block (already present) in `loadGuideline`, with `{sz:20,line:240}` fallback in `guidelines.ts`.
+- New `captions.ts` → `formatCaptions(documentXml)`: detects an image paragraph via
+  `<w:drawing>`/`<w:pict>`/`<w:object>`, then swaps `<w:pStyle>` to `Caption` only on a
+  neighbor whose text matches the relevant label (`FIGURE_LABEL_RE` before, `SOURCE_LABEL_RE`
+  after). Layout lives in the style; merge by absolute block index via `replaceBlocks`.
+  Tables and stacked images carry no label, so are never captioned.
+- Wired into `processFormatting` **last** (after the AI passes, runs whether or not AI is on),
+  so a Step-D heading promotion can never clobber a caption.
+- Spec: new `## 11. Image captions` + a Step-checklist line in `specs/abnt.md`.
+- Tests: `captions.test.ts` (8, incl. negative/label-variant cases) + a `Caption` assertion in
+  `rewriteStyles.test.ts`; updated the `loadGuideline` `toEqual` snapshot. Suite **94 passing**, `tsc` clean.
+- **Open:** no test fixture has an image yet — extend `test_assets/buildFixture.mjs` with an
+  image-bearing paragraph (caption above, `Fonte:` below) to confirm end-to-end on a real `.docx`.
+
+### 2026-06-13 (later 2) — Preview list-numbering fix (CSS counter collision)
+
+A Google-Docs-exported `.docx` with a numbered list rendered every item as "1" in the
+**project detail viewer** (`ProjectDetailPage` docx-preview), while the actual file was
+correct (verified: valid `numPr` + `numbering.xml` + rels + content-types; renders 1–6 in
+Google Docs / Word). Root cause was **not** the pipeline: docx-preview emits its
+list-numbering `counter-reset` on `.docx-wrapper`, and the app's `DOCX_PAGE_STYLES` (page
+numbering) also set `counter-reset: docx-page` on `.docx-wrapper`. `counter-reset` is a
+single non-merging property, and the app's override `<style>` is appended *after*
+docx-preview's, so it won the cascade and wiped the list counters → every item reset to 1.
+The lauda preview (`PageSelectionPage`) was unaffected because it never sets a counter on
+`.docx-wrapper`. Fix: reset `docx-page` on the body container (`.docx-body`, a class added
+to the `bodyRef` div) instead of on `.docx-wrapper`, removing the collision. Verified
+fixed on the dev session — the list renders 1–6 in the project viewer.
+
+### 2026-06-13 (later) — Step D fixes: list numbering + heading consistency
+
+Two formatting-output bugs reported from a real run, both traced to the Step D AI
+heading pass:
+
+- **List numbering destroyed (all items restarted at "1").** The model was promoting
+  numbered list items to headings because the descriptor it sees had no list signal —
+  `"1. Lorem ipsum"` is indistinguishable from a numbered heading `"1. Introdução"` by
+  text alone. Promoting a list item swaps its `<w:pStyle>` but leaves `<w:numPr>` in
+  place, breaking the list's numbering continuity. Fixed in three layers: `isListItem()`
+  added to `blocks.ts` (+ a `listItem` flag on `BlockDescriptor`); `chunkHeadings`
+  excludes list items as candidates; `applyHeadingDecisions` refuses to promote a list
+  item even if a decision says so; and the prompt states `listItem: true` is always
+  `body`. List paragraphs are now never touched.
+- **One of several identical sibling headings jumped a level.** The chunker tags the
+  first non-empty paragraph on each page `atPageStart`, and the prompt called that "a
+  strong sign of an h1" — so a sibling that happened to fall at a page top got bumped
+  above its peers. Prompt-only fix: demoted `atPageStart` to "weak signal only — never
+  override numbering, wording, or sibling consistency," and added a "treat parallel
+  headings identically" rule (same numbering depth + case + boldness + parallel wording
+  ⇒ same level, regardless of page position or chunk boundary).
+- Tests: 2 new regression tests in `stepD.test.ts` (list items excluded as candidates;
+  a list item is never promoted even on an explicit decision). Formatting suite green
+  (83 passing, 2 evals skipped), `tsc` clean.
+- **Operational:** the prompt body lives in `prompts/heading-classification.md` and is
+  read at runtime — restart the server (or rebuild for the deterministic changes) so the
+  new behaviour takes effect on the next job.
+- **Timing logs added** to `processFormatting.ts`: a "calling model …" line before each AI
+  call (Step C and Step D, with the model slug), the elapsed time for each pass, and a
+  total per-document time on the final `done:` line (and on the `FAILED:` line). Lets you
+  see how long each document — and each AI call — takes from the server console.
+
+### 2026-06-13 — Lauda-based billing migration
+
+**Billing unit switched from pages to laudas (~300-word units):**
+- New `web/src/lib/laudas.ts` — `computeLaudas` (word-boundary segmentation), `laudaBlockSet`
+  (lauda numbers → block index set for slicing), `getLaudas` (file → Lauda[]).
+- `web/src/lib/docx-slice.ts` rebuilt: exports `getDocxBlocks` (canonical body block list) and
+  `sliceDocxByLaudas(file, Set<blockIdx>)`; old 40-block virtual-page `sliceDocx` removed.
+- `web/src/lib/pdf-slice.ts` deleted — PDF no longer accepted as input. Only `.docx` supported.
+- `GetStartedPage` counts laudas (not pages) after file selection; `.docx`-only validation.
+- `PageSelectionPage` rebuilt: continuous `docx-preview` render with in-flow dashed "Lauda N"
+  dividers (same word boundaries as slicing); lauda checklist with word count per lauda; selected
+  laudas dim in the live preview via `.lauda-disabled` class. Page-grid UI is gone.
+- `CheckoutPage` slices the file with `sliceDocxByLaudas` before upload; `pageCount` in state
+  now means selected lauda count. References stay inline (sentinel `[0]` for auto-detect).
+- `ProjectDetailPage` shows `laudas.totalLaudas` label for `.docx` projects.
+- All three locales updated with `laudas` namespace (title, tip, dividerLabel, wordCount, etc.).
+- **Still open:** `laudas.ts` is untracked; `/pg` suffix in GetStartedPage cards (lines 242, 318)
+  should say `/lauda`.
 
 ### 2026-06-09 — PageSelection reference badge + URL fetch bug fix
 

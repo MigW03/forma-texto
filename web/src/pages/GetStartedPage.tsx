@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Check, Upload, Link as LinkIcon, ChevronDown, FileText, X, Clock, Loader2, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Check, Upload, Link as LinkIcon, ChevronDown, FileText, X, Clock, Loader2 } from 'lucide-react'
 import { ROUTES } from '../lib/routes'
 import { PRICING, formatBRL, type ServiceKey } from '../lib/pricing'
+import { getLaudas } from '../lib/laudas'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useGuidelines, localizedDescription } from '../lib/guidelines'
@@ -20,99 +21,18 @@ function getExtension(name: string): string {
   return name.split('.').pop()?.toUpperCase() ?? '—'
 }
 
-async function getPdfPageCount(file: File): Promise<number | null> {
-  try {
-    const buffer = await file.arrayBuffer()
-    const pdfjsLib = await import('pdfjs-dist')
-    const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default
-    pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
-    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise
-    const count = doc.numPages
-    doc.destroy()
-    return count
-  } catch { /* ignore */ }
-  return null
-}
-
 /**
- * Page count plus a reliability flag.
- *
- * Counting strategy, strongest signal first:
- *   1. `<Pages>` in docProps/app.xml — editor cached a real count.
- *   2. `lastRenderedPageBreak` markers — Word cached its layout.
- *   3. Otherwise count by breaks (explicit page breaks + pageBreakBefore +
- *      section breaks) and sanity-check it against content volume.
- *
- * The sanity check catches the dangerous case: a file whose breaks under-count
- * its real pages because the text flows across more pages than there are breaks
- * (e.g. a long thesis exported by a converter that dropped page boundaries).
- * If the text-per-detected-page is physically impossible for a single page, the
- * count can't be trusted and the upload blocks rather than guess. Files with
- * breaks that match their content (normal Google Docs exports, short docs) pass.
+ * Lauda count for the price estimate. We bill by laudas (~300-word units), which
+ * are always derivable from a `.docx`'s text — so there is no "uncountable" case.
+ * Returns null only when the file isn't a `.docx` or can't be parsed.
  */
-export interface FilePageInfo {
-  count: number | null
-  reliable: boolean
-}
-
-// A page physically holds at most ~3.5k characters; well above this per
-// detected page means the text overflows the breaks → count is too low.
-const MAX_CHARS_PER_PAGE = 3500
-
-async function getDocxPageInfo(file: File): Promise<FilePageInfo> {
+async function getLaudaCount(file: File): Promise<number | null> {
+  if (!file.name.toLowerCase().endsWith('.docx')) return null
   try {
-    const { unzip } = await import('fflate')
-    const buffer = await file.arrayBuffer()
-    const files = await new Promise<Record<string, Uint8Array>>((resolve, reject) =>
-      unzip(new Uint8Array(buffer), (err, f) => (err ? reject(err) : resolve(f)))
-    )
-    const decoder = new TextDecoder()
-    const appXml = files['docProps/app.xml'] ? decoder.decode(files['docProps/app.xml']) : ''
-    const docXml = files['word/document.xml'] ? decoder.decode(files['word/document.xml']) : ''
-    if (!docXml) return { count: null, reliable: false }
-
-    const appMatch = appXml.match(/<(?:[^:>]+:)?Pages>(\d+)<\/(?:[^:>]+:)?Pages>/)
-    const appPages = appMatch ? parseInt(appMatch[1], 10) : 0
-    const lastRendered = (docXml.match(/<w:lastRenderedPageBreak/g) ?? []).length
-    const explicitBreaks = (docXml.match(/w:type=["']page["']/g) ?? []).length
-
-    // 1. Word's cached layout markers are most reliable.
-    if (lastRendered > 0) return { count: Math.max(lastRendered, explicitBreaks) + 1, reliable: true }
-
-    // 2. Structural count: sectPr (one per page in Google Docs exports) and explicit
-    //    breaks (used by simple Word docs). pageBreakBefore is intentionally excluded —
-    //    it is set on heading styles and would massively over-count.
-    const sectionBreaks = Math.max(0, (docXml.match(/<w:sectPr/g) ?? []).length - 1)
-    const sectPrPages = sectionBreaks + 1          // Google Docs: 1 sectPr per page
-    const explicitBreakPages = explicitBreaks + 1  // Simple Word: explicit breaks only
-    const structuralPages = Math.max(sectPrPages, explicitBreakPages)
-
-    // 3. Take the higher of app.xml and structural count. Non-Word editors (e.g.
-    //    Google Docs) under-report app.xml based on their own renderer; Word docs
-    //    without lastRenderedPageBreak may have structural under-counts. The higher
-    //    value is the safer choice.
-    const detectedPages = appPages > 0 ? Math.max(appPages, structuralPages) : structuralPages
-
-    const textChars = (docXml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) ?? [])
-      .reduce((sum, seg) => sum + seg.replace(/<[^>]+>/g, '').length, 0)
-    const charsPerPage = textChars / detectedPages
-
-    // Overflowing the detected pages means the count is too low to trust.
-    if (charsPerPage > MAX_CHARS_PER_PAGE) return { count: null, reliable: false }
-    return { count: detectedPages, reliable: true }
+    return (await getLaudas(file)).length
   } catch {
-    return { count: null, reliable: false }
+    return null
   }
-}
-
-async function getFilePageInfo(file: File): Promise<FilePageInfo> {
-  const name = file.name.toLowerCase()
-  if (name.endsWith('.pdf')) {
-    const count = await getPdfPageCount(file)
-    return { count, reliable: count !== null }
-  }
-  if (name.endsWith('.docx')) return getDocxPageInfo(file)
-  return { count: null, reliable: false }
 }
 
 type GuidelineId = string
@@ -195,13 +115,11 @@ export default function GetStartedPage() {
   const [fileTypeError, setFileTypeError] = useState<'doc' | 'invalid' | null>(null)
   const [pageCount, setPageCount] = useState<number | null>(navState?.pageCount ?? null)
   const [pageCountLoading, setPageCountLoading] = useState(false)
-  const [countReliable, setCountReliable] = useState(true)
   const [pasteUrl, setPasteUrl] = useState(navState?.pasteUrl ?? saved?.pasteUrl ?? '')
   const [agreedToTerms, setAgreedToTerms] = useState(saved?.agreedToTerms ?? false)
   const [title, setTitle] = useState(navState?.title ?? saved?.title ?? '')
   const [fetchingLink, setFetchingLink] = useState(false)
   const [linkError, setLinkError] = useState<string | null>(null)
-  const [linkUncountable, setLinkUncountable] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Persist serializable state on every change
@@ -217,11 +135,10 @@ export default function GetStartedPage() {
   }, [selectedServices, selectedGuideline, inputTab, pasteUrl, agreedToTerms, title])
 
   useEffect(() => {
-    if (!file) { setPageCount(null); setCountReliable(true); return }
+    if (!file) { setPageCount(null); return }
     setPageCountLoading(true)
-    getFilePageInfo(file).then(info => {
-      setPageCount(info.count)
-      setCountReliable(info.reliable)
+    getLaudaCount(file).then(count => {
+      setPageCount(count)
       setPageCountLoading(false)
     })
     setTitle(prev => prev || file.name.replace(/\.[^.]+$/, ''))
@@ -231,8 +148,8 @@ export default function GetStartedPage() {
     selectedServices.size > 0 &&
     agreedToTerms &&
     (inputTab === 'upload'
-      ? file !== null && !pageCountLoading && countReliable
-      : pasteUrl.trim() !== '' && !linkUncountable)
+      ? file !== null && !pageCountLoading
+      : pasteUrl.trim() !== '')
 
   const ALLOWED_EXTENSIONS = ['.docx']
   const ALLOWED_MIME_TYPES = [
@@ -322,7 +239,7 @@ export default function GetStartedPage() {
 
           <div className="pt-3 border-t border-border flex items-center gap-2 flex-wrap">
             <span className="text-xs font-semibold text-ink">
-              {formatBRL(PRICING.proofreading.perPage)}/pg
+              {formatBRL(PRICING.proofreading.perPage)}/{t('laudas.unit')}
             </span>
             <span className="text-xs text-muted">
               · mín. {formatBRL(PRICING.proofreading.minimum)}
@@ -398,7 +315,7 @@ export default function GetStartedPage() {
 
           <div className="pt-3 border-t border-border flex items-center gap-2 flex-wrap">
             <span className="text-xs font-semibold text-ink">
-              {formatBRL(PRICING.formatting.perPage)}/pg
+              {formatBRL(PRICING.formatting.perPage)}/{t('laudas.unit')}
             </span>
             <span className="text-xs text-muted">
               · mín. {formatBRL(PRICING.formatting.minimum)}
@@ -479,9 +396,7 @@ export default function GetStartedPage() {
                     className={`rounded-xl border px-4 py-4 flex items-start gap-3 transition-colors ${
                       dragging
                         ? 'border-forest-mid bg-forest-mid/5'
-                        : !pageCountLoading && !countReliable
-                          ? 'border-amber-300 bg-amber-50'
-                          : 'border-border bg-[#F0EEE8]'
+                        : 'border-border bg-[#F0EEE8]'
                     }`}
                   >
                     <div className="shrink-0 w-9 h-9 rounded-lg bg-white border border-border flex items-center justify-center">
@@ -496,14 +411,12 @@ export default function GetStartedPage() {
                           {getExtension(file.name)}
                         </span>
                         <span className="text-muted/40 text-xs">·</span>
-                        <span className={`text-xs ${!pageCountLoading && !countReliable ? 'text-amber-700 font-medium' : 'text-muted'}`}>
+                        <span className="text-xs text-muted">
                           {pageCountLoading
-                            ? t('getStarted.fileCard.countingPages')
-                            : !countReliable
-                              ? t('getStarted.fileCard.pageCountUnavailable')
-                              : pageCount !== null
-                                ? `${pageCount} ${t('getStarted.fileCard.pages')}`
-                                : t('getStarted.fileCard.pagesUnknown')}
+                            ? t('getStarted.fileCard.countingLaudas')
+                            : pageCount !== null
+                              ? `${pageCount} ${pageCount === 1 ? t('laudas.lauda_one') : t('laudas.lauda_other')}`
+                              : t('getStarted.fileCard.laudasUnknown')}
                         </span>
                       </div>
                     </div>
@@ -515,7 +428,7 @@ export default function GetStartedPage() {
                         {t('getStarted.fileCard.replace')}
                       </button>
                       <button
-                        onClick={() => { setFile(null); setPageCount(null); setCountReliable(true); setFileTypeError(null) }}
+                        onClick={() => { setFile(null); setPageCount(null); setFileTypeError(null) }}
                         className="text-muted hover:text-ink transition-colors p-0.5"
                         aria-label="Remove file"
                       >
@@ -523,19 +436,6 @@ export default function GetStartedPage() {
                       </button>
                     </div>
                   </div>
-                  {!pageCountLoading && !countReliable && (
-                    <div className="mt-3 flex gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
-                      <AlertTriangle size={15} className="shrink-0 text-amber-600 mt-0.5" />
-                      <div>
-                        <p className="text-xs font-semibold text-amber-800">
-                          {t('getStarted.fileCard.uncountableTitle')}
-                        </p>
-                        <p className="text-xs text-amber-700 leading-relaxed mt-0.5">
-                          {t('getStarted.fileCard.uncountableBody')}
-                        </p>
-                      </div>
-                    </div>
-                  )}
                   </>
                 ) : (
                   /* Drop zone */
@@ -584,22 +484,10 @@ export default function GetStartedPage() {
                   type="url"
                   placeholder="https://docs.google.com/..."
                   value={pasteUrl}
-                  onChange={(e) => { setPasteUrl(e.target.value); setLinkError(null); setLinkUncountable(false) }}
+                  onChange={(e) => { setPasteUrl(e.target.value); setLinkError(null) }}
                   className="rounded-lg py-2.5"
                 />
-                {linkUncountable ? (
-                  <div className="flex gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
-                    <AlertTriangle size={15} className="shrink-0 text-amber-600 mt-0.5" />
-                    <div>
-                      <p className="text-xs font-semibold text-amber-800">
-                        {t('getStarted.fileCard.uncountableTitle')}
-                      </p>
-                      <p className="text-xs text-amber-700 leading-relaxed mt-0.5">
-                        {t('getStarted.fileCard.uncountableBody')}
-                      </p>
-                    </div>
-                  </div>
-                ) : linkError ? (
+                {linkError ? (
                   <p className="text-xs text-red-500">{linkError}</p>
                 ) : (
                   <p className="text-xs text-muted">{t('hero.linksSupported')}</p>
@@ -663,7 +551,6 @@ export default function GetStartedPage() {
           onClick={async () => {
             if (!canSubmit || fetchingLink) return
             setLinkError(null)
-            setLinkUncountable(false)
 
             let resolvedFile = file
             let resolvedPageCount = pageCount
@@ -681,22 +568,8 @@ export default function GetStartedPage() {
                 const blob = await res.blob()
                 const filename = res.headers.get('X-Filename') ?? 'document.docx'
                 resolvedFile = new File([blob], filename, { type: blob.type })
-                // X-Page-Count is the PDF-derived page count from Google's own renderer —
-                // the authoritative value for Google Docs URLs.
-                const serverPageCount = res.headers.get('X-Page-Count')
-                if (serverPageCount) {
-                  resolvedPageCount = parseInt(serverPageCount, 10)
-                } else {
-                  const info = await getFilePageInfo(resolvedFile)
-                  if (!info.reliable) {
-                    // Converted file's page count can't be trusted — show the same
-                    // warning banner as the file-upload path and stop.
-                    setLinkUncountable(true)
-                    setFetchingLink(false)
-                    return
-                  }
-                  resolvedPageCount = info.count
-                }
+                // Scan the fetched .docx into laudas (word-based — page metadata is irrelevant).
+                resolvedPageCount = await getLaudaCount(resolvedFile)
                 if (!title) setTitle(filename.replace(/\.[^.]+$/, ''))
               } catch {
                 setLinkError('Could not connect to server')

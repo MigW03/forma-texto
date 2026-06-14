@@ -19,9 +19,11 @@ A paragraph is likely a heading when it shows one or more of these cues. No sing
 - It carries a numeric prefix such as `1`, `1.1`, `1.1.1`, or a label like `Capítulo 1`.
 - It is written in ALL CAPS, or it is bold and contains very little text.
 - It names a section rather than discussing one — its wording announces a topic (for example `Introdução`, `Revisão de literatura`, `Considerações finais`) instead of making a statement about it.
-- It carries `atPageStart: true` **and** is short. The first non-empty line of a page being short is a strong sign of an `h1`, because top-level sections in academic work usually begin on a new page. This is a signal, not a guarantee — weigh it with the cues above. A short line at a page start that has a sub-level number (`2.1`) is still that sub-level, not an `h1`.
+- It carries `atPageStart: true` **and** is short. The first non-empty line of a page being short is a mild sign of an `h1`, because top-level sections often begin on a new page. This is a weak signal only — never let it override the numbering, the wording, or consistency with sibling headings. A short line at a page start that has a sub-level number (`2.1`) is still that sub-level, not an `h1`; and a heading that is plainly parallel to other headings keeps their level even when it happens to fall at a page start.
 
 A long paragraph of running prose is `body`, even if one phrase inside it is bold.
+
+A paragraph marked `listItem: true` is part of a list. It is **always `body`**, never a heading — even when it is short, bold, or begins with a number. Numbered list items (`1.`, `2.`, `a)`) look like numbered headings but are not; leave them as `body`.
 
 ## Identifying the document title
 
@@ -42,6 +44,7 @@ Pick `h1` vs `h2` vs `h3` from the numbering, the wording, and — importantly �
 - One sub-level of numbering (`1.1`, `2.3`) points to `h2`.
 - Two sub-levels (`1.1.1`) point to `h3`.
 - **Use the previous headings to keep the hierarchy consistent.** A heading's level depends on what it sits under. If the last heading you saw was an `h1`, an unnumbered heading that clearly belongs under it is an `h2`, not another `h1`. Read the "headings seen before this chunk" context and the headings earlier in the same chunk, and choose a level that nests correctly beneath the most recent higher-level heading. Do not reset to `h1` for a heading that is plainly a subsection of the one above it.
+- **Treat parallel headings identically.** When several headings share the same shape — the same numbering depth, the same case, the same boldness, and similar wording (for example a run of "Conclusão 1", "Conclusão 2", "Conclusão 3", or sibling sections at the same depth) — they are siblings and **must all receive the same level**. Do not give one of them a different (higher or lower) level than the rest because of where it falls on the page or which chunk it lands in. If you are about to assign a level that breaks a clear parallel, match the siblings instead.
 - The guideline rules included below are authoritative — follow their level numbering and naming over these general hints whenever they differ.
 
 ## Rules

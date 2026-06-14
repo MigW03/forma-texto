@@ -21,6 +21,9 @@ const TEXT_CAP = 200
 
 export const isParagraph = (b: string) => /^<w:p\b/.test(b)
 
+/** True when the paragraph belongs to a numbered/bulleted list (`<w:numPr>` in its pPr). */
+export const isListItem = (b: string) => /<w:numPr\b/.test(b)
+
 /** Visible text of a block (all `<w:t>` runs concatenated, tags stripped, trimmed). */
 export const blockText = (b: string) =>
   (b.match(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g) ?? []).map(t => t.replace(/<[^>]+>/g, '')).join('').trim()
@@ -37,6 +40,8 @@ export interface BlockDescriptor {
   style: string
   bold: boolean
   len: number
+  /** True when the paragraph is a list item — never a heading, regardless of other cues. */
+  listItem: boolean
   /** True when this is the first non-empty paragraph on its page — a soft h1 cue. Set by the chunker (needs whole-doc pagination), not by `blockDescriptor`. */
   atPageStart?: boolean
 }
@@ -47,7 +52,7 @@ export function blockDescriptor(block: string, i: number): BlockDescriptor {
   const styleMatch = block.match(/<w:pStyle\b[^>]*w:val="([^"]*)"/)
   // Treat <w:b/> and <w:b w:val="true|1|on"/> as bold; ignore explicit off values.
   const bold = /<w:b\/>|<w:b\b[^>]*w:val="(?:true|1|on)"/.test(block)
-  return { i, text: full.slice(0, TEXT_CAP), style: styleMatch ? styleMatch[1] : 'Normal', bold, len: full.length }
+  return { i, text: full.slice(0, TEXT_CAP), style: styleMatch ? styleMatch[1] : 'Normal', bold, len: full.length, listItem: isListItem(block) }
 }
 
 /** Set (or replace) a paragraph's style id, creating `<w:pPr>`/`<w:pStyle>` if absent. */

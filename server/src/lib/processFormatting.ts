@@ -5,6 +5,9 @@ import {
   zipDocx,
   applyStepA,
   formatReferences,
+  formatCaptions,
+  suppressFirstHeadingPageBreak,
+  normalizeNumberingXml,
   locateReferences,
   resolveGuideline,
   stepC,
@@ -62,6 +65,12 @@ function logReferences(projectId: string, decisions: ReferenceDecision[]): void 
 const BUCKET = 'projects'
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
+/** Human-readable elapsed time since `start` (ms epoch), e.g. "1.4s" / "850ms". */
+const since = (start: number) => {
+  const ms = Date.now() - start
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`
+}
+
 /** Make a storage-safe filename: strip accents, collapse whitespace, force .docx. */
 function processedName(originalFileName: string | null): string {
   const base = (originalFileName ?? 'document')
@@ -80,6 +89,7 @@ function processedName(originalFileName: string | null): string {
  * On failure it restores `status='pending'` so the project can be retried.
  */
 export async function processFormatting(projectId: string): Promise<void> {
+  const startedAt = Date.now()
   try {
     // 1. Fetch project
     const { data: project, error: fetchError } = await supabase
@@ -119,6 +129,14 @@ export async function processFormatting(projectId: string): Promise<void> {
     // 5. Transform
     const guideline = resolveGuideline(project.guideline)
     const { files, documentXml, stylesXml } = unzipDocx(inputBuf)
+
+    // Compact list indentation before anything else so Step A + AI passes see the
+    // normalized numbering. Word defaults to 720 twips/level — we drop it to 480.
+    const NUMBERING_PATH = 'word/numbering.xml'
+    if (files[NUMBERING_PATH]) {
+      const numXml = Buffer.from(files[NUMBERING_PATH]).toString('utf-8')
+      files[NUMBERING_PATH] = Buffer.from(normalizeNumberingXml(numXml), 'utf-8')
+    }
     const a = applyStepA({ documentXml, stylesXml, guideline }) // Step A: styles, overrides, margins
     const refInput = {
       selectedPages: project.selected_pages ?? [],
@@ -150,11 +168,13 @@ export async function processFormatting(projectId: string): Promise<void> {
       } else {
         // Step C: reformat each reference entry into the guideline citation format.
         try {
+          const cStart = Date.now()
+          console.log(`[processFormatting] ${projectId} Step C: calling model (${aiCfg.model}) on ${region.entryIndices.length} entr(ies)…`)
           const result = await stepC(documentXmlAI, guideline, createReferenceDecider(aiCfg), region, {
             maxChars: aiCfg.maxCharsPerChunk,
           })
           documentXmlAI = result.documentXml
-          console.log(`[processFormatting] ${projectId} Step C: located ${region.entryIndices.length} entr(ies), reformatted ${result.decisions.length}`)
+          console.log(`[processFormatting] ${projectId} Step C: located ${region.entryIndices.length} entr(ies), reformatted ${result.decisions.length} (${since(cStart)})`)
           logReferences(projectId, result.decisions)
         } catch (err) {
           console.error(`[processFormatting] Step C failed for ${projectId} (non-fatal, keeping deterministic result):`, err)
@@ -163,18 +183,28 @@ export async function processFormatting(projectId: string): Promise<void> {
 
       // Step D: reclassify headings typed as plain text.
       try {
+        const dStart = Date.now()
+        console.log(`[processFormatting] ${projectId} Step D: calling model (${aiCfg.model})…`)
         const result = await stepD(documentXmlAI, guideline, createHeadingDecider(aiCfg), {
           refStartIndex: region?.headingIdx ?? -1,
           maxChars: aiCfg.maxCharsPerChunk,
         })
         documentXmlAI = result.documentXml
+        console.log(`[processFormatting] ${projectId} Step D: ${result.decisions.length} paragraph(s) classified (${since(dStart)})`)
         logHeadings(projectId, documentXmlAI, result.decisions, refInput.selectedPages)
       } catch (err) {
         console.error(`[processFormatting] Step D failed for ${projectId} (non-fatal, keeping deterministic result):`, err)
       }
     }
 
-    const out = { documentXml: documentXmlAI, stylesXml: a.stylesXml }
+    // Final deterministic touches, after the AI passes so they see the final
+    // heading styles: (1) image captions — style the labelled lines around each
+    // image; (2) cancel the page break before the FIRST H1 so a lone title /
+    // already-paginated cover does not gain a blank page.
+    let documentXmlFinal = formatCaptions(documentXmlAI)
+    documentXmlFinal = suppressFirstHeadingPageBreak(documentXmlFinal)
+
+    const out = { documentXml: documentXmlFinal, stylesXml: a.stylesXml }
     const docxBuf = zipDocx(files, out)
 
     // 6. Upload processed .docx
@@ -202,9 +232,9 @@ export async function processFormatting(projectId: string): Promise<void> {
       console.error(`[processFormatting] email failed for ${projectId} (non-fatal):`, err)
     }
 
-    console.log(`[processFormatting] done: ${projectId} -> ${processedPath}`)
+    console.log(`[processFormatting] done: ${projectId} -> ${processedPath} (total ${since(startedAt)})`)
   } catch (err) {
-    console.error(`[processFormatting] FAILED ${projectId}:`, err)
+    console.error(`[processFormatting] FAILED ${projectId} (after ${since(startedAt)}):`, err)
     // restore to pending so it can be retried
     await supabase
       .from('projects')

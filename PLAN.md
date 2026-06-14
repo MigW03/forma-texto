@@ -31,16 +31,16 @@
   - Native HTML drag events + `<input type="file">`, stored in `file-store.ts` module closure
 - [x] File type validation (.doc warning, invalid type error)
   - Extension + MIME type check in `GetStartedPage.tsx`
-- [x] Automatic page count detection (PDF + DOCX)
-  - PDF: `pdfjs-dist` `getDocument().numPages` (replaced old regex approach that picked up intermediate `/Count` entries from nested page tree nodes). DOCX: `fflate` unzip → parse `docProps/app.xml`, fallback to `docx-preview` render measurement
+- [x] Automatic lauda count detection (DOCX only — PDF removed as input format)
+  - DOCX: `getLaudas(file)` in `web/src/lib/laudas.ts` — unzips the file, walks `w:p | w:tbl | w:sdt` body blocks, accumulates word counts, closes a lauda at 300 words (rounding up to paragraphs). Returns `Lauda[]` with block boundaries + word counts. PDF input and `pdf-slice.ts` have been deleted.
 - [x] Project title field
   - Local `useState<string>`, auto-filled from filename, persisted to `sessionStorage`
 - [x] Terms of service agreement checkbox
   - Local `useState<boolean>`, gates submit button
 - [x] Multi-step session state preserved across pages
   - `sessionStorage` (key `SESSION_KEY`) + `useNavigate` with `location.state`
-- [x] Page selection (choose which pages to process)
-  - `PageSelectionPage.tsx` — renders doc preview, user picks pages, passes `selectedPages: number[]` to checkout. Service cards show name + price on the top row; pricing formula (R$/pg · mín.) on the second row, right-aligned.
+- [x] Lauda selection (choose which laudas to process)
+  - `PageSelectionPage.tsx` rebuilt: three-panel layout — lauda checklist (left), continuous `docx-preview` render with in-flow "Lauda N" dashed-rule dividers (center), service/guideline/summary/references panel (right). Laudas are computed from the rendered DOM blocks (same `computeLaudas` word-boundary algorithm as slicing, so dividers and billing always agree). Selecting/deselecting a lauda dims its blocks in the preview via `.lauda-disabled`. Passes `selectedLaudas: number[]` to checkout.
 - [x] URL / link input — Google Docs fetch implemented
   - `GET /api/documents/fetch?url=` in `server/src/routes/documents.ts` extracts the doc ID, hits the Google export endpoint, and returns the `.docx` binary with `X-Filename` header. `GetStartedPage.tsx` fetches it on submit, creates a `File` object, runs page count detection, and navigates to `PageSelectionPage` with the file in state — identical to a manual upload from that point on. Loading state shown while fetching. Dropbox and other providers not yet supported.
 
@@ -53,15 +53,15 @@
 - [x] Free trial for first order (1 page free, gated by `user_profiles.trial_used_at`)
   - Backend checks `user_profiles.trial_used_at`; returns `isFree: true` or `discountBRL` in payment intent response
 - [x] Order summary with per-service pricing
-  - `calcPrice()` from `lib/pricing.ts` — R$1/pg formatting, R$2/pg proofreading, per-service minimums
+  - `calcPrice()` from `lib/pricing.ts` — R$1/lauda formatting, R$2/lauda proofreading, per-service minimums. Billing unit is now the lauda (~300 words), not the page.
 - [x] Trial discount line item in summary
   - `trialDiscountBRL()` from `lib/pricing.ts`, rendered conditionally if `isTrial`
 - [x] Project record created in Supabase on payment success
   - `supabase.from('projects').insert(...)` in `handleSuccess()` after Stripe confirms
 - [x] Original file uploaded to Supabase Storage on payment success
   - `supabase.storage.from('projects').upload(path, file)`, path: `{userId}/{projectId}/original/{filename}`
-- [x] File sliced to selected pages before upload
-  - PDF: `slicePdf()` via `pdf-lib`. DOCX: `sliceDocx()` via `fflate` XML manipulation
+- [x] File sliced to selected laudas before upload
+  - DOCX only (PDF removed). `sliceDocxByLaudas(file, Set<blockIdx>)` in `web/src/lib/docx-slice.ts` — removes unselected body blocks from the document XML, re-zips. Block indices come from `laudaBlockSet(laudas, selectedIndices)` in `web/src/lib/laudas.ts`. Full-doc uploads skip slicing (all laudas selected).
 - [x] Always display cents in price values
   - `formatBRL()` in `lib/pricing.ts` now uses `Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })` — always shows two decimal places (e.g. R$&nbsp;1,00). All price display sites use `formatBRL()`: checkout summary, trial discount line, order total, `GetStartedPage.tsx` pricing cards, `PageSelectionPage.tsx`, and `ProjectDetailPage.tsx`.
 
@@ -159,9 +159,45 @@
   - Five-step pipeline: (A) deterministic — rewrite `styles.xml` per guideline, strip direct overrides, fix margins; (B) deterministic — detect references section, apply hanging indent + spacing; (C) AI — reformat reference entries to guideline citation format (Haiku/GPT-4o-mini); (D) AI — heading reclassification; (E) repack → upload → stamp DB. AI only touches semantics; layout is deterministic XML.
   - **Progress (migrating off n8n → server, per `business_decisions/n8n-vs-server.md`):** Steps A & B implemented server-side in `server/src/lib/formatting/` (pure transforms: `rewriteStyles`, `stripDirectOverrides`, `rewriteMargins` in `applyStepA`; `formatReferences` for Step B; zip via `docxZip`) + orchestrator `server/src/lib/processFormatting.ts` (download → Step A → Step B → re-zip → upload `processed/` → stamp `status='complete'` → ready email). Triggered by `POST /api/processing/start` (`x-webhook-secret`, in-process async, 202). 33 unit + real-fixture tests pass (vitest). Canonical guideline spec: `server/src/lib/formatting/specs/abnt.md` — now the **live single source of truth**: `getGuideline()` reads the spec's machine block at runtime (`loadGuideline.ts`, parsed with JSON5 + validated with zod, cached by file mtime so edits apply with no rebuild or restart), falling back to a built-in table in `guidelines.ts` only if a spec is missing or invalid. The spec also carries the `display` metadata that drives the guideline dropdown (see Onboarding). A copy step (`scripts/copySpecs.js`) ships the `.md` specs into `dist` for production builds.
   - **Architecture decision — references no longer split:** since processing left n8n, the separate references file is unnecessary. The plan is to store ONE file (selected pages incl. references); Step B detects the references section by heading text and `references_file_path` has been removed (the separate references file is gone). Step B is **bounded to the user-flagged `references_pages`** (not word-detection — "Referências" can appear in body text); flagged pages are mapped to paragraphs via pagination signals (manual page breaks / `sectPr` / `lastRenderedPageBreak` / 40-block fallback). Step C (AI reference reformatting) is confirmed in-scope for later. The ABNT heading-font reconcile is **done** — body and headings now derive from a single `fonts.default`, enforcing one font per document (Arial and Times New Roman are both ABNT-valid, but never mixed); the `abnt.md` spec was clarified accordingly. **Step D (AI heading reclassification) is done** — built server-side via OpenRouter (OpenAI-compatible) + Vercel AI SDK (`generateObject` + zod), model-agnostic behind the `HeadingDecider` seam (`stepD.ts`, `ai/headingDecider.ts`, `ai/config.ts`, `ai/headingsPrompt.ts`). Shared block parser extracted to `blocks.ts`; `locateReferences` exported from `references.ts`; spec §4 drives the prompt via `loadGuidelineDoc`/`guidelineSection`. Wired into `processFormatting` behind the `AI_FORMATTING_ENABLED` flag with graceful fallback (an AI failure keeps the deterministic A/B result). 17 new offline unit tests (fake decider, no network) + a gated live eval (`RUN_AI_EVALS=1`) that passed against `openai/gpt-oss-120b:free` (promoted 2 plain-text headings, 0 blocks lost). Per-level heading caps/bold in Step A is **done** — `rewriteStyles` builds Heading1/2/3 from the spec's `headings.levels` (H1 caps+bold, H2 caps, H3 sentence+bold; one size, ABNT differentiates by case+bold not size). Step D also logs each identified heading (tier + page) to the server console. **Step C (AI reference reformatting) is done** — same model-agnostic pattern as Step D, behind the `ReferenceDecider` seam (`stepC.ts`, `ai/referencesDecider.ts`, `ai/referencesPrompt.ts`, `prompts/reference-reformatting.md`). It chunks the located references region's entries (each independent, no cross-chunk context), the model returns `[{ i, segments: [{ text, emphasis? }] }]`, and deterministic code renders the segments into `<w:r>` runs (bold/italic) and splices over each entry by absolute index, keeping Step B's `<w:pPr>`; an entry with no usable segments is left unchanged. The decider reads spec §6 (rules) + §7 (examples) and reuses `headingDecider`'s `repairDecisions`. Wired into `processFormatting` (A → B → C → D) behind `AI_FORMATTING_ENABLED`, each AI pass independently try/caught. 14 new offline unit tests (fake decider) + a gated live eval (`stepC.eval.test.ts`); server suite now 77 passing. **Live confirmation still pending** (the eval's fixture page flags need pointing at a real references page). **Still pending:** confirm Step C live + promote off the free model; unnumbered-title style (RESUMO/SUMÁRIO) in Step A; migrate proofreading off n8n.
+  - **First-H1 page break (2026-06-14):** `Heading1`'s style carries `<w:pageBreakBefore/>` (every H1 starts a new page), but the **first** H1 must not — it would isolate a lone title or add a blank page after an already-paginated cover. New `pageBreaks.ts` (`suppressFirstHeadingPageBreak`) injects a direct `<w:pageBreakBefore w:val="false"/>` on the first `Heading1` paragraph (overrides the style for it alone). Runs after the AI passes in `processFormatting` (the first H1 may be one Step D promoted). 4 unit tests; spec §4/§9 updated.
+  - **List indentation (2026-06-14):** Word's per-level default (720 twips ≈ 1.27 cm) makes deeply-nested items very wide. New `normalizeNumbering.ts` → `normalizeNumberingXml` rewrites every `<w:lvl>` in `word/numbering.xml` to step = 480 twips (≈ 0.85 cm), hanging = 240, applied right after `unzipDocx` before Step A. 5 unit tests. Tune with `STEP` constant.
+  - **Image captions (2026-06-14):** added a deterministic, label-anchored caption pass. Around each image (`<w:drawing>`/`<w:pict>`/`<w:object>`) the paragraph **before** is styled `Caption` only when it opens with a figure label (`Figura 1 —`, `Imagem 2 -`, `Gráfico 3:`) and the paragraph **after** only when it opens with a source label (`Fonte:`) — so body text wrapping an inline image is never shrunk. `Caption` = centered, 10pt, single. New `Caption` style in `rewriteStyles`, values from `GuidelineSpec.caption` (parsed from the spec's §8 `caption` block); pass in `captions.ts` (`formatCaptions`) swaps only the matched neighbor's `<w:pStyle>` by absolute index and runs last in `processFormatting` so an AI heading promotion can never override it. Documented in `abnt.md` §11. 8 caption tests + a style test; suite 94 passing. Live confirmation pending (no image in the test fixture yet).
+  - **Step D robustness (2026-06-13):** two output bugs from a real run were fixed. (1) The pass was promoting numbered **list items** to headings — they read identically to numbered headings by text alone, and promoting one breaks the list's numbering (all items restart at "1"). Now list items are detected via `isListItem()` (`<w:numPr>`) in `blocks.ts`, excluded as heading candidates in `chunkHeadings`, refused in `applyHeadingDecisions` even on an explicit decision, and called out in the prompt. (2) A sibling among several identical headings was jumping a level because the `atPageStart` cue was weighted as a "strong h1 sign"; the prompt now treats it as a weak signal and adds a "treat parallel headings identically" rule. 2 new regression tests; formatting suite green.
   - **Done:** frontend stores one file (references inline; the `references_file_path` column has been removed); `ProjectDetailPage` viewer handles the single file. **Trigger cutover done for formatting** — `CheckoutPage` calls `POST /api/processing/start` (Bearer = project owner's Supabase token) after the row is created; proofreading-only projects still hit the n8n `/notify`. The `/processing/start` route accepts the owner's Bearer token OR the `x-webhook-secret` (manual/curl).
 - [x] Convert processed `.zip` back to `.docx` for delivery
   - n8n repacks the processed output as `.docx` and stamps `processed_file_path` + `status = complete` in the `projects` table
+
+---
+
+## Interactive Content Completion (missing captions & sources)
+
+> **Goal.** Many uploads are missing required ABNT elements — a figure/table caption or its source line. Rather than guess these with AI, the pipeline detects what is missing, inserts a pre-formatted **red placeholder** in the right spot, and hands the document back to the user to fill in. The user types the missing text in the processed-file view; a deterministic, near-instant edit drops their text into place (in the final black formatting) and promotes the project to its finished state. **No additional AI runs in this step.**
+>
+> **Decisions captured (2026-06-14):** (a) "font" in the request means the **source line** ("Fonte: …"), not the typeface. (b) All four slots are in scope: figure caption, figure source, table caption, table source. (c) ABNT policy is **always require both** a caption and a source for every image and every table; any absent one becomes a placeholder. (d) The fill-in edit happens **server-side** via a new endpoint (the stored processed `.docx` stays the single source of truth and reuses the existing `blocks.ts` machinery). Builds directly on the deterministic caption pass (`captions.ts`, see `abnt.md` §11).
+
+- [ ] **Detection pass — find missing caption/source slots**
+  - New deterministic step in the pipeline (after `formatCaptions`), reusing the image (`<w:drawing>`/`<w:pict>`/`<w:object>`) and `<w:tbl>` detection plus `FIGURE_LABEL_RE` / `SOURCE_LABEL_RE`. For each image and each table, check whether a labelled caption precedes it and a labelled source follows it. Each absent slot produces a descriptor: `{ id, kind: 'figure-caption' | 'figure-source' | 'table-caption' | 'table-source', ordinal, anchorBlockIndex }`. `id` is stable and unique (e.g. `fig.1.caption`).
+
+- [ ] **Placeholder insertion — pre-formatted, red, machine-locatable**
+  - For each missing slot, insert a placeholder paragraph at the correct position (caption before the anchor, source after it), already in the `Caption` style and with a single red run (`<w:color w:val="FF0000"/>`) holding a sentinel marker the final edit can find exactly (recommended: a unique token such as `{{FT:fig.1.caption}}`, or a `<w:sdt>` content control tagged with `id`). The placeholder's *visible* prompt text (e.g. "Figura 1 — [inserir legenda]" / "Fonte: [inserir fonte]") is localized and shown to the user; the marker is what the server matches on.
+
+- [ ] **New project status `needs_input`**
+  - Extend the status flow to `pending → processing → needs_input → complete`. `needs_input` means: formatting + AI passes are done and the processed file is viewable, but required content is still missing, so the final download is **not** unlocked. Add the value to the `projects.status` CHECK/enum and update `supabase_tables.md`. The dashboard and project-detail status badges get a new state (amber, "Needs your input" / "Aguardando preenchimento").
+
+- [ ] **Persist the pending slots — `projects.pending_inputs` (jsonb)**
+  - New nullable column storing the detection descriptors: `[{ id, kind, ordinal, label, placeholder }]`. Written by the pipeline when it stamps `needs_input`; cleared to `null` when the project reaches `complete`. Drives the frontend form (no need to parse the docx in the browser). Document in `supabase_tables.md`.
+
+- [ ] **Pipeline wiring — stamp `needs_input` vs `complete`**
+  - In `processFormatting`, after detection + placeholder insertion, set `status = needs_input` and write `pending_inputs` when any slot is missing; otherwise keep the current `complete` path. The "project ready" email should only fire on `complete` (consider a separate "needs your input" email later).
+
+- [ ] **Fill-in endpoint — `POST /api/processing/fill-content`**
+  - Auth: project owner Bearer token (mirrors `/processing/start`). Body: `{ projectId, fills: { [id]: text } }`. Server downloads the processed `.docx`, replaces each placeholder marker with the user's text **and** removes the red color (final black/auto formatting, `Caption` style retained), re-zips, re-uploads to `processed_file_path`, clears `pending_inputs`, stamps `status = complete` + `completed_at`, and sends the ready email. Pure string/`replaceBlocks` edit — no AI. Validate that every `id` in `fills` exists in `pending_inputs` and reject unknown ids.
+
+- [ ] **Frontend — fill-in UI in the processed-file view**
+  - In `ProjectDetailPage`, when `status === 'needs_input'`: show the processed document (with the red placeholders visible in the viewer) plus a side panel listing one labelled text input per `pending_inputs` entry. Submitting calls the fill endpoint; on success the status flips to `complete`, the placeholders are gone, and the "Baixar Arquivo Final" button unlocks. Inputs are required before submit is enabled. All strings via `t()` in the three locales; add the new status badge styling.
+
+- [ ] **Tests**
+  - Server: detection unit tests (image/table with/without caption/source → correct slot descriptors); placeholder insertion (correct position, `Caption` style, red run, locatable marker); fill endpoint (marker replaced, red stripped, unknown id rejected, status → complete, `pending_inputs` cleared). Web: render the fill form from `pending_inputs`, submit, assert the success transition.
 
 ---
 
@@ -196,7 +232,7 @@
 - [ ] End-to-end tests
   - Playwright — cover auth flow, full order flow, dashboard
 - [ ] Unit tests
-  - Vitest — cover `pricing.ts`, `pdf-slice.ts`, `docx-slice.ts`
+  - Vitest — cover `pricing.ts`, `docx-slice.ts`, `laudas.ts` (`pdf-slice.ts` deleted)
 - [ ] Final code refactor
   - Pass over the entire codebase before deploy: remove dead code, consolidate duplicated logic, enforce consistent naming, split any components that grew too large, ensure all strings go through `t()`, and confirm no `any` types or unused vars remain
 

@@ -29,6 +29,8 @@ export type HeadingCase = 'upper' | 'sentence' | 'none'
 export interface HeadingLevelSpec {
   bold: boolean
   case: HeadingCase
+  /** When true, adds <w:pageBreakBefore/> to the style so every paragraph at this level starts on a new page. */
+  newPage?: boolean
 }
 
 export interface GuidelineSpec {
@@ -45,10 +47,15 @@ export interface GuidelineSpec {
     entryAfter: number // space after each entry (twentieths); creates the blank line between entries
     hangingIndent: number // twips; 0 = flush-left (ABNT), 720 = 0.5in hanging (APA/MLA/Chicago)
   }
+  /** Image/figure captions — the lines immediately before/after an image. Centered; size + line spacing here. */
+  caption: { sz: number; line: number } // sz half-points (20 = 10pt); line twentieths (240 = single)
 }
 
 /** Word styleId used for the references section heading (REFERÊNCIAS / References / ...). */
 export const REFERENCES_HEADING_STYLE = 'ReferencesHeading'
+
+/** Word styleId used for image/figure captions (centered, 10pt, single spacing). */
+export const CAPTION_STYLE = 'Caption'
 
 /**
  * Built-in fallback values. Used only when `specs/{id}.md` is absent or invalid.
@@ -62,10 +69,11 @@ const FALLBACK: Record<Guideline, GuidelineSpec> = {
     heading: {
       font: 'Times New Roman',
       sz: 24,
-      levels: { 1: { bold: true, case: 'upper' }, 2: { bold: false, case: 'upper' }, 3: { bold: true, case: 'sentence' } },
+      levels: { 1: { bold: true, case: 'upper', newPage: true }, 2: { bold: false, case: 'upper' }, 3: { bold: true, case: 'sentence' } },
     },
     margins: { top: 1701, bottom: 1134, left: 1701, right: 1134 }, // 3/2/3/2 cm
     references: { entryAlign: 'left', entryLine: 240, entryAfter: 240, hangingIndent: 0 }, // single, blank line between, flush-left
+    caption: { sz: 20, line: 240 }, // 10pt, single spacing, centered
   },
   apa: {
     accepted: ['Times New Roman', 'Arial', 'Calibri'],
@@ -77,6 +85,7 @@ const FALLBACK: Record<Guideline, GuidelineSpec> = {
     },
     margins: { top: 1440, bottom: 1440, left: 1440, right: 1440 }, // 1in all
     references: { entryAlign: 'left', entryLine: 480, entryAfter: 0, hangingIndent: 720 }, // double, 0.5in hanging
+    caption: { sz: 20, line: 240 },
   },
   mla: {
     accepted: ['Times New Roman', 'Arial'],
@@ -88,6 +97,7 @@ const FALLBACK: Record<Guideline, GuidelineSpec> = {
     },
     margins: { top: 1440, bottom: 1440, left: 1440, right: 1440 },
     references: { entryAlign: 'left', entryLine: 480, entryAfter: 0, hangingIndent: 720 },
+    caption: { sz: 20, line: 240 },
   },
   chicago: {
     accepted: ['Times New Roman', 'Arial'],
@@ -99,6 +109,7 @@ const FALLBACK: Record<Guideline, GuidelineSpec> = {
     },
     margins: { top: 1440, bottom: 1440, left: 1440, right: 1440 },
     references: { entryAlign: 'left', entryLine: 240, entryAfter: 240, hangingIndent: 720 }, // single within, blank line between, 0.5in hanging
+    caption: { sz: 20, line: 240 },
   },
 }
 

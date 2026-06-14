@@ -288,11 +288,21 @@ const DOCX_RENDER_OPTIONS = {
 }
 
 const DOCX_PAGE_STYLES = `
+  /* Reset the page counter on the body container, NOT on .docx-wrapper:
+     docx-preview puts its list-numbering counter-reset on .docx-wrapper, and
+     counter-reset is a single non-merging property — setting it here too would
+     clobber the list counters and make every list item render as "1". */
+  .docx-body { counter-reset: docx-page; }
   .docx-wrapper {
-    counter-reset: docx-page;
     background: #E8E6DF !important;
     padding: 32px !important;
     padding-bottom: 8px !important;
+    /* shrink to the widest page so align-self:stretch sizes the divider to the
+       page width (not the full viewport) — keeps it centered via auto margins */
+    width: fit-content !important;
+    min-width: min-content !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
   }
   .docx-wrapper > section.docx {
     counter-increment: docx-page;
@@ -313,9 +323,41 @@ const DOCX_PAGE_STYLES = `
     color: rgba(26, 26, 24, 0.6);
     line-height: 1.2;
   }
+  .docx-page-break-divider {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 4px;
+    margin: 6px 0;
+    pointer-events: none;
+    user-select: none;
+  }
+  .docx-page-break-line {
+    flex: 1 1 auto;
+    height: 0;
+    border-top: 2px dashed rgba(26, 26, 24, 0.30);
+  }
+  .docx-page-break-label {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(26, 60, 46, 0.08);
+    border: 1px solid rgba(26, 60, 46, 0.20);
+    color: #1A3C2E;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: Inter, -apple-system, system-ui, sans-serif;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 5px 12px;
+    border-radius: 9999px;
+    white-space: nowrap;
+  }
 `
 
-function DocxViewer({ url, zoom }: { url: string; zoom: number }) {
+function DocxViewer({ url, zoom, pageBreakLabel }: { url: string; zoom: number; pageBreakLabel: string }) {
   const outerRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const styleRef = useRef<HTMLDivElement>(null)
@@ -326,20 +368,43 @@ function DocxViewer({ url, zoom }: { url: string; zoom: number }) {
     const body = bodyRef.current
     const style = styleRef.current
     if (!body || !style) return
+    // Clear any prior render and guard against StrictMode's double-invoke (which
+    // otherwise races two renderAsync chains and inserts the dividers twice).
+    let cancelled = false
+    body.replaceChildren()
+    style.replaceChildren()
     fetch(url)
       .then(r => r.blob())
       .then(blob => renderAsync(blob, body, style, DOCX_RENDER_OPTIONS))
       .then(() => {
+        if (cancelled) return
         body.querySelectorAll('section.docx').forEach((section) => {
           if ((section as HTMLElement).innerText.trim() === '') section.remove()
+        })
+        // Insert "Page break" dividers between sections — a dashed rule on each
+        // side of a badge label, so the gap reads as an intentional break.
+        const sections = Array.from(body.querySelectorAll('section.docx'))
+        sections.slice(0, -1).forEach((section) => {
+          const divider = document.createElement('div')
+          divider.className = 'docx-page-break-divider'
+          const lineL = document.createElement('span')
+          lineL.className = 'docx-page-break-line'
+          const label = document.createElement('span')
+          label.className = 'docx-page-break-label'
+          label.textContent = `✂ ${pageBreakLabel}`
+          const lineR = document.createElement('span')
+          lineR.className = 'docx-page-break-line'
+          divider.append(lineL, label, lineR)
+          section.after(divider)
         })
         const override = document.createElement('style')
         override.textContent = DOCX_PAGE_STYLES
         style.appendChild(override)
         setLoading(false)
       })
-      .catch(() => { setLoadError(true); setLoading(false) })
-  }, [url])
+      .catch(() => { if (!cancelled) { setLoadError(true); setLoading(false) } })
+    return () => { cancelled = true }
+  }, [url, pageBreakLabel])
 
   if (loadError) return null
 
@@ -354,7 +419,7 @@ function DocxViewer({ url, zoom }: { url: string; zoom: number }) {
       )}
       <div style={{ zoom, display: loading ? 'none' : undefined }}>
         <div ref={styleRef} />
-        <div ref={bodyRef} />
+        <div ref={bodyRef} className="docx-body" />
       </div>
     </div>
   )
@@ -500,7 +565,7 @@ export default function ProjectDetailPage() {
             zoom={zoom}
           />
         ) : previewUrl && isDocx ? (
-          <DocxViewer url={previewUrl} zoom={zoom} />
+          <DocxViewer url={previewUrl} zoom={zoom} pageBreakLabel={t('project.pageBreak')} />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8">
             <div className="w-14 h-14 rounded-2xl bg-white border border-border flex items-center justify-center">
@@ -546,7 +611,7 @@ export default function ProjectDetailPage() {
               </span>
             </DetailRow>
           ))}
-          <DetailRow label={t('project.pageCount')}>
+          <DetailRow label={isDocx ? t('laudas.totalLaudas') : t('project.pageCount')}>
             <span className="text-sm text-ink">{project.page_count}</span>
           </DetailRow>
           {referencesPages.length > 0 && (

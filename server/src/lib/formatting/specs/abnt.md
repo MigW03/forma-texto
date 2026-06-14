@@ -85,7 +85,7 @@ Heading levels map to Word styles `Heading1`/`Heading2`/`Heading3`. The differen
 
 | Level | Word style | Case | Weight | Alignment | Notes |
 |---|---|---|---|---|---|
-| 1 — Primary (`1`) | `Heading1` | UPPERCASE | **bold** | left | starts on a new page |
+| 1 — Primary (`1`) | `Heading1` | UPPERCASE | **bold** | left | starts on a new page (except the first H1 — see §9) |
 | 2 — Secondary (`1.1`) | `Heading2` | UPPERCASE | regular | left | |
 | 3 — Tertiary (`1.1.1`) | `Heading3` | Sentence case | **bold** | left | |
 | Unnumbered titles | (special) | UPPERCASE | **bold** | **center** | e.g. REFERÊNCIAS |
@@ -255,13 +255,16 @@ These are **templates for the AI** (Step C). Each shows the abstract **pattern**
 - [ ] Page margins set to 3/2/3/2 cm.
 - [ ] Body style: accepted font, 12 pt, 1.5 spacing, 1.25 cm first-line indent, justified.
 - [ ] Title style: never indented, uppercase (`<w:caps/>`), bold, centered, same font as body.
-- [ ] Heading styles: same font as body, 12 pt, bold/caps/alignment per §4 level table.
+- [ ] Heading styles: same font as body, 12 pt, bold/caps/alignment per §4 level table; Heading1 includes `<w:pageBreakBefore/>` so every H1 starts on a new page — **except the first H1**, where a direct `<w:pageBreakBefore w:val="false"/>` override cancels it (a leading break would isolate a lone title or add a blank page after an already-paginated cover). Applied after the heading pass, since the first H1 may be one the AI promoted.
 - [ ] Strip inline layout overrides so named styles cascade.
 
 ### Deterministic — Step B `[DET]`
 - [ ] Detect the references section.
 - [ ] Heading `REFERÊNCIAS`: uppercase, bold, centered.
 - [ ] Reference entries: left-aligned, single spacing, blank line between, no hanging indent.
+
+### Deterministic — image captions `[DET]`
+- [ ] Style the figure label before an image ("Figura N —") and the source line after it ("Fonte:") as captions (centered, 10 pt, single spacing). See §11.
 
 ### AI — Step C `[AI]`
 - [ ] Reformat each reference entry per §7 (author order, punctuation, bold title, DOI).
@@ -279,3 +282,28 @@ These are **templates for the AI** (Step C). Each shows the abstract **pattern**
 - ~~**Per-level heading case + bold** not applied in Step A (all levels looked identical).~~ **Resolved.** `rewriteStyles` now builds Heading1/2/3 from the §8 `headings.levels` block: H1 `<w:caps/>` + bold, H2 `<w:caps/>` (not bold), H3 sentence case + bold. Levels share one size (12pt) — ABNT differentiates by case + bold + numbering, not size.
 - **References heading alignment:** older `formattingPlan.md` table said "left-aligned"; correct ABNT value is **centered** (§6). This spec is authoritative.
 - **Unnumbered-title style** (e.g. RESUMO, SUMÁRIO via `unnumberedTitle`) is specified in §8 but not yet applied in Step A — only the `Title` style is. Implement when those front-matter headings are handled.
+
+---
+
+## 11. Image captions `[DET]`
+
+Images (figures, charts, photos) in ABNT carry an identifying caption above them and a source line below. We anchor on the label text so ordinary body text wrapped around an inline image is never mistaken for a caption.
+
+**Rule:** for each image, two adjacent paragraphs may be captions, and each is styled only when its text identifies it:
+
+- the paragraph immediately **before** the image, when it opens with a figure label — `Figura 1 — …`, `Imagem 2 - …`, `Gráfico 3: …` (a figure-type word + number + separator);
+- the paragraph immediately **after** the image, when it opens with a source label — `Fonte: …`, `Fonte — …`.
+
+A matched paragraph is given the `Caption` paragraph style:
+
+| Property | Value |
+|---|---|
+| Alignment | Centered |
+| Font size | 10 pt (`20` half-points) — from the §8 `caption` block |
+| Line spacing | Single (`240`) |
+| Font family | Same as the body |
+| Indentation | None |
+
+- `[DET]` An image is detected by an embedded `<w:drawing>`, `<w:pict>`, or `<w:object>` inside a paragraph. The caption pass swaps only the matched paragraph's `<w:pStyle>` to `Caption`; the layout values live in the style (built by `rewriteStyles`), so a paragraph stripped of direct overrides in Step A inherits the caption look.
+- A neighbor without the matching label is left as body text. Tables and stacked images carry no label and so are never captioned.
+- The pass runs last in the pipeline (after the AI heading pass), so a caption is never overridden by a heading promotion.
