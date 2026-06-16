@@ -39,7 +39,7 @@ export function createProofreadDecider(cfg: AiConfig = loadAiConfig()): Proofrea
       // socket mid-response); HTTP-status retries stay the SDK's job.
       const { object } = await withConnectionRetry(
         () => generateObject({
-          model: openrouter.chat(cfg.model),
+          model: openrouter.chat(cfg.proofreadModel),
           schema: decisionsSchema,
           system: buildProofreadSystemPrompt(section5, chunk.guideline),
           prompt: buildProofreadUserPrompt(chunk),

@@ -114,7 +114,7 @@ export function createHeadingDecider(cfg: AiConfig = loadAiConfig()): HeadingDec
       // socket mid-response); HTTP-status retries stay the SDK's job.
       const { object } = await withConnectionRetry(
         () => generateObject({
-          model: openrouter.chat(cfg.model),
+          model: openrouter.chat(cfg.headingModel),
           schema: decisionsSchema,
           system: buildHeadingSystemPrompt(section4, chunk.guideline),
           prompt: buildHeadingUserPrompt(chunk),

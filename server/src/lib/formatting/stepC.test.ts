@@ -96,6 +96,13 @@ describe('chunkReferences', () => {
     expect(chunks.every(c => c.totalChunks === chunks.length)).toBe(true)
   })
 
+  it('caps entries per chunk (small batches for reasoning models)', () => {
+    const chunks = chunkReferences(DOC, 'abnt', REGION, { maxEntries: 1 })
+    expect(chunks.length).toBe(2) // 2 entries, 1 per chunk
+    expect(chunks.every(c => c.entries.length === 1)).toBe(true)
+    expect(chunks.flatMap(c => c.entries.map(e => e.i))).toEqual([3, 4])
+  })
+
   it('returns no chunks when there is no references region', () => {
     expect(chunkReferences(DOC, 'abnt', null)).toEqual([])
   })

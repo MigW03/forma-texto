@@ -103,13 +103,18 @@ Deeper docs (keep these as the real source of truth):
   keeps the deterministic A/B result. So "no AI headings" can mean the flag is off, the call
   errored, or the doc simply had no plain-text headings to promote (Step D only *promotes*,
   never demotes).
-- **AI model:** config default is `nvidia/nemotron-3-super-120b-a12b:free` (in
-  `server/src/lib/formatting/ai/config.ts`); **current `.env` is overridden to
-  `nvidia/nemotron-3-ultra-550b-a55b:free`** while tuning heading quality. Override via `AI_MODEL`.
-  `AI_MAX_TOKENS=8192` and `AI_MAX_CHARS_PER_CHUNK=3000` — reasoning models need the larger token
-  budget or JSON truncates mid-response. **Step P has its own budget** `AI_PROOFREAD_MAX_TOKENS`
-  (default 4096) so proofreading generations are shorter (faster, fewer mid-stream resets) without
-  starving Step C/D.
+- **AI model — per-step.** `AI_MODEL` is the default; each pass can override it via
+  `AI_HEADING_MODEL` (Step D), `AI_REFERENCES_MODEL` (Step C), `AI_PROOFREAD_MODEL` (Step P), each
+  falling back to `AI_MODEL` when unset (resolved in `config.ts` → `headingModel`/`referenceModel`/
+  `proofreadModel`; the "calling model" logs print the per-step slug). Config-file default is
+  `nemotron-3-super-...:free`; **current `.env`: `AI_MODEL=nemotron-3-ultra-550b-a55b:free`
+  (Step D/C) with `AI_PROOFREAD_MODEL=nemotron-3-nano-30b-a3b:free` (Step P)** — strong model where
+  it matters (headings), light/fast where it may not (proofreading). `AI_MAX_TOKENS=8192` and
+  `AI_MAX_CHARS_PER_CHUNK=3000` — reasoning models need the larger token budget or JSON truncates
+  mid-response. **Step P has its own token budget** `AI_PROOFREAD_MAX_TOKENS` (default 4096) so
+  proofreading generations are shorter (faster, fewer mid-stream resets) without starving Step C/D.
+  **Watch nano on Step P:** it's small (30B/3B active) — if proofreading starts introducing or
+  missing pt-BR grammar/citation fixes, bump it up a tier.
 - **Free models drop the socket mid-response** (`ECONNRESET`/"terminated", `200` then body killed).
   The AI SDK marks these `isRetryable:false`, so `ai/retry.ts` (`withConnectionRetry`) wraps all
   three deciders' `generateObject` calls and retries only transport resets (backoff + jitter; reuses
@@ -137,13 +142,12 @@ Deeper docs (keep these as the real source of truth):
 - [ ] **Merge `feature/docx-page-detection`** into main — build not yet verified.
 - [x] ~~Migrate proofreading off n8n into the server~~ — done (Step P). Live-confirm on a real
       multi-page `.docx` upload (the inline eval fixture passed; one real end-to-end run pending).
-- [ ] **Bug — references-formatting option shown without the formatting service.** In
-      `web/src/pages/PageSelectionPage.tsx` the "this document has a references section" checkbox
-      (and the format-references yes/no radio) is always enabled. It should only appear/be
-      enabled when the user selected **formatting** as a service — formatting the references is
-      a formatting-only action, irrelevant to a proofreading-only order. Gate the control on
-      `services.includes('formatting')` (and make sure `references_pages` isn't set for a
-      proofreading-only project; Step P auto-detects references regardless).
+- [x] ~~Bug — references-formatting option shown without the formatting service.~~ **Fixed
+      (2026-06-16).** `PageSelectionPage.tsx` now derives `showReferences = activeServices.has('formatting')`;
+      the references card is hidden for proofreading-only orders, no longer gates Continue
+      (`referencesValid = !showReferences || …`), and `formatReferences` is sent as `undefined` unless
+      formatting is selected. Step P still auto-detects + skips references server-side regardless.
+      tsc clean; not browser-verified (will be covered by the next full-flow run).
 - [ ] **PDF export — install LibreOffice + live-confirm.** DOCX→PDF export is built
       (`server/src/lib/docxToPdf.ts`, wired into `processFormatting` step 6b, "Baixar PDF Final"
       button in `ProjectDetailPage`) but **untested end-to-end — LibreOffice isn't on the dev
@@ -195,6 +199,34 @@ First real end-to-end runs of the full flow surfaced three things, all addressed
   stronger free model fixes a heading-recognition regression on one doc (Step D under-promoting). The
   config-file default is unchanged (still `super`). Restart the server to pick it up.
 - Server suite **146 passing**, `tsc` clean both sides.
+
+### 2026-06-16 (later 4) — Step C reference batching fix
+
+Step C reformatted only a fraction of the references and the count varied run-to-run on the same
+doc (10 sent → 2, then 6; nano returned 1). Added `finishReason`/`outputTokens` logging to
+`referencesDecider`, which showed `sent=10 got=1 finishReason=stop outTokens=7978` — **not**
+truncation (`stop`, not `length`) and **not** routing: the model simply over-reasoned a 10-entry
+batch and returned almost nothing. Root cause: references are short, so the char budget packed all
+10 into one call. Fix: `chunkReferences` now caps **entries per chunk** (`maxEntries`, default 3,
+env `AI_REFERENCES_MAX_ENTRIES`, threaded as `aiCfg.referencesMaxEntries`), breaking on whichever of
+entry-cap / char-budget trips first. Small batches keep each call tractable and the count stable.
+Also set live `.env` `AI_REFERENCES_MODEL=nemotron-3-nano-...:free` (references no longer need the
+heavy model once batches are small). 1 new chunk test; suite **149 passing**, `tsc` clean. Restart
+the server to apply. **Partially confirmed live:** a post-fix chunk logged `sent=1 got=1
+finishReason=stop outTokens=291` — clean full return on ~291 tokens vs the old ~8k-token, mostly-dropped
+batch. Still to confirm in one run: all 4 chunks (`3/3/3/1`) each return `got==sent` and the Step C
+summary reports `reformatted 10`.
+
+### 2026-06-16 (later 3) — Per-step AI models
+
+Each AI pass can now run a different model (the user wants nemotron-ultra for heading
+classification but a lighter model for proofreading). `AiConfig` gained `headingModel` /
+`referenceModel` / `proofreadModel`, resolved from `AI_HEADING_MODEL` / `AI_REFERENCES_MODEL` /
+`AI_PROOFREAD_MODEL` and each falling back to `AI_MODEL` when unset. The three deciders and the
+`processFormatting` "calling model" logs use their step's model. Live `.env`: Step D/C on
+`nemotron-3-ultra-550b-a55b:free`, Step P overridden to `nemotron-3-nano-30b-a3b:free`. 2 new config
+tests; documented in `.env.example`. Server suite **148 passing**, `tsc` clean. **Restart the server**
+to apply. Not committed yet.
 
 ### 2026-06-16 (later) — Step P: server-side proofreading
 

@@ -211,7 +211,11 @@ export default function PageSelectionPage() {
   const total = laudas.length
   const selectedCount = selected.size
 
-  const referencesValid = !hasReferences || formatReferences !== null
+  // The references card is a formatting-only concern (reformatting the references
+  // section). For a proofreading-only order it's irrelevant — Step P auto-detects
+  // and skips references server-side regardless — so it's hidden and never gates Continue.
+  const showReferences = activeServices.has('formatting')
+  const referencesValid = !showReferences || !hasReferences || formatReferences !== null
   const canContinue = ready && selectedCount > 0 && activeServices.size > 0 && referencesValid
 
   const dividerLabelFor = useCallback((n: number) => t('laudas.dividerLabel', { n }), [t])
@@ -405,7 +409,8 @@ export default function PageSelectionPage() {
             </div>
           </div>
 
-          {/* References */}
+          {/* References — formatting-only (hidden for proofreading-only orders) */}
+          {showReferences && (
           <div className="bg-sand/50 rounded-xl px-4 py-4">
             <p className="text-xs font-medium text-muted uppercase tracking-widest mb-3">
               {t('project.references.title')}
@@ -463,6 +468,7 @@ export default function PageSelectionPage() {
               </div>
             )}
           </div>
+          )}
         </div>
 
         {/* Continue CTA */}
@@ -483,7 +489,7 @@ export default function PageSelectionPage() {
                   guideline,
                   fileName: state.file?.name ?? null,
                   title: state.title ?? '',
-                  formatReferences: hasReferences ? formatReferences ?? undefined : undefined,
+                  formatReferences: showReferences && hasReferences ? formatReferences ?? undefined : undefined,
                 }
               })
             }}

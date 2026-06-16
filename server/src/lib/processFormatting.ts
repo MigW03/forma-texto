@@ -203,9 +203,10 @@ export async function processFormatting(projectId: string): Promise<void> {
           // Step C: reformat each reference entry into the guideline citation format.
           try {
             const cStart = Date.now()
-            console.log(`[processFormatting] ${projectId} Step C: calling model (${aiCfg.model}) on ${region.entryIndices.length} entr(ies)…`)
+            console.log(`[processFormatting] ${projectId} Step C: calling model (${aiCfg.referenceModel}) on ${region.entryIndices.length} entr(ies)…`)
             const result = await stepC(workingDocXml, guideline, createReferenceDecider(aiCfg), region, {
               maxChars: aiCfg.maxCharsPerChunk,
+              maxEntries: aiCfg.referencesMaxEntries,
             })
             workingDocXml = result.documentXml
             console.log(`[processFormatting] ${projectId} Step C: located ${region.entryIndices.length} entr(ies), reformatted ${result.decisions.length} (${since(cStart)})`)
@@ -218,7 +219,7 @@ export async function processFormatting(projectId: string): Promise<void> {
         // Step D: reclassify headings typed as plain text.
         try {
           const dStart = Date.now()
-          console.log(`[processFormatting] ${projectId} Step D: calling model (${aiCfg.model})…`)
+          console.log(`[processFormatting] ${projectId} Step D: calling model (${aiCfg.headingModel})…`)
           const result = await stepD(workingDocXml, guideline, createHeadingDecider(aiCfg), {
             refStartIndex: region?.headingIdx ?? -1,
             maxChars: aiCfg.maxCharsPerChunk,
@@ -247,7 +248,7 @@ export async function processFormatting(projectId: string): Promise<void> {
         const refStart = (region ?? autoLocateReferences(workingDocXml))?.headingIdx ?? -1
         const pStart = Date.now()
         const preDocXml = workingDocXml
-        console.log(`[processFormatting] ${projectId} Step P: calling model (${aiCfg.model})…`)
+        console.log(`[processFormatting] ${projectId} Step P: calling model (${aiCfg.proofreadModel})…`)
         const result = await stepProofread(workingDocXml, guideline, createProofreadDecider(aiCfg), {
           refStartIndex: refStart,
           maxChars: aiCfg.maxCharsPerChunk,

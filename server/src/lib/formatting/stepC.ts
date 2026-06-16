@@ -60,9 +60,18 @@ export interface ReferenceDecider {
 export interface ChunkOptions {
   /** Compact-text budget per chunk. Keep well under the model's context window. */
   maxChars?: number
+  /**
+   * Hard cap on entries per chunk. References are short, so the char budget alone
+   * packs all of them into one call — but a reasoning model handed 10 entries at
+   * once over-reasons and returns only a few (observed: 10 sent, 1 back, finished
+   * cleanly having burned ~8k tokens). Small batches keep each call tractable and
+   * make the count deterministic. Independent of `maxChars`, whichever trips first.
+   */
+  maxEntries?: number
 }
 
 const DEFAULT_MAX_CHARS = 8000
+const DEFAULT_MAX_ENTRIES = 3
 
 const EMPHASIS_RPR: Record<NonNullable<ReferenceSegment['emphasis']>, string> = {
   bold: '<w:rPr><w:b/></w:rPr>',
@@ -107,7 +116,7 @@ export function chunkReferences(
   documentXml: string,
   guideline: Guideline,
   region: ReferenceRegion | null,
-  { maxChars = DEFAULT_MAX_CHARS }: ChunkOptions = {},
+  { maxChars = DEFAULT_MAX_CHARS, maxEntries = DEFAULT_MAX_ENTRIES }: ChunkOptions = {},
 ): ReferenceChunk[] {
   if (!region || region.entryIndices.length === 0) return []
   const blocks = getBlocks(documentXml)
@@ -121,7 +130,9 @@ export function chunkReferences(
   let size = 0
   for (const e of entries) {
     const cost = e.text.length + 40
-    if (size + cost > maxChars && cur.length) {
+    // Break on either limit — entry cap (keeps batches small for reasoning models)
+    // or char budget — whichever trips first.
+    if ((cur.length >= maxEntries || size + cost > maxChars) && cur.length) {
       packed.push(cur)
       cur = []
       size = 0

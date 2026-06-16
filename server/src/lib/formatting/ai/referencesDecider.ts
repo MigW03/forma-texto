@@ -43,9 +43,9 @@ export function createReferenceDecider(cfg: AiConfig = loadAiConfig()): Referenc
       const doc = loadGuidelineDoc(chunk.guideline)
       // Retry the SDK's non-retryable connection resets (free models drop the
       // socket mid-response); HTTP-status retries stay the SDK's job.
-      const { object } = await withConnectionRetry(
+      const { object, finishReason, usage } = await withConnectionRetry(
         () => generateObject({
-          model: openrouter.chat(cfg.model),
+          model: openrouter.chat(cfg.referenceModel),
           schema: decisionsSchema,
           system: buildReferenceSystemPrompt(guidelineSection(doc, 6), guidelineSection(doc, 7), chunk.guideline),
           prompt: buildReferenceUserPrompt(chunk),
@@ -64,6 +64,15 @@ export function createReferenceDecider(cfg: AiConfig = loadAiConfig()): Referenc
           }),
         }),
         { retries: cfg.maxRetries },
+      )
+
+      // Diagnostic: `finishReason: 'length'` means the model hit the output-token
+      // ceiling and the JSON was truncated — the salvage path then keeps only the
+      // entries that finished, so fewer than `sent` come back and the count varies
+      // run-to-run. If sent > got with reason 'length', shrink the chunk / raise tokens.
+      console.log(
+        `[referencesDecider] sent=${chunk.entries.length} got=${object.decisions.length} ` +
+        `finishReason=${finishReason} outTokens=${usage?.outputTokens ?? '?'} model=${cfg.referenceModel}`,
       )
 
       // Guard: only trust decisions for indices we actually sent (the model can hallucinate i).
