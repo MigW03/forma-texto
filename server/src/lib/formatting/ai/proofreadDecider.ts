@@ -14,6 +14,7 @@ import { z } from 'zod'
 import { loadAiConfig, type AiConfig } from './config'
 import { loadGuidelineDoc, guidelineSection } from '../loadGuideline'
 import { repairDecisions } from './headingDecider'
+import { withConnectionRetry } from './retry'
 import { buildProofreadSystemPrompt, buildProofreadUserPrompt } from './proofreadPrompt'
 import type { ProofreadChunk, ProofreadDecider, ProofreadDecision } from '../stepProofread'
 
@@ -34,25 +35,31 @@ export function createProofreadDecider(cfg: AiConfig = loadAiConfig()): Proofrea
     async proofread(chunk: ProofreadChunk): Promise<ProofreadDecision[]> {
       // §5 carries the guideline's in-text citation rules (author-date casing, et al.).
       const section5 = guidelineSection(loadGuidelineDoc(chunk.guideline), 5)
-      const { object } = await generateObject({
-        model: openrouter.chat(cfg.model),
-        schema: decisionsSchema,
-        system: buildProofreadSystemPrompt(section5, chunk.guideline),
-        prompt: buildProofreadUserPrompt(chunk),
-        // Determinism: greedy decode + fixed seed so the same doc yields the same edits.
-        temperature: cfg.temperature,
-        seed: cfg.seed,
-        maxOutputTokens: cfg.maxTokens,
-        maxRetries: cfg.maxRetries,
-        experimental_repairText: repairDecisions,
-        // Pin OpenRouter to a single backend when configured, so routing doesn't
-        // swap hardware/quantization between runs (a source of run-to-run variance).
-        ...(cfg.provider.length > 0 && {
-          providerOptions: {
-            openrouter: { provider: { order: cfg.provider, allow_fallbacks: false } },
-          },
+      // Retry the SDK's non-retryable connection resets (free models drop the
+      // socket mid-response); HTTP-status retries stay the SDK's job.
+      const { object } = await withConnectionRetry(
+        () => generateObject({
+          model: openrouter.chat(cfg.model),
+          schema: decisionsSchema,
+          system: buildProofreadSystemPrompt(section5, chunk.guideline),
+          prompt: buildProofreadUserPrompt(chunk),
+          // Determinism: greedy decode + fixed seed so the same doc yields the same edits.
+          temperature: cfg.temperature,
+          seed: cfg.seed,
+          // Step P's own (smaller) budget — shorter gen, fewer mid-stream resets.
+          maxOutputTokens: cfg.proofreadMaxTokens,
+          maxRetries: cfg.maxRetries,
+          experimental_repairText: repairDecisions,
+          // Pin OpenRouter to a single backend when configured, so routing doesn't
+          // swap hardware/quantization between runs (a source of run-to-run variance).
+          ...(cfg.provider.length > 0 && {
+            providerOptions: {
+              openrouter: { provider: { order: cfg.provider, allow_fallbacks: false } },
+            },
+          }),
         }),
-      })
+        { retries: cfg.maxRetries },
+      )
 
       // Guard: only trust decisions for indices we actually sent (the model can hallucinate i).
       const allowed = new Set(chunk.blocks.map(b => b.i))

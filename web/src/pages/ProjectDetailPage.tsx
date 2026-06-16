@@ -196,15 +196,39 @@ function ZoomControls({ zoom, setZoom }: { zoom: number; setZoom: (z: number) =>
   )
 }
 
+// ── Preview error fallback ───────────────────────────────────────────────────
+
+// Shown when a file can't be rendered (corrupt/invalid XML, decode failure, …)
+// so the pane never goes silently blank — the user still gets a download path.
+function PreviewError({ url, fileName }: { url: string; fileName: string }) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8">
+      <div className="w-14 h-14 rounded-2xl bg-white border border-border flex items-center justify-center">
+        <FileText size={24} className="text-muted" strokeWidth={1.5} />
+      </div>
+      <p className="text-sm text-muted max-w-xs">{t('project.previewError')}</p>
+      <Button asChild variant="outline">
+        <a href={url} download={fileName}>
+          <Download size={14} />
+          {t('project.downloadFile')}
+        </a>
+      </Button>
+    </div>
+  )
+}
+
 // ── PDF viewer ───────────────────────────────────────────────────────────────
 
 function PdfViewer({
   url,
+  fileName,
   selectedPages,
   pageCount,
   zoom,
 }: {
   url: string
+  fileName: string
   selectedPages: number[]
   pageCount: number
   zoom: number
@@ -235,7 +259,7 @@ function PdfViewer({
     return () => { pdfDoc?.destroy() }
   }, [url])
 
-  if (loadError) return null
+  if (loadError) return <PreviewError url={url} fileName={fileName} />
 
   const pageWidth = containerWidth * zoom
 
@@ -357,7 +381,7 @@ const DOCX_PAGE_STYLES = `
   }
 `
 
-function DocxViewer({ url, zoom, pageBreakLabel }: { url: string; zoom: number; pageBreakLabel: string }) {
+function DocxViewer({ url, fileName, zoom, pageBreakLabel }: { url: string; fileName: string; zoom: number; pageBreakLabel: string }) {
   const outerRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const styleRef = useRef<HTMLDivElement>(null)
@@ -406,7 +430,7 @@ function DocxViewer({ url, zoom, pageBreakLabel }: { url: string; zoom: number; 
     return () => { cancelled = true }
   }, [url, pageBreakLabel])
 
-  if (loadError) return null
+  if (loadError) return <PreviewError url={url} fileName={fileName} />
 
   return (
     <div ref={outerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-auto relative bg-[#E8E6DF]">
@@ -427,6 +451,15 @@ function DocxViewer({ url, zoom, pageBreakLabel }: { url: string; zoom: number; 
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
+/**
+ * The pipeline stores the PDF export beside the processed .docx at the same path
+ * with a .pdf extension (see server `processFormatting`). Returns null when the
+ * processed path isn't a .docx (so we never request a nonsensical signed URL).
+ */
+function pdfPathFor(processedPath: string | null | undefined): string | null {
+  if (!processedPath || !/\.docx$/i.test(processedPath)) return null
+  return processedPath.replace(/\.docx$/i, '.pdf')
+}
 
 export default function ProjectDetailPage() {
   const { t } = useTranslation()
@@ -434,6 +467,7 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<ProjectDetail | null>(null)
   const [fileUrl, setFileUrl] = useState<string | null>(null)
   const [processedFileUrl, setProcessedFileUrl] = useState<string | null>(null)
+  const [processedPdfUrl, setProcessedPdfUrl] = useState<string | null>(null)
   const [zoom, setZoom] = useState(ZOOM_DEFAULT)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
@@ -451,16 +485,23 @@ export default function ProjectDetailPage() {
         if (error || !data) { setNotFound(true); setLoading(false); return }
         setProject(data as ProjectDetail)
         setZoom(data.original_file_name.toLowerCase().endsWith('.docx') ? DOCX_ZOOM_DEFAULT : ZOOM_DEFAULT)
-        const [origSigned, procSigned] = await Promise.all([
+        const pdfPath = pdfPathFor(data.processed_file_path)
+        const [origSigned, procSigned, pdfSigned] = await Promise.all([
           data.original_file_path
             ? supabase.storage.from('projects').createSignedUrl(data.original_file_path, 3600)
             : Promise.resolve({ data: null }),
           data.processed_file_path
             ? supabase.storage.from('projects').createSignedUrl(data.processed_file_path, 3600)
             : Promise.resolve({ data: null }),
+          // The PDF export may be absent (older projects, or LibreOffice failed) —
+          // a missing object just errors and we leave the button hidden.
+          pdfPath
+            ? supabase.storage.from('projects').createSignedUrl(pdfPath, 3600)
+            : Promise.resolve({ data: null }),
         ])
         if (origSigned.data?.signedUrl) setFileUrl(origSigned.data.signedUrl)
         if (procSigned.data?.signedUrl) setProcessedFileUrl(procSigned.data.signedUrl)
+        if (pdfSigned.data?.signedUrl) setProcessedPdfUrl(pdfSigned.data.signedUrl)
         setLoading(false)
       })
   }, [id])
@@ -484,10 +525,15 @@ export default function ProjectDetailPage() {
           const updated = payload.new as ProjectDetail
           setProject((prev) => prev ? { ...prev, status: updated.status, processed_file_path: updated.processed_file_path } : prev)
           if (updated.processed_file_path && updated.status === 'complete') {
-            const { data } = await supabase.storage
-              .from('projects')
-              .createSignedUrl(updated.processed_file_path, 3600)
-            if (data?.signedUrl) setProcessedFileUrl(data.signedUrl)
+            const pdfPath = pdfPathFor(updated.processed_file_path)
+            const [proc, pdf] = await Promise.all([
+              supabase.storage.from('projects').createSignedUrl(updated.processed_file_path, 3600),
+              pdfPath
+                ? supabase.storage.from('projects').createSignedUrl(pdfPath, 3600)
+                : Promise.resolve({ data: null }),
+            ])
+            if (proc.data?.signedUrl) setProcessedFileUrl(proc.data.signedUrl)
+            if (pdf.data?.signedUrl) setProcessedPdfUrl(pdf.data.signedUrl)
           }
         }
       )
@@ -524,6 +570,7 @@ export default function ProjectDetailPage() {
   const totalCost = project.services.reduce((sum, s) => sum + calcPrice(s, project.page_count), 0)
   const canDownloadProcessed = !!processedFileUrl && project.status === 'complete'
   const previewUrl = canDownloadProcessed ? processedFileUrl : fileUrl
+  const pdfDownloadName = project.original_file_name.replace(/\.docx$/i, '') + '.pdf'
   const selectedPages = project.selected_pages ?? []
   const referencesPages = project.references_pages ?? []
 
@@ -560,12 +607,13 @@ export default function ProjectDetailPage() {
         {previewUrl && isPdf ? (
           <PdfViewer
             url={previewUrl}
+            fileName={project.original_file_name}
             selectedPages={selectedPages}
             pageCount={project.page_count}
             zoom={zoom}
           />
         ) : previewUrl && isDocx ? (
-          <DocxViewer url={previewUrl} zoom={zoom} pageBreakLabel={t('project.pageBreak')} />
+          <DocxViewer url={previewUrl} fileName={project.original_file_name} zoom={zoom} pageBreakLabel={t('project.pageBreak')} />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8">
             <div className="w-14 h-14 rounded-2xl bg-white border border-border flex items-center justify-center">
@@ -638,6 +686,14 @@ export default function ProjectDetailPage() {
                 {canDownloadProcessed ? t('project.downloadFinalFile') : t('project.downloadFile')}
               </a>
             </Button>
+            {canDownloadProcessed && processedPdfUrl && (
+              <Button asChild className="w-full">
+                <a href={processedPdfUrl} download={pdfDownloadName}>
+                  <Download size={14} />
+                  {t('project.downloadFinalPdf')}
+                </a>
+              </Button>
+            )}
             {canDownloadProcessed && fileUrl && (
               <Button asChild variant="tertiary" className="w-full">
                 <a href={fileUrl} download={project.original_file_name}>

@@ -34,7 +34,7 @@ Deeper docs (keep these as the real source of truth):
 
 - **Branch:** `feature/docx-page-detection` — lauda-based billing migration + pipeline improvements. All changes committed.
 - **Build:** not verified on this branch yet (`npm run build` in `web/` to confirm).
-- **Tests:** server **132** passing (2 AI evals skipped); web tests not re-run after lauda changes.
+- **Tests:** server **146** passing (3 AI evals skipped); web tests not re-run after lauda changes.
 - **Working:** auth, onboarding flow, checkout (Stripe), dashboard, project detail/viewer,
   the DOCX formatting pipeline Steps A/B/C/D (both AI passes: reference reformatting + headings),
   and the server-side proofreading pass (Step P) — proofreading is no longer on n8n.
@@ -103,10 +103,21 @@ Deeper docs (keep these as the real source of truth):
   keeps the deterministic A/B result. So "no AI headings" can mean the flag is off, the call
   errored, or the doc simply had no plain-text headings to promote (Step D only *promotes*,
   never demotes).
-- **AI model:** fallback (and current `.env`) is `nvidia/nemotron-3-super-120b-a12b:free`. Set
-  in `server/src/lib/formatting/ai/config.ts` and `server/.env`. Override via `AI_MODEL` env var.
+- **AI model:** config default is `nvidia/nemotron-3-super-120b-a12b:free` (in
+  `server/src/lib/formatting/ai/config.ts`); **current `.env` is overridden to
+  `nvidia/nemotron-3-ultra-550b-a55b:free`** while tuning heading quality. Override via `AI_MODEL`.
   `AI_MAX_TOKENS=8192` and `AI_MAX_CHARS_PER_CHUNK=3000` — reasoning models need the larger token
-  budget or JSON truncates mid-response.
+  budget or JSON truncates mid-response. **Step P has its own budget** `AI_PROOFREAD_MAX_TOKENS`
+  (default 4096) so proofreading generations are shorter (faster, fewer mid-stream resets) without
+  starving Step C/D.
+- **Free models drop the socket mid-response** (`ECONNRESET`/"terminated", `200` then body killed).
+  The AI SDK marks these `isRetryable:false`, so `ai/retry.ts` (`withConnectionRetry`) wraps all
+  three deciders' `generateObject` calls and retries only transport resets (backoff + jitter; reuses
+  `AI_MAX_RETRIES`). HTTP-status retries stay the SDK's job.
+- **All model-authored text is sanitized before it touches XML.** A stray NUL byte from the model
+  once corrupted a Step C reference splice and made the whole `document.xml` unparseable (viewer went
+  blank). `formatting/xmlText.ts` `escapeXml` now strips XML-1.0-illegal control chars before escaping;
+  used by `stepC.ts` and `runs.ts`.
 - **Gated live evals** for the AI path (no spend in CI), e.g. for Step D:
   `cd server && set -a; . ./.env; set +a; RUN_AI_EVALS=1 npx vitest run src/lib/formatting/stepD.eval.test.ts`.
   Step C has a sibling `stepC.eval.test.ts`, but its fixture page flags (`refInput`) are a
@@ -133,6 +144,18 @@ Deeper docs (keep these as the real source of truth):
       a formatting-only action, irrelevant to a proofreading-only order. Gate the control on
       `services.includes('formatting')` (and make sure `references_pages` isn't set for a
       proofreading-only project; Step P auto-detects references regardless).
+- [ ] **PDF export — install LibreOffice + live-confirm.** DOCX→PDF export is built
+      (`server/src/lib/docxToPdf.ts`, wired into `processFormatting` step 6b, "Baixar PDF Final"
+      button in `ProjectDetailPage`) but **untested end-to-end — LibreOffice isn't on the dev
+      machine.** Install it (`brew install --cask libreoffice`) and set
+      `SOFFICE_PATH=/Applications/LibreOffice.app/Contents/MacOS/soffice` in `server/.env`, restart,
+      reprocess a doc → PDF button should appear. Verify ABNT margins/pagination survive (fonts:
+      install Arial/Times or rely on Liberation metric-compatibles).
+- [ ] **Production hosting for the PDF export.** LibreOffice is a system binary, not npm — it must
+      exist wherever the server runs. **Not viable on serverless (Vercel/Lambda).** Use a Docker
+      container (`apt-get install libreoffice-writer fonts-liberation`) or a Gotenberg sidecar
+      (HTTP-wrapped LibreOffice — would swap `docxToPdf.ts`'s shell-out for a `GOTENBERG_URL` call).
+      No host chosen yet. The export is non-fatal, so prod runs fine without it until decided.
 - [ ] File auto-deletion cron (`projects.delete_files_at` is set but nothing acts on it).
 - [ ] Optional: add tests for the DOCX slicer (`docx-slice.ts`); extend test fixture with an image
       to confirm `formatCaptions` end-to-end on a real `.docx`.
@@ -140,6 +163,38 @@ Deeper docs (keep these as the real source of truth):
 ---
 
 ## Session log
+
+### 2026-06-16 (later 2) — Full-flow hardening + PDF export
+
+First real end-to-end runs of the full flow surfaced three things, all addressed:
+
+- **Connection-reset resilience.** A run hit `ECONNRESET`/"terminated" mid-response from the free
+  model (request `200`, then the body socket dropped); the AI SDK marks this `isRetryable:false`, so
+  its own `maxRetries` never fired and a whole Step P chunk was lost. New `ai/retry.ts`
+  (`withConnectionRetry` + `isConnectionResetError`, walks the `cause` chain) wraps the
+  `generateObject` call in all three deciders and retries only transport resets (backoff + jitter,
+  reuses `AI_MAX_RETRIES`), leaving HTTP-status retries to the SDK. Also gave Step P its own
+  `AI_PROOFREAD_MAX_TOKENS` (default 4096) so its generations are shorter. 8 unit tests.
+- **Blank-viewer corruption — root cause found.** After a run the processed file rendered as a blank
+  pane. Downloaded the stored `.docx` with the service-role key and parsed it: a single **NUL byte**
+  the model emitted inside a Step C reference segment (`…<w:t>\x00ABNT.`) had been spliced in raw —
+  `escapeXml` only handled `& < >`, not the C0 control chars XML 1.0 forbids, so one NUL made the
+  entire `document.xml` unparseable → docx-preview threw → `DocxViewer` rendered `null`. Fix: shared
+  `formatting/xmlText.ts` (`escapeXml` + `stripInvalidXmlChars`) strips illegal chars before escaping;
+  both AI splice points (`stepC.ts`, `runs.ts`) import it, deleting their duplicate locals. 6 unit
+  tests. (Flagged a follow-up: `DocxViewer` should show an error+download fallback, not a blank pane.)
+- **PDF export (new feature).** The pipeline now exports a PDF beside the processed `.docx` via a
+  headless LibreOffice (`server/src/lib/docxToPdf.ts`, `soffice --convert-to pdf`, private per-call
+  profile) for true Word fidelity. Uploaded to the same `processed/` path with a `.pdf` extension —
+  **non-fatal** (missing/broken LibreOffice is logged and skipped, `.docx` still ships). `ProjectDetailPage`
+  derives the path (`pdfPathFor`), signs it in both load + realtime handlers, and shows a second
+  "Baixar PDF Final" button only when the signed URL resolves. New i18n key `project.downloadFinalPdf`
+  (3 locales), `SOFFICE_PATH` documented in `.env.example`. **No DB column** (path convention).
+  **Untested live — LibreOffice not installed yet** (see Open work).
+- **Model:** switched `.env` `AI_MODEL` to `nvidia/nemotron-3-ultra-550b-a55b:free` to test whether a
+  stronger free model fixes a heading-recognition regression on one doc (Step D under-promoting). The
+  config-file default is unchanged (still `super`). Restart the server to pick it up.
+- Server suite **146 passing**, `tsc` clean both sides.
 
 ### 2026-06-16 (later) — Step P: server-side proofreading
 

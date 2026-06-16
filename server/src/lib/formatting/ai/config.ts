@@ -12,6 +12,14 @@ export interface AiConfig {
   /** OpenRouter model slug (e.g. "deepseek/deepseek-chat-v3:free"). */
   model: string
   maxTokens: number
+  /**
+   * Output-token budget for the proofreading pass (Step P) only. Kept separate
+   * from `maxTokens` (Step C/D) so we can shrink Step P's generation — shorter
+   * responses finish faster and are far less likely to hit a mid-stream
+   * connection reset on the free model — without starving the heading/reference
+   * passes, which legitimately need the larger budget.
+   */
+  proofreadMaxTokens: number
   /** Compact-text budget per chunk; keep well under the model's context window. */
   maxCharsPerChunk: number
   /** Parallel chunk calls; respects rate limits. */
@@ -45,6 +53,7 @@ export function loadAiConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
     apiKey: env.OPENROUTER_API_KEY ?? '',
     model: env.AI_MODEL ?? 'nvidia/nemotron-3-super-120b-a12b:free',
     maxTokens: num(env.AI_MAX_TOKENS, 8192),
+    proofreadMaxTokens: num(env.AI_PROOFREAD_MAX_TOKENS, 4096),
     maxCharsPerChunk: num(env.AI_MAX_CHARS_PER_CHUNK, 3000),
     concurrency: num(env.AI_CONCURRENCY, 2),
     maxRetries: num(env.AI_MAX_RETRIES, 2),

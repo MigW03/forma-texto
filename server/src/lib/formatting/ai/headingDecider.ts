@@ -12,6 +12,7 @@ import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import { z } from 'zod'
 import { loadAiConfig, type AiConfig } from './config'
 import { loadGuidelineDoc, guidelineSection } from '../loadGuideline'
+import { withConnectionRetry } from './retry'
 import { buildHeadingSystemPrompt, buildHeadingUserPrompt } from './headingsPrompt'
 import type { HeadingChunk, HeadingDecider, HeadingDecision } from '../stepD'
 
@@ -109,25 +110,30 @@ export function createHeadingDecider(cfg: AiConfig = loadAiConfig()): HeadingDec
   return {
     async classify(chunk: HeadingChunk): Promise<HeadingDecision[]> {
       const section4 = guidelineSection(loadGuidelineDoc(chunk.guideline), 4)
-      const { object } = await generateObject({
-        model: openrouter.chat(cfg.model),
-        schema: decisionsSchema,
-        system: buildHeadingSystemPrompt(section4, chunk.guideline),
-        prompt: buildHeadingUserPrompt(chunk),
-        // Determinism: greedy decode + fixed seed so the same doc yields the same headings.
-        temperature: cfg.temperature,
-        seed: cfg.seed,
-        maxOutputTokens: cfg.maxTokens,
-        maxRetries: cfg.maxRetries,
-        experimental_repairText: repairDecisions,
-        // Pin OpenRouter to a single backend when configured, so routing doesn't
-        // swap hardware/quantization between runs (a source of run-to-run variance).
-        ...(cfg.provider.length > 0 && {
-          providerOptions: {
-            openrouter: { provider: { order: cfg.provider, allow_fallbacks: false } },
-          },
+      // Retry the SDK's non-retryable connection resets (free models drop the
+      // socket mid-response); HTTP-status retries stay the SDK's job.
+      const { object } = await withConnectionRetry(
+        () => generateObject({
+          model: openrouter.chat(cfg.model),
+          schema: decisionsSchema,
+          system: buildHeadingSystemPrompt(section4, chunk.guideline),
+          prompt: buildHeadingUserPrompt(chunk),
+          // Determinism: greedy decode + fixed seed so the same doc yields the same headings.
+          temperature: cfg.temperature,
+          seed: cfg.seed,
+          maxOutputTokens: cfg.maxTokens,
+          maxRetries: cfg.maxRetries,
+          experimental_repairText: repairDecisions,
+          // Pin OpenRouter to a single backend when configured, so routing doesn't
+          // swap hardware/quantization between runs (a source of run-to-run variance).
+          ...(cfg.provider.length > 0 && {
+            providerOptions: {
+              openrouter: { provider: { order: cfg.provider, allow_fallbacks: false } },
+            },
+          }),
         }),
-      })
+        { retries: cfg.maxRetries },
+      )
 
       // Guard: only trust decisions for indices we actually sent (the model can hallucinate i).
       const allowed = new Set(chunk.blocks.map(b => b.i))

@@ -21,6 +21,7 @@
  * for "Referências" — see `locateReferences` in references.ts.
  */
 import { getBlocks, blockText, replaceBlocks } from './blocks'
+import { escapeXml } from './xmlText'
 import type { ReferenceRegion } from './references'
 import type { Guideline } from './guidelines'
 
@@ -62,9 +63,6 @@ export interface ChunkOptions {
 }
 
 const DEFAULT_MAX_CHARS = 8000
-
-const escapeXml = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 const EMPHASIS_RPR: Record<NonNullable<ReferenceSegment['emphasis']>, string> = {
   bold: '<w:rPr><w:b/></w:rPr>',

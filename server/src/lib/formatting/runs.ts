@@ -18,9 +18,7 @@
  * the same conservative contract as Steps C and D.
  */
 import { diff } from './textDiff'
-
-const escapeXml = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+import { escapeXml } from './xmlText'
 
 const decodeXml = (s: string) =>
   s

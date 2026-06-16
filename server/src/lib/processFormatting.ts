@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { sendProjectReadyEmail } from './notify'
+import { docxToPdf } from './docxToPdf'
 import {
   unzipDocx,
   zipDocx,
@@ -83,6 +84,7 @@ function logProofread(projectId: string, preDocXml: string, decisions: Proofread
 
 const BUCKET = 'projects'
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+const PDF_MIME = 'application/pdf'
 
 /** Human-readable elapsed time since `start` (ms epoch), e.g. "1.4s" / "850ms". */
 const since = (start: number) => {
@@ -267,6 +269,21 @@ export async function processFormatting(projectId: string): Promise<void> {
       .from(BUCKET)
       .upload(processedPath, docxBuf, { contentType: DOCX_MIME, upsert: true })
     if (upError) throw new Error(`upload failed: ${upError.message}`)
+
+    // 6b. PDF export alongside the .docx (non-fatal — the .docx is the primary
+    // deliverable; a missing/broken LibreOffice must not fail the whole job).
+    // Stored at the same path with a .pdf extension; the frontend derives it.
+    try {
+      const pdfBuf = await docxToPdf(docxBuf)
+      const pdfPath = processedPath.replace(/\.docx$/i, '.pdf')
+      const { error: pdfUpError } = await supabase.storage
+        .from(BUCKET)
+        .upload(pdfPath, pdfBuf, { contentType: PDF_MIME, upsert: true })
+      if (pdfUpError) throw new Error(pdfUpError.message)
+      console.log(`[processFormatting] pdf export: ${projectId} -> ${pdfPath}`)
+    } catch (err) {
+      console.error(`[processFormatting] pdf export failed for ${projectId} (non-fatal):`, err)
+    }
 
     // 7. Stamp complete (frontend gates download on status === 'complete')
     const { error: updError } = await supabase
