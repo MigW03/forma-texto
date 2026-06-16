@@ -30,6 +30,8 @@ export interface AiConfig {
   provider: string[]
   /** Feature flag — ship the deterministic pipeline and turn C/D on separately. */
   enabled: boolean
+  /** Feature flag for the proofreading AI pass (Step P), toggled independently of C/D. */
+  proofreadingEnabled: boolean
 }
 
 const num = (v: string | undefined, fallback: number) => {
@@ -41,10 +43,9 @@ export function loadAiConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
   return {
     baseUrl: env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1',
     apiKey: env.OPENROUTER_API_KEY ?? '',
-    // Free text model for initial tests; swap the slug when promoting to a paid model.
-    model: env.AI_MODEL ?? 'openai/gpt-oss-120b:free',
-    maxTokens: num(env.AI_MAX_TOKENS, 2048),
-    maxCharsPerChunk: num(env.AI_MAX_CHARS_PER_CHUNK, 8000),
+    model: env.AI_MODEL ?? 'nvidia/nemotron-3-super-120b-a12b:free',
+    maxTokens: num(env.AI_MAX_TOKENS, 8192),
+    maxCharsPerChunk: num(env.AI_MAX_CHARS_PER_CHUNK, 3000),
     concurrency: num(env.AI_CONCURRENCY, 2),
     maxRetries: num(env.AI_MAX_RETRIES, 2),
     // Deterministic by default: greedy decode + a fixed seed. num() rejects 0, so read temperature directly.
@@ -52,5 +53,6 @@ export function loadAiConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
     seed: num(env.AI_SEED, 7),
     provider: (env.AI_PROVIDER ?? '').split(',').map(s => s.trim()).filter(Boolean),
     enabled: env.AI_FORMATTING_ENABLED === 'true',
+    proofreadingEnabled: env.AI_PROOFREADING_ENABLED === 'true',
   }
 }

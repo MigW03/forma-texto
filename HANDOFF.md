@@ -6,7 +6,7 @@
 > bottom, and adjust **Open work** as things land. Keep it short and current —
 > deep reference lives in the docs linked below, not here.
 
-**Last updated:** 2026-06-14 (later)
+**Last updated:** 2026-06-16
 
 ---
 
@@ -32,11 +32,12 @@ Deeper docs (keep these as the real source of truth):
 
 ## Current status
 
-- **Branch:** `feature/docx-page-detection` — lauda-based billing migration (in progress, uncommitted changes).
-- **Build:** not verified on this branch yet (`laudas.ts` is untracked; run `npm run build` to confirm).
-- **Tests:** server **103** passing; web tests not re-run after lauda changes.
+- **Branch:** `feature/docx-page-detection` — lauda-based billing migration + pipeline improvements. All changes committed.
+- **Build:** not verified on this branch yet (`npm run build` in `web/` to confirm).
+- **Tests:** server **132** passing (2 AI evals skipped); web tests not re-run after lauda changes.
 - **Working:** auth, onboarding flow, checkout (Stripe), dashboard, project detail/viewer,
-  and the DOCX formatting pipeline Steps A/B/C/D (both AI passes: reference reformatting + headings).
+  the DOCX formatting pipeline Steps A/B/C/D (both AI passes: reference reformatting + headings),
+  and the server-side proofreading pass (Step P) — proofreading is no longer on n8n.
 - **Key change:** billing unit moved from pages to laudas (~300-word units). Only `.docx` files accepted
   now (PDF removed as input). See session log 2026-06-13.
 
@@ -73,7 +74,17 @@ Deeper docs (keep these as the real source of truth):
   (every H1 starts a new page), but `suppressFirstHeadingPageBreak` cancels it on the **first**
   H1 via an inline `<w:pageBreakBefore w:val="false"/>` override. Runs after the AI heading pass
   (the first H1 may be one Step D promoted). Avoids a lone-title page / blank page after a cover.
-- Proofreading still runs on the old n8n webhook (not yet migrated to the server).
+- **Step P** (AI proofreading) — built, unit-tested, and **validated live on the free model**.
+  Fixes grammar, punctuation, spelling, verb-tense consistency, and ABNT in-text citation
+  casing without changing meaning, the title, the references, or intentional run formatting.
+  The model returns corrected paragraph text (`[{ i, text }]`, changed paragraphs only); a
+  deterministic char-diff (`textDiff.ts`) maps each edit onto the run it falls inside
+  (`runs.ts`), preserving every other run byte-for-byte. An edit crossing a formatting
+  boundary — or a paragraph with a hyperlink/field/footnote — leaves the paragraph unchanged.
+  Scope: headings + body + list items; skips title, references (auto-detected), tables,
+  captions. Runs after the formatting passes (so heading classification is done → batches by
+  chapter). Behind `AI_PROOFREADING_ENABLED`; proofreading-only projects skip all formatting
+  passes. The live eval changed the right two paragraphs and left references/title untouched.
 
 ---
 
@@ -84,14 +95,18 @@ Deeper docs (keep these as the real source of truth):
   Step D was the cause of "Step D not working" this session. If you must use `npm start`,
   run `npm run build` first.
 - **`server/.env` is loaded once at startup** (`dotenv/config`). After changing it (e.g.
-  `AI_FORMATTING_ENABLED`), **restart the server** for the change to take effect.
+  `AI_FORMATTING_ENABLED` or `AI_PROOFREADING_ENABLED`), **restart the server** for the
+  change to take effect. The two AI flags are independent: formatting (Steps C/D) and
+  proofreading (Step P) are turned on separately.
 - **Step D is behind `AI_FORMATTING_ENABLED=true`** and an OpenRouter key. An AI failure is
   **non-fatal by design**: it logs `[processFormatting] … Step D failed (non-fatal …)` and
   keeps the deterministic A/B result. So "no AI headings" can mean the flag is off, the call
   errored, or the doc simply had no plain-text headings to promote (Step D only *promotes*,
   never demotes).
-- **Free model caveat:** `AI_MODEL` defaults to `openai/gpt-oss-120b:free`, which rate-limits.
-  For reliability switch to a cheap paid model (and optionally pin `AI_PROVIDER`).
+- **AI model:** fallback (and current `.env`) is `nvidia/nemotron-3-super-120b-a12b:free`. Set
+  in `server/src/lib/formatting/ai/config.ts` and `server/.env`. Override via `AI_MODEL` env var.
+  `AI_MAX_TOKENS=8192` and `AI_MAX_CHARS_PER_CHUNK=3000` — reasoning models need the larger token
+  budget or JSON truncates mid-response.
 - **Gated live evals** for the AI path (no spend in CI), e.g. for Step D:
   `cd server && set -a; . ./.env; set +a; RUN_AI_EVALS=1 npx vitest run src/lib/formatting/stepD.eval.test.ts`.
   Step C has a sibling `stepC.eval.test.ts`, but its fixture page flags (`refInput`) are a
@@ -105,21 +120,70 @@ Deeper docs (keep these as the real source of truth):
 
 ## Open work / next steps
 
-- [ ] **Confirm Step C live** against a real references fixture (set the eval's page flags), then
-      promote off the free `AI_MODEL`. Code + unit tests are done; only the live check remains.
-- [ ] **Commit the lauda branch** — `web/src/lib/laudas.ts` is still untracked. Verify build
-      + server tests green, then commit and merge `feature/docx-page-detection`.
-- [ ] **Fix `/pg` suffix** in `GetStartedPage.tsx` pricing cards — lines 242 and 318 show
-      `{formatBRL(...)}/pg`; should say `/lauda` now that billing is lauda-based.
-- [ ] Migrate proofreading off n8n into the server.
+- [ ] **Confirm Step C live** — point the eval's `selectedPages`/`referencePages` at a real `.docx`
+      with a references section and run `RUN_AI_EVALS=1 npx vitest run src/lib/formatting/stepC.eval.test.ts`.
+      Confirm bold renders in the output `.docx`. Code + unit tests are done; live check only.
+- [ ] **Merge `feature/docx-page-detection`** into main — build not yet verified.
+- [x] ~~Migrate proofreading off n8n into the server~~ — done (Step P). Live-confirm on a real
+      multi-page `.docx` upload (the inline eval fixture passed; one real end-to-end run pending).
+- [ ] **Bug — references-formatting option shown without the formatting service.** In
+      `web/src/pages/PageSelectionPage.tsx` the "this document has a references section" checkbox
+      (and the format-references yes/no radio) is always enabled. It should only appear/be
+      enabled when the user selected **formatting** as a service — formatting the references is
+      a formatting-only action, irrelevant to a proofreading-only order. Gate the control on
+      `services.includes('formatting')` (and make sure `references_pages` isn't set for a
+      proofreading-only project; Step P auto-detects references regardless).
 - [ ] File auto-deletion cron (`projects.delete_files_at` is set but nothing acts on it).
-- [ ] Switch `AI_MODEL` off the free model before relying on Step D in production.
-- [ ] Optional cleanup: extract `SESSION_KEY` out of `GetStartedPage` into a light module so
-      that route can also be lazy-loaded; add tests for the DOCX slicer (pdf-slice.ts deleted).
+- [ ] Optional: add tests for the DOCX slicer (`docx-slice.ts`); extend test fixture with an image
+      to confirm `formatCaptions` end-to-end on a real `.docx`.
 
 ---
 
 ## Session log
+
+### 2026-06-16 (later) — Step P: server-side proofreading
+
+Brought proofreading onto the server (the last service still on n8n), built like Steps C/D —
+the model never emits XML.
+
+- **New apply core.** `textDiff.ts` (a small character-level LCS diff → `{ aStart, aEnd,
+  replacement }` hunks, isolating each edit) and `runs.ts` (parse a paragraph into runs,
+  coalesce adjacent same-`rPr` runs, map each diff hunk onto the single run it falls inside,
+  re-splice). This is what lets a correction land without flattening intentional bold/italic/
+  link runs. An edit crossing a real formatting boundary, or a paragraph with a hyperlink/
+  field/footnote, is refused (paragraph left unchanged).
+- **`stepProofread.ts`** — `chunkProofread` (batches by chapter: a new chunk at each
+  `Heading1`, then by char budget; skips title, captions, references via `refStartIndex`,
+  tables, and unsafe paragraphs), `applyProofreadDecisions`, and the `stepProofread`
+  orchestrator. Model returns `[{ i, text }]` for changed paragraphs only.
+- **`ai/proofreadDecider.ts` + `ai/proofreadPrompt.ts` + `prompts/proofreading.md`** — mirror
+  the Step C/D decider/prompt seam; the prompt is a rewrite of the old n8n proofreading prompt,
+  retargeted to return corrected text (not XML) and pulling spec §5 (in-text citations) for the
+  ABNT citation rules. Dropped the n8n prompt's XML-comment citation flagging and long-quote
+  reflow (not expressible as a text diff — noted as future).
+- **Orchestrator** (`processFormatting.ts`) generalized: runs when formatting **and/or**
+  proofreading is requested; formatting passes run only for `formatting`; Step P runs after
+  them for `proofreading` (references excluded via the located region, else `autoLocateReferences`).
+  Independent flag `AI_PROOFREADING_ENABLED` added to `ai/config.ts` + `.env.example`.
+- **Trigger.** `CheckoutPage.tsx` now calls `POST /api/processing/start` for formatting **or**
+  proofreading; the n8n `/checkout/notify` path for proofreading-only is gone.
+- **Tests.** +29 offline unit tests (textDiff, runs, stepProofread) → server **132 passing**,
+  `tsc` clean. Gated live eval (`proofread.eval.test.ts`) **passed on the free model**
+  (`nvidia/nemotron-3-super-120b-a12b:free`): fixed agreement + accents + `(SILVA→Silva, 2020)`
+  citation casing + a stray space, left the references entry and title byte-for-byte identical.
+- **Open:** one real multi-page `.docx` end-to-end upload; tables/captions + citation
+  flagging remain future work.
+
+### 2026-06-16 — AI model update + housekeeping
+
+- **AI model fallback** updated from `openai/gpt-oss-120b:free` to `nvidia/nemotron-3-super-120b-a12b:free`
+  in both `server/src/lib/formatting/ai/config.ts` (hardcoded default) and `server/.env`. Default
+  `maxTokens` raised to 8192 and `maxCharsPerChunk` lowered to 3000 in `config.ts` to match the `.env`
+  values (reasoning models spend tokens on chain-of-thought before emitting JSON; a small budget truncates).
+- **`/pg` suffix** in `GetStartedPage.tsx` pricing cards confirmed already fixed in the committed code —
+  removed from open work.
+- **Lauda branch** confirmed fully committed (`b7177ca` includes `laudas.ts`, all pipeline files,
+  HANDOFF, PLAN). Branch is clean.
 
 ### 2026-06-14 (later 2) — Compact list indentation
 

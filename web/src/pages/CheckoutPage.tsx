@@ -349,9 +349,9 @@ export default function CheckoutPage() {
       if (projectError) {
         console.error('Project creation failed:', projectError)
       } else {
-        // 5. Trigger processing (fire-and-forget). Formatting runs on our server's
-        //    pipeline; proofreading-only projects still go to the n8n webhook.
-        if (services.includes('formatting')) {
+        // 5. Trigger processing (fire-and-forget). Formatting and proofreading both
+        //    run on our server's pipeline now (proofreading is no longer on n8n).
+        if (services.includes('formatting') || services.includes('proofreading')) {
           const token = (await supabase.auth.getSession()).data.session?.access_token
           fetch(`${API_URL}/api/processing/start`, {
             method: 'POST',
@@ -361,8 +361,6 @@ export default function CheckoutPage() {
             },
             body: JSON.stringify({ projectId }),
           }).catch(() => {})
-        } else {
-          fetch(`${API_URL}/api/checkout/notify`, { method: 'POST' }).catch(() => {})
         }
       }
     } catch (err) {

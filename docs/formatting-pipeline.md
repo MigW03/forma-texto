@@ -34,9 +34,11 @@ merge after.
 **Build status:** A, B, C, D, E are all built and tested. (Step C mirrors Step D's
 design — see "Chunk-and-merge" below.)
 
-Orchestrator: `processFormatting.ts` (runs A → B → C → D → re-zip). Trigger: `POST /api/processing/start`
-(fire-and-forget, returns 202). Proofreading is a separate service and has not yet
-moved off n8n.
+Orchestrator: `processFormatting.ts` (runs A → B → C → D → re-zip, then the
+proofreading pass when that service is also requested). Trigger:
+`POST /api/processing/start` (fire-and-forget, returns 202). Proofreading now runs on
+the server too — see "Proofreading (Step P)" below — so n8n is no longer in the loop
+for either service.
 
 ## Design principles (do not break these)
 
@@ -74,6 +76,44 @@ moved off n8n.
   keeping the `<w:pPr>` Step B applied. An entry with no usable segments is left
   unchanged. Each entry is independent, so Step C carries no cross-chunk context.
 
+## Proofreading (Step P)
+
+Proofreading is the second paid service. It fixes grammar, punctuation, spelling,
+verb-tense consistency, and ABNT in-text citation format (lowercase author surnames,
+`et al.`, and so on) — without ever changing the author's meaning, the document title,
+or a paragraph's intentional run-level formatting (a bold term, an italic word, a
+link). It runs **after** the formatting passes so heading classification is already
+done, which lets it batch by chapter and skip the references section. A
+proofreading-only project skips every formatting pass and only runs Step P over the
+original document.
+
+Like Steps C and D, the model never emits XML. It receives the plain text of each
+paragraph and returns the **corrected** plain text for only the paragraphs it changes
+(`[{ i, text }]`). The hard part is putting that text back without flattening the
+runs, and it is handled deterministically:
+
+- `runs.ts` parses a paragraph into its runs, merges adjacent runs that share
+  identical `<w:rPr>` (Word splits runs at edit points even when the formatting is the
+  same), and concatenates their text — that exact text is both what the model sees and
+  the diff base.
+- `textDiff.ts` computes a small character-level diff (corrected vs. original) as a
+  list of `{ aStart, aEnd, replacement }` hunks. It isolates each edit rather than
+  collapsing the whole differing middle into one span, so two fixes far apart in a
+  paragraph do not drag the unchanged text between them into the edit.
+- Each hunk is mapped onto the single run it falls inside; that run's text is patched
+  and its `<w:rPr>` is kept. Every other run stays byte-for-byte. An edit that would
+  cross a real formatting boundary — or a paragraph that contains a hyperlink, field,
+  or footnote reference — is refused, leaving the paragraph unchanged. The worst case
+  of a bad answer is therefore an **unchanged** paragraph, never corrupted text.
+
+Scope: Step P proofreads headings, body paragraphs, and list items. It never touches
+the document title, the references section, tables, or captions. References are
+excluded by the located region when formatting ran, and auto-detected by heading text
+(`autoLocateReferences`) in proofreading-only mode — so no extra user input is needed.
+
+Step P is behind its own flag, `AI_PROOFREADING_ENABLED`, separate from the formatting
+flag, and is wrapped in its own try/catch so a model failure keeps the prior result.
+
 ## References detection
 
 References are located by the **user-flagged pages** (`references_pages`), NOT by
@@ -102,8 +142,13 @@ interface is the seam. Determinism knobs (`AI_TEMPERATURE=0`, `AI_SEED`, optiona
 | `references.ts` | Step B + shared `locateReferences` / `pageForBlock` |
 | `stepC.ts` | Step C chunk + apply (model-agnostic) |
 | `stepD.ts` | Step D chunk + apply (model-agnostic) |
+| `stepProofread.ts` | Step P chunk (by chapter) + apply (model-agnostic) |
+| `runs.ts` | Step P apply core: parse/coalesce runs, map diff edits onto them |
+| `textDiff.ts` | Character-level diff used by Step P |
 | `ai/referencesDecider.ts` | Real Step C decider (OpenRouter) |
 | `ai/headingDecider.ts` | Real Step D decider (OpenRouter) |
+| `ai/proofreadDecider.ts` | Real Step P decider (OpenRouter) |
+| `prompts/proofreading.md` | Step P system-prompt body |
 | `ai/config.ts` | AI knobs, all env-overridable |
 | `blocks.ts` | Shared top-level block parser (indices, descriptors, splice) |
 | `loadGuideline.ts` | Reads `specs/{id}.md` (machine block + prose sections) |
