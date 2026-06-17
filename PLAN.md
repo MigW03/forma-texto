@@ -310,6 +310,9 @@
 - [x] Profile page
   - `ProfilePage.tsx` at `/profile` (protected). Displays avatar (initials), full name, email, join date, trial status. Edit full name and email via `supabase.auth.updateUser()`; email change triggers confirmation email. Password change for email/password users only. Connected-account badge (Google vs email). Danger zone with delete-account modal (calls `POST /api/auth/delete-account` — backend endpoint not yet implemented). `ROUTES.profile = '/profile'` added; avatar in Navbar links to `/profile`.
 
+- [ ] **Live end-to-end verification of `needs_input` fill/save flow**
+  - Reprocess a fresh `.docx` that has at least one figure/table missing a caption or source (so the pipeline produces `needs_input` + placeholder). Verify: (1) fill-in an input → text appears in viewer instantly, "Salvando alterações…" pill shows, saved text is in the downloaded file; (2) remove a placeholder → block gone from viewer and from downloaded file; (3) when all slots are resolved the project flips to `complete` and the download button unlocks; (4) simulate a backend error (disconnect server) → red `saveError` banner appears with the HTTP status; (5) if OpenRouter daily quota was exhausted during processing, confirm fills still work (no AI on `/fill-content`). **Note:** files processed before the `cacheControl: '0'` fix (2026-06-17) may still be cached up to 1h — use a freshly reprocessed doc.
+
 - [ ] DOCX formatting pipeline
   - Most important feature. Requires dedicated effort. Five-step pipeline: (A) rewrite `styles.xml` per guideline, strip direct overrides, fix margins; (B) detect references section, apply hanging indent + spacing; (C) AI — reformat reference entries to guideline citation format; (D) AI — heading reclassification; (E) repack → upload → stamp DB. Full breakdown in [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md). Steps A, B, D, E are built; C is pending.
 

@@ -151,6 +151,7 @@ Deeper docs (keep these as the real source of truth):
 ## Open work / next steps
 
 - [x] ~~**Confirm Step C live**~~ — **confirmed 2026-06-17**. Bold renders correctly in the output `.docx`.
+- [ ] **Live end-to-end `needs_input` fill/save verification** — reprocess a fresh doc with a missing figure/table caption, then: (a) fill an input and confirm saved text appears in the downloaded file; (b) remove a placeholder and confirm it's gone from the download; (c) fill the last slot → project flips to `complete`, download unlocks; (d) disconnect the server mid-save → red `saveError` banner appears with the HTTP status. Use a **freshly reprocessed** doc (files processed before 2026-06-17 may still be cached up to 1h). Also confirm the error banner is clear + dismissible when OpenRouter is rate-limited (fill/remove are AI-free, so they should succeed regardless).
 - [ ] **Merge `feature/docx-page-detection`** into main — build not yet verified.
 - [x] ~~Migrate proofreading off n8n into the server~~ — done (Step P). Live-confirm on a real
       multi-page `.docx` upload (the inline eval fixture passed; one real end-to-end run pending).
@@ -179,6 +180,18 @@ Deeper docs (keep these as the real source of truth):
 ---
 
 ## Session log
+
+### 2026-06-17 (later 2) — Surface background fill/remove failures
+
+Background saves were silently swallowed — a failed write would just revert (reconcile) with no explanation, appearing to the user as "input not saving."
+
+- `callFillApi` now includes the HTTP status in the thrown error (`${res.status} ${d.error ?? res.statusText}`).
+- `runInBackground` stores the error message in new `saveError: string | null` state, cleared on the next save attempt.
+- Dismissible red banner in the viewer top bar shows `project.fillIn.saveError` ("Não foi possível salvar — tente novamente") when `saveError && bgSaving === 0`, so the user knows to retry.
+- `project.fillIn.saveError` key added to all 3 locales.
+- Root cause of the reported "input not saving" was almost certainly the **OpenRouter free-tier 429** (`free-models-per-day` exhausted — 50 req/day account-wide). `/fill-content` uses no AI, so it's unaffected once the quota resets or credits are added; the banner now makes any other failure reason immediately visible.
+- Server 179 passing, web 32 passing, tsc clean, production build green.
+- **Next session:** live end-to-end verify (see Open work above).
 
 ### 2026-06-17 (later) — Image layout + needs_input UX polish
 
