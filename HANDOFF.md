@@ -6,7 +6,7 @@
 > bottom, and adjust **Open work** as things land. Keep it short and current —
 > deep reference lives in the docs linked below, not here.
 
-**Last updated:** 2026-06-16
+**Last updated:** 2026-06-17
 
 ---
 
@@ -34,7 +34,7 @@ Deeper docs (keep these as the real source of truth):
 
 - **Branch:** `feature/docx-page-detection` — lauda-based billing migration + pipeline improvements. All changes committed.
 - **Build:** not verified on this branch yet (`npm run build` in `web/` to confirm).
-- **Tests:** server **146** passing (3 AI evals skipped); web tests not re-run after lauda changes.
+- **Tests:** server **167** passing (3 AI evals skipped); web tests not re-run after lauda changes.
 - **Working:** auth, onboarding flow, checkout (Stripe), dashboard, project detail/viewer,
   the DOCX formatting pipeline Steps A/B/C/D (both AI passes: reference reformatting + headings),
   and the server-side proofreading pass (Step P) — proofreading is no longer on n8n.
@@ -45,17 +45,7 @@ Deeper docs (keep these as the real source of truth):
 
 - **Step A** (deterministic styles/overrides/margins) — built, tested.
 - **Step B** (deterministic references layout) — built, tested.
-- **Step C** (AI reference reformatting) — **built, unit-tested, and validated on the free
-  model** (mirrors Step D's design). Returns `[{ i, segments }]`; deterministic code renders
-  runs and splices over each entry, keeping Step B's `<w:pPr>`. Behind `AI_FORMATTING_ENABLED`.
-  **Key finding:** the first version returned 0 emphasis not because the model was incapable but
-  because the `reference-reformatting.md` prompt was too vague — it buried the bold rule and led
-  with the "when unsure, return unchanged" escape hatch, so the weak model bailed on every entry.
-  Rewriting the prompt (explicit per-source-type emphasis map: book→title, article→periodical
-  name, etc.; a middle-emphasis article example; ban markdown chars in `text`) made the **free**
-  `gpt-oss-120b:free` produce correct ABNT emphasis on all test entries. The decider also now
-  accepts nullish `emphasis` (weak models emit `null`) and coerces it. **Still to confirm:** one
-  real end-to-end upload (bold actually rendering in the output `.docx`).
+- **Step C** (AI reference reformatting) — **built, unit-tested, and confirmed live (2026-06-17)**. Returns `[{ i, segments }]`; deterministic code renders runs and splices over each entry, keeping Step B's `<w:pPr>`. Behind `AI_FORMATTING_ENABLED`. Bold renders correctly in the output `.docx` on a real upload.
 - **Step D** (AI heading reclassification) — built, tested, and confirmed working live.
 - **Step E** (re-zip / upload / stamp / email) — built.
 - **Image captions** (deterministic) — built, unit-tested. Around each image
@@ -134,11 +124,23 @@ Deeper docs (keep these as the real source of truth):
 
 ---
 
+## Pipeline state additions (caption placeholders)
+
+- **`detectAndInsertPlaceholders`** (`missingInputs.ts`) — runs after `formatCaptions()`. For every image/table block, checks caption slot (i-1) and source slot (i+1). If the neighbour has neither Caption style nor matching label text, inserts a red `<w:p>` placeholder (Caption style + `FF0000` color) at the correct position. Returns the modified XML + `PendingInput[]` (id, kind, ordinal, insertedAt). 18 unit tests.
+- **`needs_input` status** — if any placeholders were inserted, pipeline stamps `status: 'needs_input'`, stores `pending_inputs: PendingInput[]` on the project row, and skips the ready email. When all slots are resolved, stamps `complete` and sends the email.
+- **`POST /api/processing/fill-content`** — accepts `{ projectId, fills?, removals? }`. Downloads/transforms/re-uploads the processed DOCX; stamps `removed_inputs` (audit trail); flips to `complete` when no pending slots remain.
+- **Frontend** — `needs_input` badge (orange), query includes `pending_inputs`, viewer opens the processed file in read-only mode, floating red-border input overlays appear aligned with each placeholder text node in the DocxViewer, each overlay has save + remove (with confirmation modal).
+- **DB columns needed** (run in Supabase console before deploying):
+  ```sql
+  ALTER TABLE projects ADD COLUMN pending_inputs  jsonb;
+  ALTER TABLE projects ADD COLUMN removed_inputs  jsonb;
+  ```
+
+---
+
 ## Open work / next steps
 
-- [ ] **Confirm Step C live** — point the eval's `selectedPages`/`referencePages` at a real `.docx`
-      with a references section and run `RUN_AI_EVALS=1 npx vitest run src/lib/formatting/stepC.eval.test.ts`.
-      Confirm bold renders in the output `.docx`. Code + unit tests are done; live check only.
+- [x] ~~**Confirm Step C live**~~ — **confirmed 2026-06-17**. Bold renders correctly in the output `.docx`.
 - [ ] **Merge `feature/docx-page-detection`** into main — build not yet verified.
 - [x] ~~Migrate proofreading off n8n into the server~~ — done (Step P). Live-confirm on a real
       multi-page `.docx` upload (the inline eval fixture passed; one real end-to-end run pending).
@@ -167,6 +169,20 @@ Deeper docs (keep these as the real source of truth):
 ---
 
 ## Session log
+
+### 2026-06-17 — Interactive content completion (caption placeholders)
+
+Full `needs_input` lifecycle for missing ABNT captions and source lines on figures and tables.
+
+- **`server/src/lib/formatting/missingInputs.ts`** (new) — `detectAndInsertPlaceholders`, `fillContent`, `removeContent`. Walks image/table anchors, checks i-1 and i+1 slots, inserts red Caption-style placeholder paragraphs for absent slots and applies Caption style to existing-but-unstyled neighbours without inserting pending entries. `insertedAt` tracks block index in stored processed DOCX. 18 unit tests.
+- **`server/src/lib/formatting/captions.ts`** — exported `isImageParagraph`, `FIGURE_LABEL_RE`, `SOURCE_LABEL_RE` so `missingInputs.ts` can import them.
+- **`server/src/lib/formatting/index.ts`** — re-exported new types/functions.
+- **`server/src/lib/processFormatting.ts`** — `pending` scoped before `if (doFormatting)`, `detectAndInsertPlaceholders` called after `formatCaptions`, step 7 branches on `pending.length`: → `needs_input + pending_inputs` (no email) or → `complete + pending_inputs: null` (+ email).
+- **`server/src/routes/processing.ts`** — `POST /api/processing/fill-content` endpoint with `authorize()` reuse, partial-fill support, `removed_inputs` audit trail, `complete` flip when all resolved.
+- **Frontend:** `status.ts` adds `needs_input` type + `normalizeStatus`; `badge.tsx` adds orange variant; `DashboardPage.tsx` includes `needs_input` in active count; `ProjectDetailPage.tsx` queries `pending_inputs`, gates download (preview OK, download only on `complete`), floating overlays in DocxViewer (inside scroll container, aligned with placeholder text via `getBoundingClientRect`), per-input save + remove buttons, confirmation modal with `createPortal`; three locale files updated with `dashboard.status.needs_input` and `project.fillIn.*` keys.
+- **`supabase_tables.md`** — documented `pending_inputs` and `removed_inputs` columns + SQL.
+- **DB migration required before deploying:** `ALTER TABLE projects ADD COLUMN pending_inputs jsonb; ALTER TABLE projects ADD COLUMN removed_inputs jsonb;`
+- Server suite **167 passing**, `tsc` clean both sides.
 
 ### 2026-06-16 (later 2) — Full-flow hardening + PDF export
 

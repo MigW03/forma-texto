@@ -22,17 +22,17 @@ import { getBlocks, isParagraph, blockText, setParagraphStyle, replaceBlocks } f
 const IMAGE_RE = /<w:drawing\b|<w:pict\b|<w:object\b/
 
 /** True when the block is a paragraph that embeds an image. */
-const isImageParagraph = (b: string) => isParagraph(b) && IMAGE_RE.test(b)
+export const isImageParagraph = (b: string) => isParagraph(b) && IMAGE_RE.test(b)
 
 /**
  * Figure caption label at the start of a line: a figure-type word + number +
  * separator, e.g. "Figura 1 — ", "Imagem 2 - ", "Gráfico 3: ". Case-insensitive.
  */
-const FIGURE_LABEL_RE =
+export const FIGURE_LABEL_RE =
   /^(?:figura|imagem|gr[aá]fico|foto(?:grafia)?|ilustra[cç][aã]o|desenho|fluxograma|esquema|mapa|gravura|quadro)\s+\d+(?:[.\-–—]\d+)*\s*[-–—:]/i
 
 /** Source label at the start of a line: "Fonte:", "Fonte —", "Fonte - ". */
-const SOURCE_LABEL_RE = /^fonte\s*[:.\-–—]/i
+export const SOURCE_LABEL_RE = /^fonte\s*[:.\-–—]/i
 
 /**
  * Style the figure label before an image and the source line after it as

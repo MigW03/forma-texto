@@ -136,6 +136,7 @@
     "status": {
       "pending": "Em espera",
       "processing": "A processar",
+      "needs_input": "Ação necessária",
       "complete": "Pronto para revisão"
     },
     "time": {
@@ -197,6 +198,25 @@
     "downloadOriginalFile": "Transferir ficheiro original",
     "pageBreak": "Quebra de página",
     "notFound": "Projeto não encontrado.",
+    "fillIn": {
+      "figureCaption": "Legenda da Figura {{n}}",
+      "figureSource": "Fonte da Figura {{n}}",
+      "tableCaption": "Título da Tabela {{n}}",
+      "tableSource": "Fonte da Tabela {{n}}",
+      "save": "Guardar",
+      "saving": "A guardar…",
+      "placeholder": {
+        "caption": "ex: Figura 1 — Evolução histórica de...",
+        "source": "ex: Fonte: elaborado pelo autor (2024)"
+      },
+      "removeButton": "Remover",
+      "removeConfirm": {
+        "title": "Remover esta legenda?",
+        "body": "As normas ABNT exigem legendas para todas as figuras e tabelas. Esta ação será registada.",
+        "cancel": "Cancelar",
+        "confirm": "Remover"
+      }
+    },
     "references": {
       "title": "Referências",
       "hasSection": "Este documento possui uma secção de referências",

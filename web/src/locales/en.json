@@ -136,6 +136,7 @@
     "status": {
       "pending": "In queue",
       "processing": "Processing",
+      "needs_input": "Action required",
       "complete": "Ready for review"
     },
     "time": {
@@ -197,6 +198,25 @@
     "downloadOriginalFile": "Download original file",
     "pageBreak": "Page break",
     "notFound": "Project not found.",
+    "fillIn": {
+      "figureCaption": "Caption for Figure {{n}}",
+      "figureSource": "Source for Figure {{n}}",
+      "tableCaption": "Caption for Table {{n}}",
+      "tableSource": "Source for Table {{n}}",
+      "save": "Save",
+      "saving": "Saving…",
+      "placeholder": {
+        "caption": "e.g., Figure 1 — Historical evolution of...",
+        "source": "e.g., Source: elaborated by the author (2024)"
+      },
+      "removeButton": "Remove",
+      "removeConfirm": {
+        "title": "Remove this caption?",
+        "body": "ABNT requires captions for all figures and tables. This action will be recorded.",
+        "cancel": "Cancel",
+        "confirm": "Remove"
+      }
+    },
     "references": {
       "title": "References",
       "hasSection": "This document has a references section",

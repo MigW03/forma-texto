@@ -37,6 +37,8 @@
 | `created_at` | `timestamptz` |  |
 | `selected_pages` | `_int4` |  Nullable |
 | `title` | `text` |  Nullable |
+| `pending_inputs` | `jsonb` | Nullable |
+| `removed_inputs` | `jsonb` | Nullable |
 
 ## Table `user_profiles`
 
@@ -49,4 +51,8 @@
 | `notification_preferences` | `jsonb` |  Nullable |
 
 > Default value: `{"project_ready": true, "file_expiry": true}`. Null treated as all-on. Add column with: `ALTER TABLE user_profiles ADD COLUMN notification_preferences jsonb DEFAULT '{"project_ready":true,"file_expiry":true}'::jsonb;`
+
+> `pending_inputs` stores `[{ id, kind, ordinal, insertedAt }]` — one entry per red placeholder paragraph inserted by the pipeline. Null when all resolved. Add with: `ALTER TABLE projects ADD COLUMN pending_inputs jsonb;`
+
+> `removed_inputs` stores `[{ id, kind, removedAt }]` — audit trail of placeholders the user intentionally removed. Append-only; never cleared. Add with: `ALTER TABLE projects ADD COLUMN removed_inputs jsonb;`
 

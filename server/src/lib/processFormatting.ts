@@ -7,6 +7,7 @@ import {
   applyStepA,
   formatReferences,
   formatCaptions,
+  detectAndInsertPlaceholders,
   suppressFirstHeadingPageBreak,
   normalizeNumberingXml,
   locateReferences,
@@ -26,6 +27,7 @@ import {
   type ReferenceDecision,
   type ProofreadDecision,
   type ReferenceRegion,
+  type PendingInput,
 } from './formatting'
 
 /** Tier label for a heading role, e.g. 'h2' → 'H2', 'title' → 'TITLE'. */
@@ -168,6 +170,10 @@ export async function processFormatting(projectId: string): Promise<void> {
     // The located references region — shared by Steps C/D and used by Step P to skip
     // references. Stays null in proofreading-only mode (Step P auto-detects instead).
     let region: ReferenceRegion | null = null
+    // Pending caption/source inputs — populated by detectAndInsertPlaceholders when
+    // formatting runs; empty for proofreading-only jobs. Scoped here so step 7 can
+    // branch on it.
+    let pending: PendingInput[] = []
 
     if (doFormatting) {
       // Compact list indentation before anything else so Step A + AI passes see the
@@ -233,9 +239,15 @@ export async function processFormatting(projectId: string): Promise<void> {
       }
 
       // Final deterministic touches, after the AI passes so they see the final heading
-      // styles: (1) image captions; (2) cancel the page break before the FIRST H1 so a
-      // lone title / already-paginated cover does not gain a blank page.
+      // styles: (1) image captions; (2) detect missing caption/source slots and insert
+      // red placeholders; (3) cancel the page break before the FIRST H1.
       workingDocXml = formatCaptions(workingDocXml)
+      const { xml: docWithPlaceholders, pending: detected } = detectAndInsertPlaceholders(workingDocXml)
+      workingDocXml = docWithPlaceholders
+      pending = detected
+      if (pending.length > 0) {
+        console.log(`[processFormatting] ${projectId} missing inputs detected: ${pending.map(p => p.id).join(', ')}`)
+      }
       workingDocXml = suppressFirstHeadingPageBreak(workingDocXml)
     }
 
@@ -286,22 +298,37 @@ export async function processFormatting(projectId: string): Promise<void> {
       console.error(`[processFormatting] pdf export failed for ${projectId} (non-fatal):`, err)
     }
 
-    // 7. Stamp complete (frontend gates download on status === 'complete')
-    const { error: updError } = await supabase
-      .from('projects')
-      .update({
-        processed_file_path: processedPath,
-        status: 'complete',
-        completed_at: new Date().toISOString(),
-      })
-      .eq('id', projectId)
-    if (updError) throw new Error(`status update failed: ${updError.message}`)
+    // 7. Stamp status — needs_input when placeholders were inserted, complete otherwise.
+    //    Frontend gates download on status === 'complete'; 'needs_input' shows overlays.
+    if (pending.length > 0) {
+      const { error: updError } = await supabase
+        .from('projects')
+        .update({
+          processed_file_path: processedPath,
+          status: 'needs_input',
+          pending_inputs: pending,
+        })
+        .eq('id', projectId)
+      if (updError) throw new Error(`status update failed: ${updError.message}`)
+      console.log(`[processFormatting] ${projectId} -> needs_input (${pending.length} placeholder(s))`)
+    } else {
+      const { error: updError } = await supabase
+        .from('projects')
+        .update({
+          processed_file_path: processedPath,
+          status: 'complete',
+          completed_at: new Date().toISOString(),
+          pending_inputs: null,
+        })
+        .eq('id', projectId)
+      if (updError) throw new Error(`status update failed: ${updError.message}`)
 
-    // 8. Notify (non-fatal)
-    try {
-      await sendProjectReadyEmail(projectId)
-    } catch (err) {
-      console.error(`[processFormatting] email failed for ${projectId} (non-fatal):`, err)
+      // 8. Notify (non-fatal)
+      try {
+        await sendProjectReadyEmail(projectId)
+      } catch (err) {
+        console.error(`[processFormatting] email failed for ${projectId} (non-fatal):`, err)
+      }
     }
 
     console.log(`[processFormatting] done: ${projectId} -> ${processedPath} (total ${since(startedAt)})`)

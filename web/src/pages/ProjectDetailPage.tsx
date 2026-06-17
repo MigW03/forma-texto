@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, createPortal } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, FileText, Download } from 'lucide-react'
+import { ArrowLeft, FileText, Download, Trash2 } from 'lucide-react'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { renderAsync } from 'docx-preview'
@@ -14,6 +14,13 @@ import { normalizeStatus, STATUS_BADGE_VARIANT } from '../lib/status'
 import type { GuidelineId } from '../lib/guidelines'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+
+interface PendingInputFE {
+  id: string
+  kind: 'figure-caption' | 'figure-source' | 'table-caption' | 'table-source'
+  ordinal: number
+  insertedAt: number
+}
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -30,6 +37,7 @@ interface ProjectDetail {
   page_count: number
   selected_pages: number[] | null
   created_at: string
+  pending_inputs: PendingInputFE[] | null
 }
 
 function formatDate(iso: string): string {
@@ -381,12 +389,28 @@ const DOCX_PAGE_STYLES = `
   }
 `
 
-function DocxViewer({ url, fileName, zoom, pageBreakLabel }: { url: string; fileName: string; zoom: number; pageBreakLabel: string }) {
+function DocxViewer({
+  url,
+  fileName,
+  zoom,
+  pageBreakLabel,
+  onRendered,
+  children,
+}: {
+  url: string
+  fileName: string
+  zoom: number
+  pageBreakLabel: string
+  onRendered?: (bodyEl: HTMLElement, outerEl: HTMLElement) => void
+  children?: React.ReactNode
+}) {
   const outerRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const styleRef = useRef<HTMLDivElement>(null)
   const [loadError, setLoadError] = useState(false)
   const [loading, setLoading] = useState(true)
+  const onRenderedRef = useRef(onRendered)
+  onRenderedRef.current = onRendered
 
   useEffect(() => {
     const body = bodyRef.current
@@ -397,6 +421,7 @@ function DocxViewer({ url, fileName, zoom, pageBreakLabel }: { url: string; file
     let cancelled = false
     body.replaceChildren()
     style.replaceChildren()
+    setLoading(true)
     fetch(url)
       .then(r => r.blob())
       .then(blob => renderAsync(blob, body, style, DOCX_RENDER_OPTIONS))
@@ -425,6 +450,14 @@ function DocxViewer({ url, fileName, zoom, pageBreakLabel }: { url: string; file
         override.textContent = DOCX_PAGE_STYLES
         style.appendChild(override)
         setLoading(false)
+        if (outerRef.current && bodyRef.current) {
+          // Settle layout before scanning placeholder positions
+          requestAnimationFrame(() => {
+            if (!cancelled && outerRef.current && bodyRef.current) {
+              onRenderedRef.current?.(bodyRef.current, outerRef.current)
+            }
+          })
+        }
       })
       .catch(() => { if (!cancelled) { setLoadError(true); setLoading(false) } })
     return () => { cancelled = true }
@@ -445,6 +478,7 @@ function DocxViewer({ url, fileName, zoom, pageBreakLabel }: { url: string; file
         <div ref={styleRef} />
         <div ref={bodyRef} className="docx-body" />
       </div>
+      {children}
     </div>
   )
 }
@@ -474,28 +508,40 @@ export default function ProjectDetailPage() {
   const [scrolled, setScrolled] = useState(false)
   const viewerWrapRef = useRef<HTMLDivElement>(null)
 
+  // needs_input state
+  const [pendingInputs, setPendingInputs] = useState<PendingInputFE[]>([])
+  const [fills, setFills] = useState<Record<string, string>>({})
+  const [savingId, setSavingId] = useState<string | null>(null)
+  const [removeTarget, setRemoveTarget] = useState<PendingInputFE | null>(null)
+  const [removeConfirming, setRemoveConfirming] = useState(false)
+  const [overlayPositions, setOverlayPositions] = useState<{ id: string; top: number }[]>([])
+  const docxBodyRef = useRef<HTMLElement | null>(null)
+  const docxOuterRef = useRef<HTMLElement | null>(null)
+
   useEffect(() => {
     if (!id) return
     supabase
       .from('projects')
-      .select('id, title, original_file_name, original_file_path, processed_file_path, references_pages, selected_pages, services, guideline, status, page_count, created_at')
+      .select('id, title, original_file_name, original_file_path, processed_file_path, references_pages, selected_pages, services, guideline, status, page_count, created_at, pending_inputs')
       .eq('id', id)
       .single()
       .then(async ({ data, error }) => {
         if (error || !data) { setNotFound(true); setLoading(false); return }
         setProject(data as ProjectDetail)
+        if (data.pending_inputs) setPendingInputs(data.pending_inputs as PendingInputFE[])
         setZoom(data.original_file_name.toLowerCase().endsWith('.docx') ? DOCX_ZOOM_DEFAULT : ZOOM_DEFAULT)
         const pdfPath = pdfPathFor(data.processed_file_path)
+        const canSee = data.processed_file_path && (data.status === 'complete' || data.status === 'needs_input')
         const [origSigned, procSigned, pdfSigned] = await Promise.all([
           data.original_file_path
             ? supabase.storage.from('projects').createSignedUrl(data.original_file_path, 3600)
             : Promise.resolve({ data: null }),
-          data.processed_file_path
-            ? supabase.storage.from('projects').createSignedUrl(data.processed_file_path, 3600)
+          canSee
+            ? supabase.storage.from('projects').createSignedUrl(data.processed_file_path!, 3600)
             : Promise.resolve({ data: null }),
           // The PDF export may be absent (older projects, or LibreOffice failed) —
           // a missing object just errors and we leave the button hidden.
-          pdfPath
+          pdfPath && data.status === 'complete'
             ? supabase.storage.from('projects').createSignedUrl(pdfPath, 3600)
             : Promise.resolve({ data: null }),
         ])
@@ -522,10 +568,20 @@ export default function ProjectDetailPage() {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'projects', filter: `id=eq.${id}` },
         async (payload) => {
-          const updated = payload.new as ProjectDetail
-          setProject((prev) => prev ? { ...prev, status: updated.status, processed_file_path: updated.processed_file_path } : prev)
-          if (updated.processed_file_path && updated.status === 'complete') {
-            const pdfPath = pdfPathFor(updated.processed_file_path)
+          const updated = payload.new as ProjectDetail & { pending_inputs?: PendingInputFE[] }
+          setProject((prev) => prev ? {
+            ...prev,
+            status: updated.status,
+            processed_file_path: updated.processed_file_path,
+            pending_inputs: updated.pending_inputs ?? null,
+          } : prev)
+          if (updated.pending_inputs) {
+            setPendingInputs(updated.pending_inputs)
+          } else if (updated.status === 'complete') {
+            setPendingInputs([])
+          }
+          if (updated.processed_file_path && (updated.status === 'complete' || updated.status === 'needs_input')) {
+            const pdfPath = updated.status === 'complete' ? pdfPathFor(updated.processed_file_path) : null
             const [proc, pdf] = await Promise.all([
               supabase.storage.from('projects').createSignedUrl(updated.processed_file_path, 3600),
               pdfPath
@@ -568,13 +624,113 @@ export default function ProjectDetailPage() {
   const isPdf = nameLower.endsWith('.pdf')
   const isDocx = nameLower.endsWith('.docx')
   const totalCost = project.services.reduce((sum, s) => sum + calcPrice(s, project.page_count), 0)
-  const canDownloadProcessed = !!processedFileUrl && project.status === 'complete'
-  const previewUrl = canDownloadProcessed ? processedFileUrl : fileUrl
+  const canSeeProcessed = !!processedFileUrl && (status === 'complete' || status === 'needs_input')
+  const canDownloadProcessed = !!processedFileUrl && status === 'complete'
+  const previewUrl = canSeeProcessed ? processedFileUrl : fileUrl
   const pdfDownloadName = project.original_file_name.replace(/\.docx$/i, '') + '.pdf'
   const selectedPages = project.selected_pages ?? []
   const referencesPages = project.references_pages ?? []
 
+  const scanPlaceholders = useCallback(() => {
+    const body = docxBodyRef.current
+    const outer = docxOuterRef.current
+    if (!body || !outer || pendingInputs.length === 0) return
+    const outerRect = outer.getBoundingClientRect()
+    const scrollTop = outer.scrollTop
+
+    const matched: { top: number }[] = []
+    const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT)
+    let node: Text | null
+    while ((node = walker.nextNode() as Text | null)) {
+      if ((node.textContent ?? '').includes('[inserir')) {
+        const el = node.parentElement
+        if (el) {
+          const rect = el.getBoundingClientRect()
+          matched.push({ top: rect.top - outerRect.top + scrollTop })
+        }
+      }
+    }
+    const sortedPending = [...pendingInputs].sort((a, b) => a.insertedAt - b.insertedAt)
+    const positions = sortedPending.map((p, i) =>
+      matched[i] ? { id: p.id, top: matched[i].top } : null
+    ).filter(Boolean) as { id: string; top: number }[]
+    setOverlayPositions(positions)
+  }, [pendingInputs])
+
+  const handleDocxRendered = useCallback((bodyEl: HTMLElement, outerEl: HTMLElement) => {
+    docxBodyRef.current = bodyEl
+    docxOuterRef.current = outerEl
+    setTimeout(scanPlaceholders, 50)
+  }, [scanPlaceholders])
+
+  useEffect(() => { scanPlaceholders() }, [scanPlaceholders])
+
+  const callFillApi = useCallback(async (payload: { fills?: Record<string, string>; removals?: string[] }) => {
+    const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`${apiUrl}/api/processing/fill-content`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session?.access_token ?? ''}`,
+      },
+      body: JSON.stringify({ projectId: id, ...payload }),
+    })
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? 'request failed') }
+    return res.json() as Promise<{ ok: boolean; remaining: number }>
+  }, [id])
+
+  const refreshProcessedUrl = useCallback(async () => {
+    if (!project?.processed_file_path) return
+    const { data } = await supabase.storage.from('projects').createSignedUrl(project.processed_file_path, 3600)
+    if (data?.signedUrl) setProcessedFileUrl(data.signedUrl)
+  }, [project?.processed_file_path])
+
+  const handleSave = useCallback(async (inputId: string) => {
+    const text = fills[inputId]?.trim()
+    if (!text) return
+    setSavingId(inputId)
+    try {
+      const result = await callFillApi({ fills: { [inputId]: text } })
+      const newPending = pendingInputs.filter(p => p.id !== inputId)
+      setPendingInputs(newPending)
+      setProject(prev => prev ? {
+        ...prev,
+        pending_inputs: newPending.length > 0 ? newPending : null,
+        status: result.remaining === 0 ? 'complete' : 'needs_input',
+      } : prev)
+      setFills(prev => { const n = { ...prev }; delete n[inputId]; return n })
+      await refreshProcessedUrl()
+    } catch (err) {
+      console.error('fill failed:', err)
+    } finally {
+      setSavingId(null)
+    }
+  }, [fills, pendingInputs, callFillApi, refreshProcessedUrl])
+
+  const handleRemoveConfirm = useCallback(async () => {
+    if (!removeTarget) return
+    setRemoveConfirming(true)
+    try {
+      const result = await callFillApi({ removals: [removeTarget.id] })
+      const newPending = pendingInputs.filter(p => p.id !== removeTarget.id)
+      setPendingInputs(newPending)
+      setProject(prev => prev ? {
+        ...prev,
+        pending_inputs: newPending.length > 0 ? newPending : null,
+        status: result.remaining === 0 ? 'complete' : 'needs_input',
+      } : prev)
+      await refreshProcessedUrl()
+    } catch (err) {
+      console.error('remove failed:', err)
+    } finally {
+      setRemoveConfirming(false)
+      setRemoveTarget(null)
+    }
+  }, [removeTarget, pendingInputs, callFillApi, refreshProcessedUrl])
+
   return (
+    <>
     <div className="flex h-[calc(100vh-4rem)]">
       {/* Viewer top bar — back button · version label · zoom controls */}
       <div
@@ -589,8 +745,8 @@ export default function ProjectDetailPage() {
         </Link>
 
         <span className="text-muted/40 select-none shrink-0">·</span>
-        <span className={`text-xs shrink-0 px-2.5 py-1 rounded-lg border transition-colors duration-150 ${canDownloadProcessed ? 'text-forest' : 'text-muted'} ${scrolled ? 'bg-white border-border' : 'bg-transparent border-transparent'}`}>
-          {canDownloadProcessed ? t('project.viewingFinal') : t('project.viewingOriginal')}
+        <span className={`text-xs shrink-0 px-2.5 py-1 rounded-lg border transition-colors duration-150 ${canSeeProcessed ? 'text-forest' : 'text-muted'} ${scrolled ? 'bg-white border-border' : 'bg-transparent border-transparent'}`}>
+          {canSeeProcessed ? t('project.viewingFinal') : t('project.viewingOriginal')}
         </span>
 
         <div className="flex-1" />
@@ -613,18 +769,70 @@ export default function ProjectDetailPage() {
             zoom={zoom}
           />
         ) : previewUrl && isDocx ? (
-          <DocxViewer url={previewUrl} fileName={project.original_file_name} zoom={zoom} pageBreakLabel={t('project.pageBreak')} />
+          <DocxViewer
+            url={previewUrl}
+            fileName={project.original_file_name}
+            zoom={zoom}
+            pageBreakLabel={t('project.pageBreak')}
+            onRendered={handleDocxRendered}
+          >
+            {status === 'needs_input' && overlayPositions.map(({ id, top }) => {
+              const inp = pendingInputs.find(p => p.id === id)
+              if (!inp) return null
+              const labelKey = inp.kind === 'figure-caption' ? 'fillIn.figureCaption'
+                : inp.kind === 'figure-source' ? 'fillIn.figureSource'
+                : inp.kind === 'table-caption' ? 'fillIn.tableCaption'
+                : 'fillIn.tableSource'
+              const phKey = inp.kind.endsWith('-source') ? 'fillIn.placeholder.source' : 'fillIn.placeholder.caption'
+              const isSaving = savingId === id
+              return (
+                <div
+                  key={id}
+                  style={{ position: 'absolute', top, right: 12, width: 248 }}
+                  className="bg-white border border-orange-200 rounded-xl shadow-sm p-3 flex flex-col gap-2"
+                >
+                  <span className="text-xs font-medium text-orange-700 leading-tight">
+                    {t(`project.${labelKey}`, { n: inp.ordinal })}
+                  </span>
+                  <input
+                    type="text"
+                    value={fills[id] ?? ''}
+                    onChange={e => setFills(prev => ({ ...prev, [id]: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSave(id) }}
+                    placeholder={t(`project.${phKey}`)}
+                    className="text-xs text-ink border border-border rounded-lg px-2.5 py-1.5 outline-none focus:border-forest transition-colors w-full"
+                  />
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => handleSave(id)}
+                      disabled={isSaving || !fills[id]?.trim()}
+                      className="flex-1 text-xs font-medium bg-ink text-[#F0EEE8] rounded-lg px-2 py-1.5 hover:bg-ink/90 transition-colors disabled:opacity-40"
+                    >
+                      {isSaving ? t('project.fillIn.saving') : t('project.fillIn.save')}
+                    </button>
+                    <button
+                      onClick={() => setRemoveTarget(inp)}
+                      className="w-7 h-7 flex items-center justify-center rounded-lg text-muted hover:text-red-600 hover:bg-red-50 transition-colors shrink-0"
+                      aria-label={t('project.fillIn.removeButton')}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </DocxViewer>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8">
             <div className="w-14 h-14 rounded-2xl bg-white border border-border flex items-center justify-center">
               <FileText size={24} className="text-muted" strokeWidth={1.5} />
             </div>
             <p className="text-sm text-muted max-w-xs">{t('project.noPreview')}</p>
-            {(canDownloadProcessed || fileUrl) && (
+            {(canSeeProcessed || fileUrl) && (
               <Button asChild variant="outline">
-                <a href={(canDownloadProcessed ? processedFileUrl : fileUrl)!} download={project.original_file_name}>
+                <a href={(canSeeProcessed ? processedFileUrl : fileUrl)!} download={project.original_file_name}>
                   <Download size={14} />
-                  {canDownloadProcessed ? t('project.downloadFinalFile') : t('project.downloadFile')}
+                  {canSeeProcessed ? t('project.downloadFinalFile') : t('project.downloadFile')}
                 </a>
               </Button>
             )}
@@ -680,10 +888,10 @@ export default function ProjectDetailPage() {
 
         {(canDownloadProcessed || fileUrl) && (
           <div className="px-6 pb-6 mt-auto shrink-0 flex flex-col gap-2">
-            <Button asChild className="w-full">
-              <a href={(canDownloadProcessed ? processedFileUrl : fileUrl)!} download={project.original_file_name}>
+            <Button asChild className="w-full" disabled={!canDownloadProcessed}>
+              <a href={canDownloadProcessed ? processedFileUrl! : '#'} download={canDownloadProcessed ? project.original_file_name : undefined}>
                 <Download size={14} />
-                {canDownloadProcessed ? t('project.downloadFinalFile') : t('project.downloadFile')}
+                {t('project.downloadFinalFile')}
               </a>
             </Button>
             {canDownloadProcessed && processedPdfUrl && (
@@ -694,7 +902,7 @@ export default function ProjectDetailPage() {
                 </a>
               </Button>
             )}
-            {canDownloadProcessed && fileUrl && (
+            {fileUrl && (
               <Button asChild variant="tertiary" className="w-full">
                 <a href={fileUrl} download={project.original_file_name}>
                   <Download size={14} />
@@ -706,6 +914,34 @@ export default function ProjectDetailPage() {
         )}
       </div>
     </div>
+
+    {/* Remove confirmation modal */}
+    {removeTarget && createPortal(
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm px-4">
+        <div className="bg-white rounded-2xl border border-border shadow-lg max-w-sm w-full p-6 flex flex-col gap-4">
+          <h2 className="text-base font-semibold text-ink">{t('project.fillIn.removeConfirm.title')}</h2>
+          <p className="text-sm text-muted leading-relaxed">{t('project.fillIn.removeConfirm.body')}</p>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => setRemoveTarget(null)}
+              disabled={removeConfirming}
+              className="text-sm font-medium text-muted hover:text-ink px-4 py-2 rounded-xl transition-colors"
+            >
+              {t('project.fillIn.removeConfirm.cancel')}
+            </button>
+            <button
+              onClick={handleRemoveConfirm}
+              disabled={removeConfirming}
+              className="text-sm font-medium bg-red-600 text-white px-4 py-2 rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50"
+            >
+              {removeConfirming ? '…' : t('project.fillIn.removeConfirm.confirm')}
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+    </>
   )
 }
 
