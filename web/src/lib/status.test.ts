@@ -5,6 +5,7 @@ describe('normalizeStatus', () => {
   it('passes through the known statuses', () => {
     expect(normalizeStatus('pending')).toBe('pending')
     expect(normalizeStatus('processing')).toBe('processing')
+    expect(normalizeStatus('needs_input')).toBe('needs_input')
     expect(normalizeStatus('complete')).toBe('complete')
   })
 
@@ -22,6 +23,7 @@ describe('STATUS_BADGE_VARIANT', () => {
     expect(STATUS_BADGE_VARIANT).toEqual({
       pending: 'default',
       processing: 'processing',
+      needs_input: 'needs_input',
       complete: 'complete',
     })
   })

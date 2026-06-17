@@ -33,8 +33,8 @@ Deeper docs (keep these as the real source of truth):
 ## Current status
 
 - **Branch:** `feature/docx-page-detection` — lauda-based billing migration + pipeline improvements. All changes committed.
-- **Build:** not verified on this branch yet (`npm run build` in `web/` to confirm).
-- **Tests:** server **167** passing (3 AI evals skipped); web tests not re-run after lauda changes.
+- **Build:** web production build **verified green (2026-06-17)** (`npm run build` in `web/`).
+- **Tests:** server **179** passing (3 AI evals skipped); web **32** passing.
 - **Working:** auth, onboarding flow, checkout (Stripe), dashboard, project detail/viewer,
   the DOCX formatting pipeline Steps A/B/C/D (both AI passes: reference reformatting + headings),
   and the server-side proofreading pass (Step P) — proofreading is no longer on n8n.
@@ -48,6 +48,10 @@ Deeper docs (keep these as the real source of truth):
 - **Step C** (AI reference reformatting) — **built, unit-tested, and confirmed live (2026-06-17)**. Returns `[{ i, segments }]`; deterministic code renders runs and splices over each entry, keeping Step B's `<w:pPr>`. Behind `AI_FORMATTING_ENABLED`. Bold renders correctly in the output `.docx` on a real upload.
 - **Step D** (AI heading reclassification) — built, tested, and confirmed working live.
 - **Step E** (re-zip / upload / stamp / email) — built.
+- **Image sizing** (deterministic) — built, unit-tested. `imageLayout.ts` `formatImages`
+  scales every `<wp:inline>` image to 70% of the page content width (aspect preserved) and
+  centers its paragraph; floating `<wp:anchor>` images are skipped. Runs first in the final
+  deterministic touches (before captions). **No image in the test fixture yet** — live check pending.
 - **Image captions** (deterministic) — built, unit-tested. Around each image
   (`<w:drawing>`/`<w:pict>`/`<w:object>`) the pass styles the paragraph **before** as
   `Caption` only when it opens with a figure label (`Figura 1 —`, `Imagem 2 -`, `Gráfico 3:`)
@@ -109,6 +113,11 @@ Deeper docs (keep these as the real source of truth):
   The AI SDK marks these `isRetryable:false`, so `ai/retry.ts` (`withConnectionRetry`) wraps all
   three deciders' `generateObject` calls and retries only transport resets (backoff + jitter; reuses
   `AI_MAX_RETRIES`). HTTP-status retries stay the SDK's job.
+- **OpenRouter free tier = 50 requests/day, account-wide** (`429 "Rate limit exceeded:
+  free-models-per-day"`). Once exhausted, **every** AI pass (Step C/D/P) fails until the daily
+  reset — all are non-fatal, so the job still finishes (deterministic formatting + placeholders
+  run), but the doc gets no AI heading/reference/proofreading work. Add credits to OpenRouter
+  (unlocks 1000/day) or wait for reset. This does **not** affect `/fill-content` (no AI there).
 - **All model-authored text is sanitized before it touches XML.** A stray NUL byte from the model
   once corrupted a Step C reference splice and made the whole `document.xml` unparseable (viewer went
   blank). `formatting/xmlText.ts` `escapeXml` now strips XML-1.0-illegal control chars before escaping;
@@ -129,6 +138,7 @@ Deeper docs (keep these as the real source of truth):
 - **`detectAndInsertPlaceholders`** (`missingInputs.ts`) — runs after `formatCaptions()`. For every image/table block, checks caption slot (i-1) and source slot (i+1). If the neighbour has neither Caption style nor matching label text, inserts a red `<w:p>` placeholder (Caption style + `FF0000` color) at the correct position. Returns the modified XML + `PendingInput[]` (id, kind, ordinal, insertedAt). 18 unit tests.
 - **`needs_input` status** — if any placeholders were inserted, pipeline stamps `status: 'needs_input'`, stores `pending_inputs: PendingInput[]` on the project row, and skips the ready email. When all slots are resolved, stamps `complete` and sends the email.
 - **`POST /api/processing/fill-content`** — accepts `{ projectId, fills?, removals? }`. Downloads/transforms/re-uploads the processed DOCX; stamps `removed_inputs` (audit trail); flips to `complete` when no pending slots remain.
+- **`removeContent` behaviour** — when a user removes a caption/source, `removeContent` sets the block replacement to `''` (empty string), which causes `replaceBlocks` to **fully delete** the placeholder `<w:p>` from the XML. No empty paragraph is left behind. The test suite verifies this via block-count before/after.
 - **Frontend** — `needs_input` badge (orange), query includes `pending_inputs`, viewer opens the processed file in read-only mode, floating red-border input overlays appear aligned with each placeholder text node in the DocxViewer, each overlay has save + remove (with confirmation modal).
 - **DB columns needed** (run in Supabase console before deploying):
   ```sql
@@ -170,6 +180,65 @@ Deeper docs (keep these as the real source of truth):
 
 ## Session log
 
+### 2026-06-17 (later) — Image layout + needs_input UX polish
+
+Three improvements requested after the first interactive-input run.
+
+- **Inline image sizing & centering (server).** Word kept the source doc's absolute
+  image dimensions, so figures came in oversized. New deterministic `imageLayout.ts` →
+  `formatImages(documentXml, guideline)` scales every `<wp:inline>` image to 70% of the
+  page content width (`IMAGE_WIDTH_FRACTION`, aspect ratio preserved) and centers its
+  paragraph. Content width = `<w:pgSz>` width − guideline margins, in EMU (635 EMU/twip);
+  reads the primary `<wp:extent>`, computes one scale factor, applies it to every `cx`/`cy`
+  in the drawing. Floating `<wp:anchor>` images are left alone. Wired into `processFormatting`
+  first in the final-touches block (before `formatCaptions`). 8 unit tests. **No image in the
+  test fixture yet — live confirmation still pending** (same gap as captions).
+- **Overlay placement (frontend).** The fill-in inputs overlapped the page at higher zoom.
+  `scanPlaceholders` now anchors them in the right gutter outside the page (`.docx-wrapper`
+  right edge + 12px, scroll-adjusted) instead of `right: 12`.
+- **needs_input load/interaction speed (frontend).** Filling an input used to re-render the
+  whole document twice over: `refreshProcessedUrl` swapped the signed URL, and the realtime
+  UPDATE re-signed it again — each change to a stable file forced a full `docx-preview`
+  re-render. Now save/remove patch the rendered DOM in place (`placeholderEls` ref: replace
+  the red run's text + drop its color on fill; remove the closest `<p>` on remove), and the
+  realtime handler skips re-signing when `processed_file_path` is unchanged (`signedProcPathRef`).
+  `refreshProcessedUrl` removed.
+- **needs_input email (server).** When the pipeline stamps `needs_input`, it now emails the
+  user (same shape as the ready email) pointing them to fill in the missing captions/sources.
+  `sendProjectNeedsInputEmail` in `notify.ts` + template `emails/projectNeedsInput.ts`, called
+  non-fatally from `processFormatting` step 7. Fires only on first entry into `needs_input`;
+  the ready email still fires when the final slot is resolved.
+- **Fix — stale processed file after fill/remove (server + frontend).** Removing a caption
+  cleared the UI but the exported file kept the red placeholder and a reload brought it back.
+  Cause: the `needs_input` file is overwritten by `/fill-content`, but it was uploaded with
+  the default `cacheControl` (1h, keyed by path) and the client reused the **same signed URL**,
+  so download + reload fetched a **stale CDN copy** (the CDN keys by path, ignoring the token).
+  Fixes: both processed-file uploads now use `cacheControl: '0'`; **every processed signed URL is
+  cache-busted** (`bustCache` appends `&_cb=<ts>`) at all sign sites so a fetch can't resolve to a
+  stale copy; the frontend **reconciles** (re-fetch + re-sign) once the background queue drains on
+  completion/error; download is gated on `bgSaving === 0`. **Note:** files uploaded BEFORE this
+  change are still cached for up to 1h — reprocess a doc fresh to test. **Caveat:** `/fill-content`
+  doesn't regenerate the PDF export, so a completed-via-input project's `.pdf` is stale — harmless
+  now (LibreOffice not installed) but fix before PDF export ships.
+- **Fix — final-download button clickable in needs_input (frontend).** `<Button asChild disabled>`
+  is a no-op on an `<a>`; now a real disabled `<button>` renders until the project is `complete`
+  and not mid-save (`downloadLockedHint` tooltip, 3 locales).
+- **Fix — stale `insertedAt` after a removal (server).** A removal deletes a block, shifting
+  every later pending input's index up by one, but the endpoint kept the survivors' original
+  indices — so a second fill/remove on a multi-figure doc hit the wrong block. New
+  `shiftPendingAfterRemovals` recomputes survivor indices; `fill-content` applies it before
+  persisting `pending_inputs`. 4 tests. Single-placeholder docs were unaffected.
+- **Background fill/remove saves (frontend).** The `fill-content` server round-trip (download →
+  re-zip → re-upload the whole DOCX) no longer blocks the UI. `handleSave`/`handleRemoveConfirm`
+  apply the change optimistically (DOM + state + dismiss the overlay/modal instantly) and push
+  the API call onto a **serial queue** (`saveQueue` ref) — must be serial, since each call
+  reads-modifies-writes the same file and concurrent writes would clobber each other. A
+  "Salvando alterações…" pill shows while writes are in flight (`bgSaving`); a failed write
+  self-heals via `reloadProject`. New key `project.fillIn.savingBackground` (3 locales).
+- **Stale test fixed.** `web/src/lib/status.test.ts` predated the `needs_input` badge variant
+  and was failing; updated to include it.
+- Server suite **175 passing**, web **32 passing**, both `tsc` clean, web build green.
+
 ### 2026-06-17 — Interactive content completion (caption placeholders)
 
 Full `needs_input` lifecycle for missing ABNT captions and source lines on figures and tables.
@@ -182,6 +251,7 @@ Full `needs_input` lifecycle for missing ABNT captions and source lines on figur
 - **Frontend:** `status.ts` adds `needs_input` type + `normalizeStatus`; `badge.tsx` adds orange variant; `DashboardPage.tsx` includes `needs_input` in active count; `ProjectDetailPage.tsx` queries `pending_inputs`, gates download (preview OK, download only on `complete`), floating overlays in DocxViewer (inside scroll container, aligned with placeholder text via `getBoundingClientRect`), per-input save + remove buttons, confirmation modal with `createPortal`; three locale files updated with `dashboard.status.needs_input` and `project.fillIn.*` keys.
 - **`supabase_tables.md`** — documented `pending_inputs` and `removed_inputs` columns + SQL.
 - **DB migration required before deploying:** `ALTER TABLE projects ADD COLUMN pending_inputs jsonb; ALTER TABLE projects ADD COLUMN removed_inputs jsonb;`
+- **`removeContent` correction (end of session):** originally set the removed block to `'<w:p/>'` (left an empty paragraph). Changed to `''` so `replaceBlocks` deletes the block entirely — no empty paragraph remains in the final file. Related test updated (`'removes the placeholder block entirely'`, checks `blockCount - 1` and no `[inserir legenda]` text; untargeted-placeholder test updated to use `toContain` instead of stale `insertedAt` index).
 - Server suite **167 passing**, `tsc` clean both sides.
 
 ### 2026-06-16 (later 2) — Full-flow hardening + PDF export

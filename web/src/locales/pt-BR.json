@@ -194,6 +194,7 @@
     "viewingOriginal": "Visualizando arquivo original",
     "downloadFile": "Baixar arquivo",
     "downloadFinalFile": "Baixar Arquivo Final",
+    "downloadLockedHint": "Preencha as informações necessárias para liberar o arquivo final",
     "downloadFinalPdf": "Baixar PDF Final",
     "downloadOriginalFile": "Baixar arquivo original",
     "pageBreak": "Quebra de página",
@@ -205,6 +206,8 @@
       "tableSource": "Fonte da Tabela {{n}}",
       "save": "Salvar",
       "saving": "Salvando…",
+      "savingBackground": "Salvando alterações…",
+      "saveError": "Não foi possível salvar — tente novamente",
       "placeholder": {
         "caption": "ex: Figura 1 — Evolução histórica de...",
         "source": "ex: Fonte: elaborado pelo autor (2024)"

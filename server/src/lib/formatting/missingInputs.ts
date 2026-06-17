@@ -204,6 +204,24 @@ export function fillContent(
 }
 
 /**
+ * After some placeholders are removed (each deletes one block), the surviving
+ * pending inputs' `insertedAt` indices shift up — every block after a deleted one
+ * moves down by one. Recompute each survivor's index so it still points at its
+ * paragraph in the re-saved document. `fills` don't change block count, so only
+ * removals matter. Returns a new array (input order preserved).
+ */
+export function shiftPendingAfterRemovals(
+  remaining: PendingInput[],
+  removedInsertedAts: number[],
+): PendingInput[] {
+  if (removedInsertedAts.length === 0) return remaining
+  return remaining.map(p => ({
+    ...p,
+    insertedAt: p.insertedAt - removedInsertedAts.filter(pos => pos < p.insertedAt).length,
+  }))
+}
+
+/**
  * Replace placeholder paragraphs for the given ids with empty paragraphs
  * (the slot is intentionally removed by the user).
  */
@@ -216,7 +234,7 @@ export function removeContent(
   const byIndex = new Map<number, string>()
   for (const input of pendingInputs) {
     if (!removalSet.has(input.id)) continue
-    byIndex.set(input.insertedAt, '<w:p/>')
+    byIndex.set(input.insertedAt, '')
   }
   return byIndex.size > 0 ? replaceBlocks(documentXml, byIndex) : documentXml
 }

@@ -4,6 +4,7 @@ import { processFormatting } from '../lib/processFormatting'
 import {
   fillContent,
   removeContent,
+  shiftPendingAfterRemovals,
   unzipDocx,
   zipDocx,
   type PendingInput,
@@ -131,10 +132,11 @@ router.post('/fill-content', async (req: Request, res: Response) => {
 
   const docxBuf = zipDocx(files, { documentXml: workingDocXml, stylesXml })
 
-  // Upload back (upsert)
+  // Upload back (upsert). cacheControl '0' so the overwritten file isn't served
+  // from a stale CDN cache (Supabase caches by path for 1h by default).
   const { error: upErr } = await supabase.storage
     .from(BUCKET)
-    .upload(project.processed_file_path, docxBuf, { contentType: DOCX_MIME, upsert: true })
+    .upload(project.processed_file_path, docxBuf, { contentType: DOCX_MIME, upsert: true, cacheControl: '0' })
   if (upErr) {
     res.status(500).json({ error: 'failed to upload updated file' })
     return
@@ -144,7 +146,12 @@ router.post('/fill-content', async (req: Request, res: Response) => {
     ...Object.keys(fills ?? {}),
     ...(removals ?? []),
   ])
-  const remaining = pendingInputs.filter(p => !resolvedIds.has(p.id))
+  // Removals delete a block each, so the survivors' stored block indices shift up.
+  const removedInsertedAts = (removals ?? []).map(id => pendingInputs.find(p => p.id === id)!.insertedAt)
+  const remaining = shiftPendingAfterRemovals(
+    pendingInputs.filter(p => !resolvedIds.has(p.id)),
+    removedInsertedAts,
+  )
 
   const now = new Date().toISOString()
   const newRemovedInputs: RemovedInput[] = [

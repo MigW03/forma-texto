@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { detectAndInsertPlaceholders, fillContent, removeContent } from './missingInputs'
+import { detectAndInsertPlaceholders, fillContent, removeContent, shiftPendingAfterRemovals, type PendingInput } from './missingInputs'
 import { getBlocks, blockText } from './blocks'
 import { CAPTION_STYLE } from './guidelines'
 
@@ -171,22 +171,50 @@ describe('fillContent', () => {
 // ── removeContent ─────────────────────────────────────────────────────────────
 
 describe('removeContent', () => {
-  it('replaces placeholder with empty paragraph', () => {
+  it('removes the placeholder block entirely', () => {
     const xml = wrap(imagePara())
     const { xml: withPlaceholders, pending } = detectAndInsertPlaceholders(xml)
+    const blocksBefore = getBlocks(withPlaceholders).length
     const cap = pending.find(p => p.kind === 'figure-caption')!
     const removed = removeContent(withPlaceholders, pending, [cap.id])
-    const block = getBlocks(removed)[cap.insertedAt]
-    expect(block).toBe('<w:p/>')
+    expect(getBlocks(removed).length).toBe(blocksBefore - 1)
+    expect(removed).not.toContain('[inserir legenda]')
   })
 
   it('does not remove untargeted placeholders', () => {
     const xml = wrap(imagePara())
     const { xml: withPlaceholders, pending } = detectAndInsertPlaceholders(xml)
     const cap = pending.find(p => p.kind === 'figure-caption')!
-    const src = pending.find(p => p.kind === 'figure-source')!
     const removed = removeContent(withPlaceholders, pending, [cap.id])
-    const srcBlock = getBlocks(removed)[src.insertedAt]
-    expect(isRed(srcBlock)).toBe(true)
+    // Source placeholder text must still be present after only removing the caption
+    expect(removed).toContain('[inserir fonte]')
+  })
+})
+
+// ── shiftPendingAfterRemovals ──────────────────────────────────────────────────
+
+describe('shiftPendingAfterRemovals', () => {
+  const mk = (id: string, insertedAt: number): PendingInput =>
+    ({ id, kind: 'figure-source', ordinal: 1, insertedAt })
+
+  it('returns the same array when nothing was removed', () => {
+    const remaining = [mk('a', 3), mk('b', 7)]
+    expect(shiftPendingAfterRemovals(remaining, [])).toEqual(remaining)
+  })
+
+  it('shifts survivors after a removed block down by one', () => {
+    // caption@5 removed; source@7 must become @6 in the re-saved doc
+    const remaining = [mk('src', 7)]
+    expect(shiftPendingAfterRemovals(remaining, [5])).toEqual([mk('src', 6)])
+  })
+
+  it('leaves survivors before the removed block unchanged', () => {
+    const remaining = [mk('before', 3), mk('after', 9)]
+    expect(shiftPendingAfterRemovals(remaining, [5])).toEqual([mk('before', 3), mk('after', 8)])
+  })
+
+  it('subtracts one per earlier removal (multiple removals)', () => {
+    const remaining = [mk('x', 10)]
+    expect(shiftPendingAfterRemovals(remaining, [2, 6])).toEqual([mk('x', 8)])
   })
 })

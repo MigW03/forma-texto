@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { sendProjectReadyEmail } from './notify'
+import { sendProjectReadyEmail, sendProjectNeedsInputEmail } from './notify'
 import { docxToPdf } from './docxToPdf'
 import {
   unzipDocx,
@@ -7,6 +7,7 @@ import {
   applyStepA,
   formatReferences,
   formatCaptions,
+  formatImages,
   detectAndInsertPlaceholders,
   suppressFirstHeadingPageBreak,
   normalizeNumberingXml,
@@ -239,8 +240,10 @@ export async function processFormatting(projectId: string): Promise<void> {
       }
 
       // Final deterministic touches, after the AI passes so they see the final heading
-      // styles: (1) image captions; (2) detect missing caption/source slots and insert
-      // red placeholders; (3) cancel the page break before the FIRST H1.
+      // styles: (1) normalize inline image size/centering; (2) image captions; (3) detect
+      // missing caption/source slots and insert red placeholders; (4) cancel the page
+      // break before the FIRST H1.
+      workingDocXml = formatImages(workingDocXml, guideline)
       workingDocXml = formatCaptions(workingDocXml)
       const { xml: docWithPlaceholders, pending: detected } = detectAndInsertPlaceholders(workingDocXml)
       workingDocXml = docWithPlaceholders
@@ -276,11 +279,13 @@ export async function processFormatting(projectId: string): Promise<void> {
     const out = { documentXml: workingDocXml, stylesXml: workingStylesXml }
     const docxBuf = zipDocx(files, out)
 
-    // 6. Upload processed .docx
+    // 6. Upload processed .docx. cacheControl '0' because a needs_input file is
+    // overwritten in place by /fill-content — a cached copy (Supabase default is
+    // 1h, keyed by path) would make the user download/view a stale version.
     const processedPath = `${project.user_id}/${projectId}/processed/${processedName(project.original_file_name)}`
     const { error: upError } = await supabase.storage
       .from(BUCKET)
-      .upload(processedPath, docxBuf, { contentType: DOCX_MIME, upsert: true })
+      .upload(processedPath, docxBuf, { contentType: DOCX_MIME, upsert: true, cacheControl: '0' })
     if (upError) throw new Error(`upload failed: ${upError.message}`)
 
     // 6b. PDF export alongside the .docx (non-fatal — the .docx is the primary
@@ -311,6 +316,13 @@ export async function processFormatting(projectId: string): Promise<void> {
         .eq('id', projectId)
       if (updError) throw new Error(`status update failed: ${updError.message}`)
       console.log(`[processFormatting] ${projectId} -> needs_input (${pending.length} placeholder(s))`)
+
+      // Notify the user that input is needed (non-fatal, like the ready email).
+      try {
+        await sendProjectNeedsInputEmail(projectId)
+      } catch (err) {
+        console.error(`[processFormatting] needs-input email failed for ${projectId} (non-fatal):`, err)
+      }
     } else {
       const { error: updError } = await supabase
         .from('projects')
