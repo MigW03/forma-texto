@@ -558,7 +558,8 @@ export default function ProjectDetailPage() {
       .then(async ({ data, error }) => {
         if (error || !data) { setNotFound(true); setLoading(false); return }
         setProject(data as ProjectDetail)
-        if (data.pending_inputs) setPendingInputs(data.pending_inputs as PendingInputFE[])
+        const pend = (data.pending_inputs as PendingInputFE[] | null) ?? []
+        setPendingInputs(pend)
         setZoom(data.original_file_name.toLowerCase().endsWith('.docx') ? DOCX_ZOOM_DEFAULT : ZOOM_DEFAULT)
         const pdfPath = pdfPathFor(data.processed_file_path)
         const canSee = data.processed_file_path && (data.status === 'complete' || data.status === 'needs_input')
@@ -778,9 +779,6 @@ export default function ProjectDetailPage() {
       status: newPending.length > 0 ? 'needs_input' : 'complete',
     } : prev)
     setFills(prev => { const n = { ...prev }; delete n[inputId]; return n })
-    // When this resolves the last slot, reconcile once the write lands so the
-    // viewer/download show the real completed file (fresh signed URL, no stale cache).
-    if (newPending.length === 0) reconcileNeeded.current = true
     runInBackground(() => callFillApi({ fills: { [inputId]: text } }))
   }, [fills, pendingInputs, callFillApi, runInBackground])
 
@@ -801,9 +799,24 @@ export default function ProjectDetailPage() {
       status: newPending.length > 0 ? 'needs_input' : 'complete',
     } : prev)
     setRemoveTarget(null)
-    if (newPending.length === 0) reconcileNeeded.current = true
     runInBackground(() => callFillApi({ removals: [removedId] }))
   }, [removeTarget, pendingInputs, callFillApi, runInBackground])
+
+  // Creates a fresh short-lived signed URL at click time so the download always
+  // fetches the current file from storage, bypassing any CDN layer cache.
+  const handleDownloadProcessed = useCallback(async () => {
+    const path = project?.processed_file_path
+    const name = project?.original_file_name
+    if (!path || !name) return
+    const { data } = await supabase.storage.from('projects').createSignedUrl(path, 60)
+    if (!data?.signedUrl) return
+    const a = document.createElement('a')
+    a.href = data.signedUrl
+    a.download = name
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }, [project?.processed_file_path, project?.original_file_name])
 
   // ── Early returns (after all hooks) ─────────────────────────────────────────
 
@@ -914,7 +927,7 @@ export default function ProjectDetailPage() {
               return (
                 <div
                   key={id}
-                  style={{ position: 'absolute', top, left, width: 240 }}
+                  style={{ position: 'absolute', top, left, width: 240, zIndex: 10 }}
                   className="bg-white border border-orange-200 rounded-xl shadow-sm p-3 flex flex-col gap-2"
                 >
                   <span className="text-xs font-medium text-orange-700 leading-tight">
@@ -955,12 +968,19 @@ export default function ProjectDetailPage() {
             </div>
             <p className="text-sm text-muted max-w-xs">{t('project.noPreview')}</p>
             {(canSeeProcessed || fileUrl) && (
-              <Button asChild variant="outline">
-                <a href={(canSeeProcessed ? processedFileUrl : fileUrl)!} download={project.original_file_name}>
+              canSeeProcessed ? (
+                <Button variant="outline" onClick={handleDownloadProcessed}>
                   <Download size={14} />
-                  {canSeeProcessed ? t('project.downloadFinalFile') : t('project.downloadFile')}
-                </a>
-              </Button>
+                  {t('project.downloadFinalFile')}
+                </Button>
+              ) : (
+                <Button asChild variant="outline">
+                  <a href={fileUrl!} download={project.original_file_name}>
+                    <Download size={14} />
+                    {t('project.downloadFile')}
+                  </a>
+                </Button>
+              )
             )}
           </div>
         )}
@@ -1015,11 +1035,9 @@ export default function ProjectDetailPage() {
         {(canDownloadProcessed || fileUrl) && (
           <div className="px-6 pb-6 mt-auto shrink-0 flex flex-col gap-2">
             {canDownloadProcessed ? (
-              <Button asChild className="w-full">
-                <a href={processedFileUrl!} download={project.original_file_name}>
-                  <Download size={14} />
-                  {t('project.downloadFinalFile')}
-                </a>
+              <Button className="w-full" onClick={handleDownloadProcessed}>
+                <Download size={14} />
+                {t('project.downloadFinalFile')}
               </Button>
             ) : (
               // Genuinely disabled — `disabled` on an `asChild` <a> is a no-op, so we
