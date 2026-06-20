@@ -17,7 +17,8 @@ import {
   stepD,
   stepProofread,
   loadAiConfig,
-  applyPunctNorm,
+  applyPunctNormWithStats,
+  isNoopPunct,
   createHeadingDecider,
   createReferenceDecider,
   createProofreadDecider,
@@ -185,7 +186,6 @@ export async function processFormatting(projectId: string): Promise<void> {
       const a = applyStepA({ documentXml: workingDocXml, stylesXml: workingStylesXml, guideline }) // Step A
       workingStylesXml = a.stylesXml
       workingDocXml = formatReferences(a.documentXml, guideline, refInput) // Step B: references
-      workingDocXml = applyPunctNorm(workingDocXml) // Step Punct: deterministic text normalisation
       region = locateReferences(workingDocXml, refInput)
 
       // Steps C & D (AI), behind the formatting flag, each wrapped on its own so any AI
@@ -247,6 +247,27 @@ export async function processFormatting(projectId: string): Promise<void> {
       const { xml: docWithPlaceholders, pending: detected } = detectAndInsertPlaceholders(workingDocXml)
       workingDocXml = docWithPlaceholders
       pending = detected
+    }
+
+    // Proofreading. Step Punct (deterministic) always runs first when proofreading is
+    // requested — it normalises spacing/punctuation so the AI sees clean text and can
+    // focus on grammar. It belongs to the proofreading service, so a format-only doc
+    // keeps the author's punctuation untouched. Step P (AI) follows when enabled.
+    if (doProofreading) {
+      const punctStart = Date.now()
+      const { xml: punctXml, stats } = applyPunctNormWithStats(workingDocXml) // Step Punct
+      workingDocXml = punctXml
+      if (isNoopPunct(stats)) {
+        console.log(`[processFormatting] ${projectId} Step Punct: no changes (${since(punctStart)})`)
+      } else {
+        console.log(
+          `[processFormatting] ${projectId} Step Punct: ` +
+          `${stats.doubleSpaces} double-space, ${stats.spaceBeforePunct} space-before-punct, ` +
+          `${stats.spaceAfterPunct} space-after-punct, ${stats.smartQuotes} smart-quote, ` +
+          `${stats.ellipsis} ellipsis, ${stats.emDashes} em-dash, ${stats.nbsp} nbsp, ` +
+          `${stats.crossRunTrims} cross-run-trim (${since(punctStart)})`,
+        )
+      }
     }
 
     // Step P (AI proofreading) — runs after formatting so it sees the classified

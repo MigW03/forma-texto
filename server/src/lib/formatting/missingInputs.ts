@@ -3,6 +3,7 @@ import { CAPTION_STYLE } from './guidelines'
 import { getBlocks, isParagraph, blockText, replaceBlocks } from './blocks'
 import { isImageParagraph, FIGURE_LABEL_RE, SOURCE_LABEL_RE } from './captions'
 import { escapeXml } from './xmlText'
+import { normalizePlainText } from './applyPunctNorm'
 
 export type MissingInputKind =
   | 'figure_caption'
@@ -34,12 +35,61 @@ const PLACEHOLDER_TEXT: Record<MissingInputKind, string> = {
   table_source: '[inserir fonte]',
 }
 
+const isSourceKind = (kind: MissingInputKind) => kind === 'figure_source' || kind === 'table_source'
+
+// Source lines ("Fonte: …") get 1.5 line spacing; captions stay single. 360 twentieths
+// of a point = 1.5× (single = 240). Placed after <w:pStyle> per the OOXML pPr order.
+const SOURCE_SPACING = '<w:spacing w:line="360" w:lineRule="auto"/>'
+
 function buildPlaceholderXml(kind: MissingInputKind): string {
-  return `<w:p><w:pPr><w:pStyle w:val="${CAPTION_STYLE}"/></w:pPr><w:r><w:rPr><w:color w:val="FF0000"/></w:rPr><w:t>${PLACEHOLDER_TEXT[kind]}</w:t></w:r></w:p>`
+  const spacing = isSourceKind(kind) ? SOURCE_SPACING : ''
+  return `<w:p><w:pPr><w:pStyle w:val="${CAPTION_STYLE}"/>${spacing}</w:pPr><w:r><w:rPr><w:color w:val="FF0000"/></w:rPr><w:t>${PLACEHOLDER_TEXT[kind]}</w:t></w:r></w:p>`
 }
 
-function buildCaptionXml(text: string): string {
-  return `<w:p><w:pPr><w:pStyle w:val="${CAPTION_STYLE}"/></w:pPr><w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`
+function buildCaptionXml(text: string, kind: MissingInputKind): string {
+  const spacing = isSourceKind(kind) ? SOURCE_SPACING : ''
+  return `<w:p><w:pPr><w:pStyle w:val="${CAPTION_STYLE}"/>${spacing}</w:pPr><w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`
+}
+
+/** ABNT label word for each caption kind. */
+const CAPTION_LABEL: Record<MissingInputKind, string> = {
+  figure_caption: 'Figura',
+  table_caption: 'Tabela',
+  figure_source: 'Fonte',
+  table_source: 'Fonte',
+}
+
+// A label the user may have typed at the start of a caption — any casing, optional
+// number (incl. sub-numbers like "3.1") and trailing separator. Stripped so we can
+// rebuild it canonically with the correct word, number, and em-dash.
+const LEADING_CAPTION_LABEL = /^\s*(?:figura|tabela|quadro|gráfico|grafico|imagem|fig)\.?\s*\d*(?:[.\-–—]\d+)*\s*[-–—:.]*\s*/i
+// A "Fonte" prefix the user may have typed, any casing + optional separator.
+const LEADING_SOURCE_LABEL = /^\s*fonte\s*[:\-–—]?\s*/i
+
+/** Uppercase the first letter (Unicode-aware), leave the rest untouched. */
+function capitalizeFirst(s: string): string {
+  return s.replace(/^(\p{L})/u, (_m, c: string) => c.toUpperCase())
+}
+
+/**
+ * Clean a user-typed caption/source before it goes into the document. Applies the
+ * deterministic text rules (`normalizePlainText` — spacing, smart quotes, em dash,
+ * etc.), then rebuilds the ABNT label canonically:
+ *  - captions → `Figura N — Descrição` / `Tabela N — Descrição`, with **N forced to the
+ *    figure/table's true sequential ordinal** (so a user who retypes "3" for the 4th
+ *    figure gets "Figura 4"); the description's first letter is capitalised.
+ *  - sources → `Fonte: …`, first letter capitalised.
+ * The label the user may have typed (any casing/number) is stripped and replaced.
+ */
+export function normalizeInputText(rawText: string, kind: MissingInputKind, ordinal: number): string {
+  const text = normalizePlainText(rawText.trim())
+  if (kind === 'figure_source' || kind === 'table_source') {
+    const rest = capitalizeFirst(text.replace(LEADING_SOURCE_LABEL, '').trim())
+    return rest ? `Fonte: ${rest}` : 'Fonte:'
+  }
+  const label = CAPTION_LABEL[kind]
+  const rest = capitalizeFirst(text.replace(LEADING_CAPTION_LABEL, '').trim())
+  return rest ? `${label} ${ordinal} — ${rest}` : `${label} ${ordinal}`
 }
 
 interface InsertEntry { kind: MissingInputKind; ordinal: number }
@@ -164,7 +214,7 @@ export function finalizeInputs(
   for (const fill of fills) {
     const p = byId.get(fill.id)
     if (!p) continue
-    byIndex.set(p.insertedAt, buildCaptionXml(fill.text))
+    byIndex.set(p.insertedAt, buildCaptionXml(normalizeInputText(fill.text, p.kind, p.ordinal), p.kind))
   }
 
   for (const id of removals) {

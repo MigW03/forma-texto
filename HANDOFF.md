@@ -6,7 +6,7 @@
 > bottom, and adjust **Open work** as things land. Keep it short and current —
 > deep reference lives in the docs linked below, not here.
 
-**Last updated:** 2026-06-19 (later 6)
+**Last updated:** 2026-06-20
 
 ---
 
@@ -32,9 +32,9 @@ Deeper docs (keep these as the real source of truth):
 
 ## Current status
 
-- **Branch:** `feature/docx-page-detection` — lauda-based billing migration + pipeline improvements. All changes committed.
+- **Branch:** `feature/docx-page-detection` — lauda-based billing migration + pipeline improvements. The botched-merge fix is committed (`0641594`); the 2026-06-20 deterministic-text/interactive-input work is **uncommitted in the working tree** (see session log).
 - **Build:** web production build **verified green (2026-06-17)** (`npm run build` in `web/`).
-- **Tests:** server **173** passing (3 AI evals skipped); web **32** passing.
+- **Tests:** server **224** passing (3 AI evals skipped); web **32** passing.
 - **Working:** auth, onboarding flow, checkout (Stripe), dashboard, project detail/viewer,
   the DOCX formatting pipeline Steps A/B/C/D (both AI passes: reference reformatting + headings),
   and the server-side proofreading pass (Step P) — proofreading is no longer on n8n.
@@ -68,6 +68,14 @@ Deeper docs (keep these as the real source of truth):
   (every H1 starts a new page), but `suppressFirstHeadingPageBreak` cancels it on the **first**
   H1 via an inline `<w:pageBreakBefore w:val="false"/>` override. Runs after the AI heading pass
   (the first H1 may be one Step D promoted). Avoids a lone-title page / blank page after a cover.
+- **Step Punct** (deterministic punctuation normalisation) — `applyPunctNorm`. Runs as the **first
+  stage of the proofreading service**, before the AI pass, so the model sees clean text and only does
+  grammar. Belongs to proofreading, not formatting (a format-only doc keeps the author's punctuation).
+  Rules: collapse double spaces, remove space-before-punctuation, **add missing space-after-punctuation**
+  (period only before an uppercase letter, to spare URLs/numbers; comma/semicolon/colon before any
+  letter), **smart/curly quotes**, ellipsis → `…`, **spaced em dash** (skips numeric ranges), and a
+  **non-breaking space between a number and its unit** (`10 km`). `applyPunctNormWithStats` returns
+  per-rule counts; `processFormatting` logs them (`Step Punct: … space-after-punct, … smart-quote, …`).
 - **Step P** (AI proofreading) — built, unit-tested, and **validated live on the free model**.
   Fixes grammar, punctuation, spelling, verb-tense consistency, and ABNT in-text citation
   casing without changing meaning, the title, the references, or intentional run formatting.
@@ -102,15 +110,16 @@ Deeper docs (keep these as the real source of truth):
   falling back to `AI_MODEL` when unset (resolved in `config.ts` → `headingModel`/`referenceModel`/
   `proofreadModel`; the "calling model" logs print the per-step slug). Config-file default is
   `nemotron-3-super-...:free`; **current `.env`: `AI_MODEL=nemotron-3-ultra-550b-a55b:free`
-  (Step D), `AI_REFERENCES_MODEL=nvidia/nemotron-3-nano-30b-a3b:free` (Step C),
-  `AI_PROOFREAD_MODEL=nemotron-3-nano-30b-a3b:free` (Step P)** — ultra for headings, nano for
-  references and proofreading. `AI_MAX_TOKENS=8192` and `AI_MAX_CHARS_PER_CHUNK=3000` —
+  (Step D), `AI_REFERENCES_MODEL=nvidia/nemotron-3-super-120b-a12b:free` (Step C),
+  `AI_PROOFREAD_MODEL=nemotron-3-nano-30b-a3b:free` (Step P)** — ultra for headings, super for
+  references, nano for proofreading. **Only Step D (heading classification) actually needs ultra;
+  super is enough for Step C references.** `AI_MAX_TOKENS=8192` and `AI_MAX_CHARS_PER_CHUNK=3000` —
   reasoning models need the larger token budget or JSON truncates mid-response. **Step P has its
   own token budget** `AI_PROOFREAD_MAX_TOKENS` (default 4096) so proofreading generations are
   shorter (faster, fewer mid-stream resets) without starving Step C/D.
-  **Watch nano on Step C and Step P:** it's small (30B/3B active) — if reference reformatting or
-  proofreading quality degrades, bump to super or ultra. Nano works on Step C now that
-  `sanitizeControlChars` (added 2026-06-19) handles its occasional control-char JSON output.
+  **Never use nano for Step C:** it over-reasons (7k+ reasoning tokens on a single reference entry)
+  and corrupts the JSON → `NoObjectGeneratedError` (incidents 2026-06-19/06-20). Nano is fine for
+  Step P, which makes direct text edits rather than structured JSON.
 - **Free models drop the socket mid-response** (`ECONNRESET`/"terminated", `200` then body killed).
   The AI SDK marks these `isRetryable:false`, so `ai/retry.ts` (`withConnectionRetry`) wraps all
   three deciders' `generateObject` calls and retries only transport resets (backoff + jitter; reuses
@@ -132,7 +141,8 @@ Deeper docs (keep these as the real source of truth):
   the top of `repairDecisions` so the entire repair chain works on clean text. Since `referencesDecider`
   imports `repairDecisions` from `headingDecider`, this fixes both Step C and Step D. The root cause
   (nano over-reasons on Step C — 7290 reasoning tokens for 1 entry, leaving ~661 tokens of corrupted
-  output) is also fixed: `AI_REFERENCES_MODEL` is now set to ultra in `.env`.
+  output) is also fixed: `AI_REFERENCES_MODEL` is set to **super** in `.env` (super handles Step C;
+  ultra is reserved for Step D headings).
 - **Gated live evals** for the AI path (no spend in CI), e.g. for Step D:
   `cd server && set -a; . ./.env; set +a; RUN_AI_EVALS=1 npx vitest run src/lib/formatting/stepD.eval.test.ts`.
   Step C has a sibling `stepC.eval.test.ts`, but its fixture page flags (`refInput`) are a
@@ -168,6 +178,12 @@ Deeper docs (keep these as the real source of truth):
       container (`apt-get install libreoffice-writer fonts-liberation`) or a Gotenberg sidecar
       (HTTP-wrapped LibreOffice — would swap `docxToPdf.ts`'s shell-out for a `GOTENBERG_URL` call).
       No host chosen yet. The export is non-fatal, so prod runs fine without it until decided.
+- [ ] **Missing-file recovery flow** (in PLAN.md). A payment can succeed but the project row get
+      `original_file_path: null` — the upload lives in volatile module memory (`file-store.ts`) and a
+      payment-redirect reload (PIX/3DS) or a manual refresh wipes it before `handleSuccess` runs. The
+      pipeline then aborts at its guard. Build: detect this case, email the user to re-upload (no
+      re-charge — our fault), accept the re-upload, stamp the path, re-trigger. Root-cause fix
+      (upload before payment + persist the path string in `sessionStorage`) deferred.
 - [ ] File auto-deletion cron (`projects.delete_files_at` is set but nothing acts on it).
 - [ ] Optional: add tests for the DOCX slicer (`docx-slice.ts`); extend test fixture with an image
       to confirm `formatCaptions` end-to-end on a real `.docx`.
@@ -175,6 +191,44 @@ Deeper docs (keep these as the real source of truth):
 ---
 
 ## Session log
+
+### 2026-06-20 — Botched-merge fix, deterministic punctuation, interactive-input polish
+
+Several pipeline fixes and improvements. **Only the first (the merge fix) is committed (`0641594`);
+the rest is uncommitted in the working tree.**
+
+- **Fixed a botched merge of the formatting pipeline** (committed). The `fc26444` merge had mixed two
+  branch rewrites of `processFormatting.ts`, leaving undeclared variables (`workingDocXml`,
+  `workingStylesXml`, `pending`, `region`), a stray `a.documentXml` that threw `ReferenceError: a is
+  not defined` at runtime, and a `formatting/index.ts` barrel missing the `missingInputs` re-exports
+  (`detectAndInsertPlaceholders`, `finalizeInputs`, `PendingInput`). Restored the coherent transform
+  flow from the feature parent and re-added the barrel exports.
+- **Step Punct moved into the proofreading service.** `applyPunctNorm` was wired into the *formatting*
+  branch, so proofread-only docs never got it and format-only docs had their punctuation altered.
+  It now runs at the **start of the proofreading step, before the AI pass** — see pipeline state above.
+  Confirmed the AI receives the normalised text (Step P extracts its input from the same post-Punct XML).
+- **Expanded the Step Punct rule set + added per-rule logging.** Added space-after-punctuation, smart
+  quotes, spaced em dash, and number+unit non-breaking space, each with guards against false positives
+  (URLs, decimals, numeric ranges, times). `applyPunctNormWithStats` returns counts; `processFormatting`
+  logs them. +13 unit tests.
+- **Interactive-input (caption fill) polish** in `missingInputs.ts`:
+  - New `normalizeInputText(text, kind, ordinal)` cleans the user's typed caption/source before it goes
+    into the doc. It runs the deterministic text rules (`normalizePlainText`), fixes the label casing
+    (`figura`/`imagem`/`quadro` → `Figura`/`Tabela`), uses an em dash, and capitalises the first letter.
+  - **Auto-numbering:** the figure/table number is **forced to the slot's true sequential ordinal**
+    (already tracked in `PendingInput.ordinal`), so a user who retypes "3" for the 4th figure gets
+    "Figura 4". Figures and tables count on separate sequences.
+  - **Source lines now use 1.5 line spacing** (`<w:spacing w:line="360" w:lineRule="auto"/>`); captions
+    stay single. Scoped to the interactive-input source line — pre-existing `Fonte:` lines styled by the
+    deterministic `formatCaptions` pass are still single (open question if those should match).
+- **`AI_REFERENCES_MODEL` corrected to super** in `.env` (was pinned to nano despite the in-file warning).
+  Nano over-reasons and corrupts Step C JSON; super is enough. Only Step D headings need ultra.
+- **PLAN.md:** added a new task — **missing-file recovery flow** (a paid order whose `original_file_path`
+  is null because the volatile in-memory file was lost on a payment-redirect reload → email the user to
+  re-upload, never re-charge); updated the model notes (references = super).
+
+Server suite **224 passing** (3 evals skipped), `tsc` clean both sides. Restart the server to pick up
+the `.env` model change.
 
 ### 2026-06-19 (later 6) — Viewer load: diagnosed (region) + CDN caching fix
 

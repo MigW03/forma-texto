@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyPunctNorm } from './applyPunctNorm'
+import { applyPunctNorm, applyPunctNormWithStats } from './applyPunctNorm'
 
 // Minimal helpers to build document XML fragments for tests
 const wt = (text: string, space = false) =>
@@ -111,6 +111,126 @@ describe('applyPunctNorm — pass 1: intra-run normalization', () => {
     const input = doc(wp(`<w:r><w:t></w:t></w:r>`))
     const output = applyPunctNorm(input)
     expect(output).toContain(`<w:t></w:t>`)
+  })
+})
+
+describe('applyPunctNorm — pass 1: missing space AFTER punctuation', () => {
+  it('inserts a space after a period before an uppercase letter', () => {
+    const input = doc(wp(wr('Fim da frase.Início da próxima')))
+    const output = applyPunctNorm(input)
+    expect(output).toContain(wt('Fim da frase. Início da próxima'))
+  })
+
+  it('inserts a space after ! and ? before an uppercase letter', () => {
+    expect(applyPunctNorm(doc(wp(wr('Atenção!Cuidado'))))).toContain(wt('Atenção! Cuidado'))
+    expect(applyPunctNorm(doc(wp(wr('Sério?Não'))))).toContain(wt('Sério? Não'))
+  })
+
+  it('inserts a space after a comma/semicolon/colon before any letter', () => {
+    expect(applyPunctNorm(doc(wp(wr('casa,carro'))))).toContain(wt('casa, carro'))
+    expect(applyPunctNorm(doc(wp(wr('item1;item2'))))).toContain(wt('item1; item2'))
+    expect(applyPunctNorm(doc(wp(wr('Nota:importante'))))).toContain(wt('Nota: importante'))
+  })
+
+  it('does NOT split a lowercase URL domain (period before lowercase)', () => {
+    const input = doc(wp(wr('researchgate.net/publication')))
+    expect(applyPunctNorm(input)).toContain(wt('researchgate.net/publication'))
+  })
+
+  it('does NOT split a thousands/decimal number (period before digit)', () => {
+    expect(applyPunctNorm(doc(wp(wr('R$ 1.000,00'))))).toContain(wt('R$ 1.000,00'))
+    expect(applyPunctNorm(doc(wp(wr('versão 3.14'))))).toContain(wt('versão 3.14'))
+  })
+
+  it('does NOT add a space inside a time or ratio (colon before digit)', () => {
+    expect(applyPunctNorm(doc(wp(wr('às 10:30'))))).toContain(wt('às 10:30'))
+    expect(applyPunctNorm(doc(wp(wr('proporção 2:1'))))).toContain(wt('proporção 2:1'))
+  })
+
+  it('leaves an abbreviation like p.ex. untouched (period before lowercase)', () => {
+    expect(applyPunctNorm(doc(wp(wr('p.ex. isto'))))).toContain(wt('p.ex. isto'))
+  })
+
+  it('counts the after-space fixes in stats', () => {
+    const { stats } = applyPunctNormWithStats(doc(wp(wr('Fim.Início e casa,carro'))))
+    expect(stats.spaceAfterPunct).toBe(2)
+  })
+
+  it('is idempotent for the after-space rule', () => {
+    const input = doc(wp(wr('Fim.Início')))
+    const once = applyPunctNorm(input)
+    expect(applyPunctNorm(once)).toBe(once)
+  })
+})
+
+describe('applyPunctNorm — pass 1: smart (curly) quotes', () => {
+  it('converts straight double quotes to opening/closing curly quotes', () => {
+    const input = doc(wp(wr('Ele disse "olá" a todos')))
+    expect(applyPunctNorm(input)).toContain(wt('Ele disse “olá” a todos'))
+  })
+
+  it('converts an apostrophe between letters to a curly apostrophe', () => {
+    const input = doc(wp(wr("pingo d'água")))
+    expect(applyPunctNorm(input)).toContain(wt('pingo d’água'))
+  })
+
+  it('does not touch quotes in <w:t> attributes (only text content)', () => {
+    const input = doc(wp(`<w:r><w:t xml:space="preserve">"citação"</w:t></w:r>`))
+    const output = applyPunctNorm(input)
+    expect(output).toContain('xml:space="preserve"')
+    expect(output).toContain('>“citação”<')
+  })
+
+  it('counts each converted quote', () => {
+    const { stats } = applyPunctNormWithStats(doc(wp(wr('"a" "b"'))))
+    expect(stats.smartQuotes).toBe(4)
+  })
+})
+
+describe('applyPunctNorm — pass 1: em dash spacing', () => {
+  it('converts a spaced hyphen between words to a spaced em dash', () => {
+    expect(applyPunctNorm(doc(wp(wr('texto - mais texto'))))).toContain(wt('texto — mais texto'))
+  })
+
+  it('converts a spaced double hyphen to an em dash', () => {
+    expect(applyPunctNorm(doc(wp(wr('texto -- texto'))))).toContain(wt('texto — texto'))
+  })
+
+  it('leaves a numeric range (digits both sides) as a hyphen', () => {
+    expect(applyPunctNorm(doc(wp(wr('entre 2010 - 2020'))))).toContain(wt('entre 2010 - 2020'))
+  })
+
+  it('does not touch a hyphenated word (no surrounding spaces)', () => {
+    expect(applyPunctNorm(doc(wp(wr('bem-vindo'))))).toContain(wt('bem-vindo'))
+  })
+})
+
+describe('applyPunctNorm — pass 1: non-breaking space (number + unit)', () => {
+  const NBSP = ' '
+
+  it('inserts a non-breaking space between a number and a unit', () => {
+    expect(applyPunctNorm(doc(wp(wr('cerca de 10 km')))))
+      .toContain(wt(`cerca de 10${NBSP}km`))
+  })
+
+  it('handles a multi-letter unit (min) before a longer match (m)', () => {
+    expect(applyPunctNorm(doc(wp(wr('durou 5 min')))))
+      .toContain(wt(`durou 5${NBSP}min`))
+  })
+
+  it('does NOT treat an ordinary word as a unit', () => {
+    expect(applyPunctNorm(doc(wp(wr('há 10 anos'))))).toContain(wt('há 10 anos'))
+    expect(applyPunctNorm(doc(wp(wr('5 metros'))))).toContain(wt('5 metros'))
+  })
+
+  it('counts the non-breaking-space insertions', () => {
+    const { stats } = applyPunctNormWithStats(doc(wp(wr('10 km e 5 kg'))))
+    expect(stats.nbsp).toBe(2)
+  })
+
+  it('is idempotent for the unit rule', () => {
+    const once = applyPunctNorm(doc(wp(wr('10 km'))))
+    expect(applyPunctNorm(once)).toBe(once)
   })
 })
 
