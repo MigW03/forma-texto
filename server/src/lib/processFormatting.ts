@@ -1,23 +1,35 @@
 import { supabase } from './supabase'
 import { sendProjectReadyEmail } from './notify'
+import { docxToPdf } from './docxToPdf'
 import {
   unzipDocx,
   zipDocx,
   applyStepA,
   formatReferences,
+  formatCaptions,
+  formatImages,
+  suppressFirstHeadingPageBreak,
+  normalizeNumberingXml,
   locateReferences,
+  autoLocateReferences,
   resolveGuideline,
   stepC,
   stepD,
+  stepProofread,
   loadAiConfig,
   applyPunctNorm,
   createHeadingDecider,
   createReferenceDecider,
+  createProofreadDecider,
   pageForBlock,
   getBlocks,
   blockText,
+  detectAndInsertPlaceholders,
   type HeadingDecision,
   type ReferenceDecision,
+  type ProofreadDecision,
+  type ReferenceRegion,
+  type PendingInput,
 } from './formatting'
 
 /** Tier label for a heading role, e.g. 'h2' → 'H2', 'title' → 'TITLE'. */
@@ -60,8 +72,29 @@ function logReferences(projectId: string, decisions: ReferenceDecision[]): void 
   }
 }
 
+/**
+ * Log each proofreading change as `#i: "before" → "after"` so the edits are visible
+ * without opening the docx. `before` is read from the pre-proofread document.
+ */
+function logProofread(projectId: string, preDocXml: string, decisions: ProofreadDecision[]): void {
+  console.log(`[processFormatting] ${projectId} Step P: ${decisions.length} paragraph(s) changed by the model`)
+  const blocks = getBlocks(preDocXml)
+  for (const d of decisions) {
+    const before = blockText(blocks[d.i] ?? '').slice(0, 80)
+    const after = d.text.slice(0, 80)
+    console.log(`[Step P]   #${d.i}: "${before}" → "${after}"`)
+  }
+}
+
 const BUCKET = 'projects'
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+const PDF_MIME = 'application/pdf'
+
+/** Human-readable elapsed time since `start` (ms epoch), e.g. "1.4s" / "850ms". */
+const since = (start: number) => {
+  const ms = Date.now() - start
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`
+}
 
 /** Make a storage-safe filename: strip accents, collapse whitespace, force .docx. */
 function processedName(originalFileName: string | null): string {
@@ -74,13 +107,16 @@ function processedName(originalFileName: string | null): string {
 }
 
 /**
- * Server-side DOCX formatting pipeline — Step A (deterministic) only.
- * Download → unzip → apply Step A → re-zip → upload → stamp `complete` → email.
+ * Server-side DOCX pipeline for the formatting and/or proofreading services.
+ * Download → unzip → [formatting: A→B→C→D + captions/page-break] → [proofreading:
+ * Step P] → re-zip → upload → stamp `complete` → email. Each service runs only when
+ * requested; proofreading-only projects skip the formatting passes entirely.
  *
  * Designed to be called fire-and-forget; never throws past this boundary.
  * On failure it restores `status='pending'` so the project can be retried.
  */
 export async function processFormatting(projectId: string): Promise<void> {
+  const startedAt = Date.now()
   try {
     // 1. Fetch project
     const { data: project, error: fetchError } = await supabase
@@ -94,10 +130,12 @@ export async function processFormatting(projectId: string): Promise<void> {
       return
     }
 
-    // 2. Guard — only run when formatting is requested
+    // 2. Guard — run when formatting and/or proofreading is requested
     const services: string[] = project.services ?? []
-    if (!services.includes('formatting')) {
-      console.warn(`[processFormatting] ${projectId} has no 'formatting' service — skipping`)
+    const doFormatting = services.includes('formatting')
+    const doProofreading = services.includes('proofreading')
+    if (!doFormatting && !doProofreading) {
+      console.warn(`[processFormatting] ${projectId} has no 'formatting'/'proofreading' service — skipping`)
       return
     }
     if (!project.original_file_path) {
@@ -120,7 +158,6 @@ export async function processFormatting(projectId: string): Promise<void> {
     // 5. Transform
     const guideline = resolveGuideline(project.guideline)
     const { files, documentXml, stylesXml } = unzipDocx(inputBuf)
-    const a = applyStepA({ documentXml, stylesXml, guideline }) // Step A: styles, overrides, margins
     const refInput = {
       selectedPages: project.selected_pages ?? [],
       referencePages: project.references_pages ?? [],
@@ -147,61 +184,119 @@ export async function processFormatting(projectId: string): Promise<void> {
       } else {
         // Step C: reformat each reference entry into the guideline citation format.
         try {
-          const result = await stepC(documentXmlAI, guideline, createReferenceDecider(aiCfg), region, {
+          const dStart = Date.now()
+          console.log(`[processFormatting] ${projectId} Step D: calling model (${aiCfg.headingModel})…`)
+          const result = await stepD(workingDocXml, guideline, createHeadingDecider(aiCfg), {
+            refStartIndex: region?.headingIdx ?? -1,
             maxChars: aiCfg.maxCharsPerChunk,
           })
-          documentXmlAI = result.documentXml
-          console.log(`[processFormatting] ${projectId} Step C: located ${region.entryIndices.length} entr(ies), reformatted ${result.decisions.length}`)
-          logReferences(projectId, result.decisions)
+          workingDocXml = result.documentXml
+          console.log(`[processFormatting] ${projectId} Step D: ${result.decisions.length} paragraph(s) classified (${since(dStart)})`)
+          logHeadings(projectId, workingDocXml, result.decisions, refInput.selectedPages)
         } catch (err) {
-          console.error(`[processFormatting] Step C failed for ${projectId} (non-fatal, keeping deterministic result):`, err)
+          console.error(`[processFormatting] Step D failed for ${projectId} (non-fatal, keeping deterministic result):`, err)
         }
       }
 
-      // Step D: reclassify headings typed as plain text.
+      // Final deterministic touches, after the AI passes so they see the final heading
+      // styles: (1) normalize inline image size/centering; (2) image captions;
+      // (3) cancel the page break before the FIRST H1.
+      workingDocXml = formatImages(workingDocXml, guideline)
+      workingDocXml = formatCaptions(workingDocXml)
+      workingDocXml = suppressFirstHeadingPageBreak(workingDocXml)
+      const { xml: docWithPlaceholders, pending: detected } = detectAndInsertPlaceholders(workingDocXml)
+      workingDocXml = docWithPlaceholders
+      pending = detected
+    }
+
+    // Step P (AI proofreading) — runs after formatting so it sees the classified
+    // headings and can batch by chapter. References are excluded by the located region
+    // when formatting ran, else auto-detected by heading text. Non-fatal: a failure
+    // keeps the prior result. Toggled independently via AI_PROOFREADING_ENABLED.
+    if (doProofreading && aiCfg.proofreadingEnabled) {
       try {
-        const result = await stepD(documentXmlAI, guideline, createHeadingDecider(aiCfg), {
-          refStartIndex: region?.headingIdx ?? -1,
+        const refStart = (region ?? autoLocateReferences(workingDocXml))?.headingIdx ?? -1
+        const pStart = Date.now()
+        const preDocXml = workingDocXml
+        console.log(`[processFormatting] ${projectId} Step P: calling model (${aiCfg.proofreadModel})…`)
+        const result = await stepProofread(workingDocXml, guideline, createProofreadDecider(aiCfg), {
+          refStartIndex: refStart,
           maxChars: aiCfg.maxCharsPerChunk,
         })
-        documentXmlAI = result.documentXml
-        logHeadings(projectId, documentXmlAI, result.decisions, refInput.selectedPages)
+        workingDocXml = result.documentXml
+        console.log(`[processFormatting] ${projectId} Step P: ${result.decisions.length} paragraph(s) corrected (${since(pStart)})`)
+        logProofread(projectId, preDocXml, result.decisions)
       } catch (err) {
-        console.error(`[processFormatting] Step D failed for ${projectId} (non-fatal, keeping deterministic result):`, err)
+        console.error(`[processFormatting] Step P failed for ${projectId} (non-fatal, keeping prior result):`, err)
       }
     }
 
-    const out = { documentXml: documentXmlAI, stylesXml: a.stylesXml }
+    const out = { documentXml: workingDocXml, stylesXml: workingStylesXml }
     const docxBuf = zipDocx(files, out)
 
-    // 6. Upload processed .docx
+    // 6. Upload processed .docx. cacheControl is a real TTL so the CDN can serve
+    // repeat views fast; staleness after an overwrite is handled client-side by
+    // keying the URL on `completed_at` (changes on every content write), not by
+    // disabling caching.
     const processedPath = `${project.user_id}/${projectId}/processed/${processedName(project.original_file_name)}`
     const { error: upError } = await supabase.storage
       .from(BUCKET)
-      .upload(processedPath, docxBuf, { contentType: DOCX_MIME, upsert: true })
+      .upload(processedPath, docxBuf, { contentType: DOCX_MIME, upsert: true, cacheControl: '3600' })
     if (upError) throw new Error(`upload failed: ${upError.message}`)
 
-    // 7. Stamp complete (frontend gates download on status === 'complete')
-    const { error: updError } = await supabase
-      .from('projects')
-      .update({
-        processed_file_path: processedPath,
-        status: 'complete',
-        completed_at: new Date().toISOString(),
-      })
-      .eq('id', projectId)
-    if (updError) throw new Error(`status update failed: ${updError.message}`)
-
-    // 8. Notify (non-fatal)
+    // 6b. PDF export alongside the .docx (non-fatal — the .docx is the primary
+    // deliverable; a missing/broken LibreOffice must not fail the whole job).
+    // Stored at the same path with a .pdf extension; the frontend derives it.
     try {
-      await sendProjectReadyEmail(projectId)
+      const pdfBuf = await docxToPdf(docxBuf)
+      const pdfPath = processedPath.replace(/\.docx$/i, '.pdf')
+      const { error: pdfUpError } = await supabase.storage
+        .from(BUCKET)
+        .upload(pdfPath, pdfBuf, { contentType: PDF_MIME, upsert: true })
+      if (pdfUpError) throw new Error(pdfUpError.message)
+      console.log(`[processFormatting] pdf export: ${projectId} -> ${pdfPath}`)
     } catch (err) {
-      console.error(`[processFormatting] email failed for ${projectId} (non-fatal):`, err)
+      console.error(`[processFormatting] pdf export failed for ${projectId} (non-fatal):`, err)
     }
 
-    console.log(`[processFormatting] done: ${projectId} -> ${processedPath}`)
+    // 7. Stamp status. If the pipeline detected missing captions/sources, stamp
+    // needs_input and store the pending list so the user can fill them. Otherwise
+    // stamp complete immediately and send the ready email.
+    if (pending.length > 0) {
+      const { error: updError } = await supabase
+        .from('projects')
+        .update({
+          processed_file_path: processedPath,
+          status: 'needs_input',
+          pending_inputs: pending,
+          completed_at: null,
+        })
+        .eq('id', projectId)
+      if (updError) throw new Error(`status update failed: ${updError.message}`)
+      console.log(`[processFormatting] ${projectId} → needs_input (${pending.length} placeholder(s))`)
+    } else {
+      const { error: updError } = await supabase
+        .from('projects')
+        .update({
+          processed_file_path: processedPath,
+          status: 'complete',
+          pending_inputs: null,
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', projectId)
+      if (updError) throw new Error(`status update failed: ${updError.message}`)
+
+      // 8. Notify (non-fatal)
+      try {
+        await sendProjectReadyEmail(projectId)
+      } catch (err) {
+        console.error(`[processFormatting] email failed for ${projectId} (non-fatal):`, err)
+      }
+    }
+
+    console.log(`[processFormatting] done: ${projectId} -> ${processedPath} (total ${since(startedAt)})`)
   } catch (err) {
-    console.error(`[processFormatting] FAILED ${projectId}:`, err)
+    console.error(`[processFormatting] FAILED ${projectId} (after ${since(startedAt)}):`, err)
     // restore to pending so it can be retried
     await supabase
       .from('projects')

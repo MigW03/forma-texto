@@ -24,7 +24,7 @@
     "fileLimit": "Até 50MB. O ficheiro é encriptado durante o envio.",
     "documentUrl": "URL do documento",
     "linksSupported": "Suportamos ligações do Google Docs, OneDrive ou Dropbox.",
-    "freeFirstPage": "Primeira página grátis — avaliação única, sem cartão",
+    "freeFirstPage": "Primeira lauda grátis — avaliação única, sem cartão",
     "startEditing": "Começar a editar"
   },
   "services": {
@@ -63,20 +63,20 @@
     "title2": "por tese.",
     "free": {
       "label": "Avaliação grátis",
-      "subtitle": "Uma página por nossa conta. Só uma vez.",
+      "subtitle": "Uma lauda por nossa conta. Só uma vez.",
       "features": [
-        "Uma página grátis, uma vez, em qualquer serviço",
+        "Uma lauda grátis, uma vez, em qualquer serviço",
         "Sem cartão de crédito",
         "Pré-visualização lado a lado"
       ],
-      "cta": "Experimentar uma página grátis"
+      "cta": "Experimentar uma lauda grátis"
     },
     "paid": {
       "label": "Por tese",
       "perDocument": "/ documento",
       "subtitle": "Pagamento único, tese inteira.",
       "features": [
-        "Até 200 páginas",
+        "Até 200 laudas",
         "Ambos os serviços incluídos",
         "Três trocas de norma",
         "Exportação .docx"
@@ -92,7 +92,7 @@
     },
     "signUp": {
       "title": "Crie a sua conta",
-      "subtitle": "A sua primeira página é grátis — só uma vez. Sem cartão.",
+      "subtitle": "A sua primeira lauda é grátis — só uma vez. Sem cartão.",
       "submit": "Criar conta"
     },
     "google": "Continuar com Google",
@@ -136,6 +136,7 @@
     "status": {
       "pending": "Em espera",
       "processing": "A processar",
+      "needs_input": "Aguardando resposta",
       "complete": "Pronto para revisão"
     },
     "time": {
@@ -154,21 +155,20 @@
     "stepDocument": "Adicione o seu documento",
     "guidelineLabel": "Escolha uma norma",
     "freeBadge": "Avaliação grátis",
-    "firstPage": "só a 1.ª página",
+    "firstPage": "só a 1.ª lauda",
     "perThesis": "por tese",
     "submit": "Enviar documento",
     "fetchingDocument": "A obter documento…",
-    "ctaSubtitle": "Avaliação única — a sua primeira página é por nossa conta.",
+    "ctaSubtitle": "Avaliação única — a sua primeira lauda é por nossa conta.",
     "fileCard": {
       "pages": "páginas",
       "pagesUnknown": "— páginas",
       "countingPages": "a contar páginas…",
+      "countingLaudas": "a contar laudas…",
+      "laudasUnknown": "— laudas",
       "replace": "Substituir",
       "invalidType": "Formato não suportado. Envie um documento Word (.docx).",
-      "docConvert": "O formato .doc antigo não é suportado. Converta o seu ficheiro para .docx antes de enviar.",
-      "pageCountUnavailable": "contagem de páginas indisponível",
-      "uncountableTitle": "Não foi possível ler a contagem de páginas deste ficheiro",
-      "uncountableBody": "Este documento não tem informação de páginas — provavelmente foi exportado do Google Docs ou convertido por outra ferramenta. Abra-o no Microsoft Word e guarde novamente, ou envie um PDF."
+      "docConvert": "O formato .doc antigo não é suportado. Converta o seu ficheiro para .docx antes de enviar."
     },
     "termsPrefix": "Concordo com os",
     "termsLink": "Termos de Serviço",
@@ -181,6 +181,22 @@
   "project": {
     "backToDashboard": "Voltar para documentos",
     "details": "Detalhes",
+    "inputs": {
+      "title": "Itens pendentes",
+      "figure_caption": "Legenda da Figura {{n}}",
+      "figure_source": "Fonte da Figura {{n}}",
+      "table_caption": "Legenda da Tabela {{n}}",
+      "table_source": "Fonte da Tabela {{n}}",
+      "remove": "Remover",
+      "restore": "Restaurar",
+      "finalize": "Guardar e finalizar",
+      "finalizing": "A guardar…",
+      "finalizeError": "Não foi possível guardar — tente novamente",
+      "placeholder_figure_caption": "Ex: Figura 1 — Gráfico de precipitação anual",
+      "placeholder_figure_source": "Fonte: …",
+      "placeholder_table_caption": "Ex: Tabela 1 — Resultados por região",
+      "placeholder_table_source": "Fonte: …"
+    },
     "fileName": "Ficheiro",
     "service": "Serviço",
     "status": "Estado",
@@ -189,11 +205,16 @@
     "referencesPages": "Páginas de referências",
     "cost": "Valor",
     "noPreview": "Pré-visualização não disponível para este formato.",
+    "previewError": "Não foi possível pré-visualizar este ficheiro.",
+    "loadingPreview": "A carregar documento…",
+    "loadingPreviewHint": "Documentos maiores podem demorar alguns segundos a carregar.",
     "viewingFinal": "A ver ficheiro final",
     "viewingOriginal": "A ver ficheiro original",
     "downloadFile": "Transferir ficheiro",
     "downloadFinalFile": "Transferir ficheiro final",
+    "downloadFinalPdf": "Transferir PDF final",
     "downloadOriginalFile": "Transferir ficheiro original",
+    "pageBreak": "Quebra de página",
     "notFound": "Projeto não encontrado.",
     "references": {
       "title": "Referências",
@@ -269,10 +290,27 @@
       "saved": "Guardado"
     }
   },
+  "laudas": {
+    "title": "Selecione as laudas",
+    "subtitle": "Cada lauda tem ~300 palavras. Escolha quais deseja que processemos.",
+    "listLabel": "Laudas",
+    "tip": "A lauda é a unidade padrão de ~300 palavras usada na precificação académica. Escolha as laudas que deseja processar.",
+    "unit": "lauda",
+    "lauda_one": "lauda",
+    "lauda_other": "laudas",
+    "wordCount": "{{n}} palavras",
+    "dividerLabel": "Lauda {{n}}",
+    "totalLaudas": "Total de laudas",
+    "selectedLaudas": "Laudas selecionadas",
+    "referencesAuto": "A secção de referências é detetada automaticamente pelo título."
+  },
   "pageSelection": {
     "title": "Selecione as páginas a processar",
     "subtitle": "Escolha quais páginas quer que trabalhemos. A sua primeira página é grátis.",
+    "titleDocx": "Reveja o seu documento",
+    "subtitleDocx": "O seu documento completo será processado.",
     "tip": "Clique nas páginas para as selecionar ou desmarcar. Mantenha Shift para selecionar um intervalo.",
+    "tipDocx": "Navegue pelo documento para o pré-visualizar. Todas as páginas serão processadas.",
     "summary": "Resumo",
     "totalPages": "Total de páginas",
     "selectedPages": "Páginas selecionadas",

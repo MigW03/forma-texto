@@ -14,7 +14,7 @@
  *    headings; it does not demote. A paragraph the model is unsure about defaults
  *    to `body` and is never touched.
  */
-import { getBlocks, blockText, isParagraph, blockDescriptor, setParagraphStyle, replaceBlocks, type BlockDescriptor } from './blocks'
+import { getBlocks, blockText, isParagraph, isListItem, blockDescriptor, setParagraphStyle, replaceBlocks, type BlockDescriptor } from './blocks'
 import { pageForBlock } from './references'
 import type { Guideline } from './guidelines'
 
@@ -74,7 +74,10 @@ export function chunkHeadings(
   const blocks = getBlocks(documentXml)
   const candidates = blocks
     .map((b, i) => ({ b, i }))
-    .filter(({ b, i }) => isParagraph(b) && blockText(b).length > 0 && (refStartIndex < 0 || i < refStartIndex))
+    // List items are never headings: a numbered list item ("1. Lorem ipsum") is
+    // indistinguishable from a numbered heading ("1. Introdução") by text alone,
+    // and promoting one breaks the list's numbering. Exclude them up front.
+    .filter(({ b, i }) => isParagraph(b) && !isListItem(b) && blockText(b).length > 0 && (refStartIndex < 0 || i < refStartIndex))
 
   // First non-empty paragraph on each page → a soft h1 cue the model can weigh.
   const pageOf = pageForBlock(documentXml)
@@ -125,6 +128,7 @@ export function applyHeadingDecisions(documentXml: string, decisions: HeadingDec
   blocks.forEach((b, i) => {
     const role = roleByIndex.get(i)
     if (!role || role === 'body') return // conservative: only promote, never demote
+    if (isListItem(b)) return // never promote a list item — would break its numbering
     byIndex.set(i, setParagraphStyle(b, ROLE_STYLE[role]))
   })
   return replaceBlocks(documentXml, byIndex)

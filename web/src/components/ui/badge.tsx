@@ -9,6 +9,7 @@ const badgeVariants = cva(
       variant: {
         default: 'bg-sand text-muted border-border',
         processing: 'bg-amber-50 text-amber-700 border-amber-200',
+        needs_input: 'bg-orange-50 text-orange-700 border-orange-200',
         complete: 'bg-forest/10 text-forest border-forest/20',
         service: 'bg-sand text-ink border-border',
       },

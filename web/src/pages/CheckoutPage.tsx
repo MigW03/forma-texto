@@ -12,8 +12,8 @@ import { calcPrice, trialDiscountBRL, formatBRL, type ServiceKey } from '../lib/
 import { useAuth } from '../lib/auth-context'
 import { supabase } from '../lib/supabase'
 import { getStoredFile } from '../lib/file-store'
-import { slicePdf } from '../lib/pdf-slice'
-import { sliceDocx } from '../lib/docx-slice'
+import { sliceDocxByLaudas } from '../lib/docx-slice'
+import { getLaudas, laudaBlockSet } from '../lib/laudas'
 import { ROUTES } from '../lib/routes'
 
 const SERVICE_LABELS: Record<ServiceKey, string> = {
@@ -164,7 +164,7 @@ function FreeOrderButton({
       <div className="flex items-start gap-3 rounded-xl bg-forest/[0.07] border border-forest/20 px-4 py-4">
         <Gift size={16} className="text-forest shrink-0 mt-0.5" />
         <p className="text-sm text-forest leading-relaxed">
-          Seu documento tem apenas 1 página. Com o período gratuito, você não paga nada agora.
+          Seu documento tem apenas 1 lauda. Com o período gratuito, você não paga nada agora.
         </p>
       </div>
 
@@ -191,12 +191,15 @@ function FreeOrderButton({
 
 interface CheckoutState {
   services: ServiceKey[]
+  /** Billed unit count = number of selected laudas. */
   pageCount: number
-  selectedPages?: number[]
+  /** Total laudas in the document (for record/display). */
+  laudaCount?: number
+  /** Selected lauda numbers (1-based). Slicing recomputes laudas from the file. */
+  selectedLaudas?: number[]
   guideline?: string
   fileName?: string | null
   title?: string
-  referencePages?: number[]
   formatReferences?: boolean
 }
 
@@ -244,9 +247,11 @@ export default function CheckoutPage() {
     sessionStorage.setItem(SESSION_KEY, JSON.stringify({
       services,
       pageCount,
-      selectedPages: state?.selectedPages ?? [],
+      laudaCount: state?.laudaCount,
+      selectedLaudas: state?.selectedLaudas ?? [],
       guideline: state?.guideline,
       fileName: state?.fileName,
+      formatReferences: state?.formatReferences,
     }))
 
     fetch(`${API_URL}/api/checkout/create-payment-intent`, {
@@ -271,25 +276,27 @@ export default function CheckoutPage() {
 
     try {
       const rawFile = getStoredFile()
-      const selectedPages = state?.selectedPages ?? []
+      const selectedLaudas = state?.selectedLaudas ?? []
+      const laudaCount = state?.laudaCount ?? 0
       const projectId = crypto.randomUUID()
       let storagePath: string | null = null
       const fileName = rawFile?.name ?? state?.fileName ?? null
 
-      // 1. Prepare the file to upload — slice to ALL selected pages (references included).
-      //    References are no longer split into a separate file; the server's Step B
-      //    detects the references section by heading text inside the single document.
-      const referencePages = state?.referencePages ?? []
-      const fileName2 = rawFile?.name.toLowerCase() ?? ''
-      const isDocxFile = fileName2.endsWith('.docx')
-      const isPdfFile = fileName2.endsWith('.pdf')
+      // 1. Prepare the file to upload — slice to the selected laudas (references
+      //    included). References stay inline; the server's Step B detects the
+      //    references section by heading text inside the single document.
+      // Laudas are recomputed from the file's XML here so the block indices match
+      // the slicer (the preview's lauda numbers map 1:1 by the same word boundaries).
+      // When all laudas are selected, skip slicing and upload the full file as-is.
+      const allSelected = laudaCount > 0 && selectedLaudas.length === laudaCount
       let fileToUpload: File | null = rawFile
-      if (rawFile && selectedPages.length > 0) {
+      if (rawFile && selectedLaudas.length > 0 && !allSelected) {
         try {
-          if (isPdfFile) fileToUpload = await slicePdf(rawFile, selectedPages)
-          else if (isDocxFile) fileToUpload = await sliceDocx(rawFile, selectedPages)
+          const xmlLaudas = await getLaudas(rawFile)
+          const keep = laudaBlockSet(xmlLaudas, selectedLaudas)
+          fileToUpload = await sliceDocxByLaudas(rawFile, keep)
         } catch (err) {
-          console.error('File slicing failed, uploading full file:', err)
+          console.error('Lauda slicing failed, uploading full file:', err)
         }
       }
 
@@ -326,11 +333,15 @@ export default function CheckoutPage() {
         services,
         guideline: state?.guideline ?? null,
         page_count: pageCount,
-        selected_pages: selectedPages.length > 0 ? selectedPages : null,
+        // Selected lauda numbers, kept for record/display (the file is already
+        // sliced to these laudas; the server does not re-slice).
+        selected_pages: selectedLaudas.length > 0 ? selectedLaudas : null,
         status: 'pending',
         original_file_name: fileName,
         original_file_path: storagePath,
-        references_pages: referencePages.length > 0 ? referencePages : null,
+        // Sentinel [0] tells the server to auto-detect the references heading by
+        // text. References are always located this way in lauda (continuous) mode.
+        references_pages: state?.formatReferences === true ? [0] : null,
         delete_files_at: deleteAt,
         title: state?.title?.trim() || fileName || null,
       })
@@ -338,9 +349,9 @@ export default function CheckoutPage() {
       if (projectError) {
         console.error('Project creation failed:', projectError)
       } else {
-        // 5. Trigger processing (fire-and-forget). Formatting runs on our server's
-        //    pipeline; proofreading-only projects still go to the n8n webhook.
-        if (services.includes('formatting')) {
+        // 5. Trigger processing (fire-and-forget). Formatting and proofreading both
+        //    run on our server's pipeline now (proofreading is no longer on n8n).
+        if (services.includes('formatting') || services.includes('proofreading')) {
           const token = (await supabase.auth.getSession()).data.session?.access_token
           fetch(`${API_URL}/api/processing/start`, {
             method: 'POST',
@@ -350,8 +361,6 @@ export default function CheckoutPage() {
             },
             body: JSON.stringify({ projectId }),
           }).catch(() => {})
-        } else {
-          fetch(`${API_URL}/api/checkout/notify`, { method: 'POST' }).catch(() => {})
         }
       }
     } catch (err) {
@@ -459,7 +468,7 @@ export default function CheckoutPage() {
               <div>
                 <p className="text-sm font-medium text-ink">{SERVICE_LABELS[s]}</p>
                 <p className="text-xs text-muted">
-                  {pageCount} {pageCount === 1 ? 'página' : 'páginas'}
+                  {pageCount} {pageCount === 1 ? 'lauda' : 'laudas'}
                 </p>
               </div>
               <span className={`text-sm font-semibold ${isFree ? 'line-through text-muted' : 'text-ink'}`}>
@@ -473,7 +482,7 @@ export default function CheckoutPage() {
             <div className="flex items-center justify-between text-forest">
               <div className="flex items-center gap-1.5">
                 <Gift size={13} />
-                <p className="text-sm">1 página grátis</p>
+                <p className="text-sm">1 lauda grátis</p>
               </div>
               <span className="text-sm font-semibold">−{formatBRL(trialDiscountBRL(services))}</span>
             </div>

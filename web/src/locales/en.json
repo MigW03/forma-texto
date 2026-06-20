@@ -24,7 +24,7 @@
     "fileLimit": "Up to 50MB. Your file is encrypted in transit.",
     "documentUrl": "Document URL",
     "linksSupported": "Google Docs, OneDrive, or Dropbox links are supported.",
-    "freeFirstPage": "First page free — one-time trial, no card required",
+    "freeFirstPage": "First lauda free — one-time trial, no card required",
     "startEditing": "Start editing"
   },
   "services": {
@@ -63,20 +63,20 @@
     "title2": "per thesis.",
     "free": {
       "label": "Free trial",
-      "subtitle": "One page on us. First and only.",
+      "subtitle": "One lauda on us. First and only.",
       "features": [
-        "One free page — one time, either service",
+        "One free lauda — one time, either service",
         "No credit card required",
         "Side-by-side preview"
       ],
-      "cta": "Try one page free"
+      "cta": "Try one lauda free"
     },
     "paid": {
       "label": "Per thesis",
       "perDocument": "/ document",
       "subtitle": "One payment, full thesis.",
       "features": [
-        "Up to 200 pages",
+        "Up to 200 laudas",
         "Both services included",
         "Three guideline switches",
         "Export .docx"
@@ -92,7 +92,7 @@
     },
     "signUp": {
       "title": "Create your account",
-      "subtitle": "Your first page is free — one time only. No card required.",
+      "subtitle": "Your first lauda is free — one time only. No card required.",
       "submit": "Create account"
     },
     "google": "Continue with Google",
@@ -136,6 +136,7 @@
     "status": {
       "pending": "In queue",
       "processing": "Processing",
+      "needs_input": "Needs your input",
       "complete": "Ready for review"
     },
     "time": {
@@ -154,21 +155,20 @@
     "stepDocument": "Add your document",
     "guidelineLabel": "Choose a guideline",
     "freeBadge": "Free trial",
-    "firstPage": "first page only",
+    "firstPage": "first lauda only",
     "perThesis": "per thesis",
     "submit": "Submit document",
     "fetchingDocument": "Fetching document…",
-    "ctaSubtitle": "One-time trial — your first page is on us.",
+    "ctaSubtitle": "One-time trial — your first lauda is on us.",
     "fileCard": {
       "pages": "pages",
       "pagesUnknown": "— pages",
       "countingPages": "counting pages…",
+      "countingLaudas": "counting laudas…",
+      "laudasUnknown": "— laudas",
       "replace": "Replace",
       "invalidType": "Unsupported file type. Please upload a Word document (.docx).",
-      "docConvert": "Old .doc format is not supported. Please convert your file to .docx before uploading.",
-      "pageCountUnavailable": "page count unavailable",
-      "uncountableTitle": "We couldn't read this file's page count",
-      "uncountableBody": "This document has no page information — it was likely exported from Google Docs or converted by another tool. Please open it in Microsoft Word and save it again, or upload a PDF instead."
+      "docConvert": "Old .doc format is not supported. Please convert your file to .docx before uploading."
     },
     "termsPrefix": "I agree to the",
     "termsLink": "Terms of Service",
@@ -189,12 +189,33 @@
     "referencesPages": "References pages",
     "cost": "Amount",
     "noPreview": "Preview not available for this file type.",
+    "previewError": "This file could not be previewed.",
+    "loadingPreview": "Loading document…",
+    "loadingPreviewHint": "Larger documents may take a few seconds to render.",
     "viewingFinal": "Viewing processed file",
     "viewingOriginal": "Viewing original file",
     "downloadFile": "Download file",
     "downloadFinalFile": "Download final file",
+    "downloadFinalPdf": "Download final PDF",
     "downloadOriginalFile": "Download original file",
+    "pageBreak": "Page break",
     "notFound": "Project not found.",
+    "inputs": {
+      "title": "Pending items",
+      "figure_caption": "Figure {{n}} caption",
+      "figure_source": "Figure {{n}} source",
+      "table_caption": "Table {{n}} caption",
+      "table_source": "Table {{n}} source",
+      "remove": "Remove",
+      "restore": "Restore",
+      "finalize": "Save & finalize",
+      "finalizing": "Saving…",
+      "finalizeError": "Could not save — please try again",
+      "placeholder_figure_caption": "e.g. Figure 1 — Chart showing annual rainfall",
+      "placeholder_figure_source": "Source: …",
+      "placeholder_table_caption": "e.g. Table 1 — Survey results by region",
+      "placeholder_table_source": "Source: …"
+    },
     "references": {
       "title": "References",
       "hasSection": "This document has a references section",
@@ -269,10 +290,27 @@
       "saved": "Saved"
     }
   },
+  "laudas": {
+    "title": "Select laudas to process",
+    "subtitle": "Each lauda is ~300 words. Choose which ones you want us to work on.",
+    "listLabel": "Laudas",
+    "tip": "A lauda is the standard ~300-word unit used for academic pricing. Pick the laudas you want processed.",
+    "unit": "lauda",
+    "lauda_one": "lauda",
+    "lauda_other": "laudas",
+    "wordCount": "{{n}} words",
+    "dividerLabel": "Lauda {{n}}",
+    "totalLaudas": "Total laudas",
+    "selectedLaudas": "Selected laudas",
+    "referencesAuto": "The references section is detected automatically by its heading."
+  },
   "pageSelection": {
     "title": "Select pages to process",
     "subtitle": "Choose which pages you want us to work on. Your first page is free.",
+    "titleDocx": "Review your document",
+    "subtitleDocx": "Your full document will be processed.",
     "tip": "Click pages to select or deselect them. Hold Shift to select a range.",
+    "tipDocx": "Scroll through your document to preview it. All pages will be processed.",
     "summary": "Summary",
     "totalPages": "Total pages",
     "selectedPages": "Selected pages",

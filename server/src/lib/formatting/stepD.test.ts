@@ -59,6 +59,17 @@ describe('chunkHeadings', () => {
   it('returns no chunks when there are no candidates', () => {
     expect(chunkHeadings('<w:document><w:body><w:p/></w:body></w:document>', 'abnt')).toEqual([])
   })
+
+  it('excludes list items so numbered list entries are never offered as heading candidates', () => {
+    // A numbered list item "1. Lorem" looks like a numbered heading by text alone.
+    const doc = `<w:document><w:body>` +
+      `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>1 INTRODUÇÃO</w:t></w:r></w:p>` +
+      `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr></w:pPr><w:r><w:t>1. Lorem ipsum</w:t></w:r></w:p>` +
+      `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr></w:pPr><w:r><w:t>2. Dolor sit amet</w:t></w:r></w:p>` +
+      `</w:body></w:document>`
+    const [chunk] = chunkHeadings(doc, 'abnt')
+    expect(chunk.blocks.map(b => b.i)).toEqual([0]) // the two list items (1, 2) are excluded
+  })
 })
 
 describe('applyHeadingDecisions', () => {
@@ -79,6 +90,14 @@ describe('applyHeadingDecisions', () => {
   it('never alters text content', () => {
     const out = applyHeadingDecisions(DOC, [{ i: 1, role: 'h1' }])
     expect(blockText(getBlocks(out)[1])).toBe('1 INTRODUÇÃO')
+  })
+
+  it('never promotes a list item even if a decision says so (numbering must survive)', () => {
+    const doc = `<w:document><w:body>` +
+      `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr></w:pPr><w:r><w:t>1. Lorem ipsum</w:t></w:r></w:p>` +
+      `</w:body></w:document>`
+    const out = applyHeadingDecisions(doc, [{ i: 0, role: 'h1' }])
+    expect(out).toBe(doc) // untouched: no pStyle injected, numPr intact
   })
 })
 

@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express'
 import { supabase } from '../lib/supabase'
 import { processFormatting } from '../lib/processFormatting'
+import { unzipDocx, zipDocx, finalizeInputs, type PendingInput } from '../lib/formatting'
+import { sendProjectReadyEmail } from '../lib/notify'
 
 const router = Router()
 
@@ -46,6 +48,115 @@ router.post('/start', async (req: Request, res: Response) => {
   // Fire-and-forget: in-process async job. Respond 202 right away.
   void processFormatting(projectId)
   res.status(202).json({ accepted: true, projectId })
+})
+
+const BUCKET = 'projects'
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+// POST /api/processing/finalize-inputs  { projectId, fills, removals }
+// Applies all pending caption fills and removals atomically, stamps complete, sends email.
+router.post('/finalize-inputs', async (req: Request, res: Response) => {
+  const { projectId, fills = [], removals = [] } = req.body as {
+    projectId?: string
+    fills?: { id: string; text: string }[]
+    removals?: string[]
+  }
+
+  if (!projectId) {
+    res.status(400).json({ error: 'projectId required' })
+    return
+  }
+
+  if (!(await authorize(req, projectId))) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return
+  }
+
+  const { data: project, error: fetchErr } = await supabase
+    .from('projects')
+    .select('id, user_id, processed_file_path, status, pending_inputs, original_file_name')
+    .eq('id', projectId)
+    .single()
+
+  if (fetchErr || !project) {
+    res.status(404).json({ error: 'project not found' })
+    return
+  }
+
+  if (project.status === 'complete') {
+    // Already finalized — idempotent success (retry-safe after a network hiccup)
+    res.json({ ok: true })
+    return
+  }
+  if (project.status !== 'needs_input') {
+    res.status(409).json({ error: `project status is '${project.status}', expected 'needs_input'` })
+    return
+  }
+
+  const pending = (project.pending_inputs ?? []) as PendingInput[]
+  const pendingIds = new Set(pending.map(p => p.id))
+
+  // All IDs in fills and removals must be known
+  const allIds = [...fills.map(f => f.id), ...removals]
+  const unknown = allIds.filter(id => !pendingIds.has(id))
+  if (unknown.length > 0) {
+    res.status(400).json({ error: `unknown pending input id(s): ${unknown.join(', ')}` })
+    return
+  }
+
+  // Every pending slot must be resolved (filled or removed)
+  const resolvedIds = new Set(allIds)
+  const unresolved = pending.filter(p => !resolvedIds.has(p.id))
+  if (unresolved.length > 0) {
+    res.status(400).json({ error: `${unresolved.length} pending input(s) not resolved` })
+    return
+  }
+
+  if (!project.processed_file_path) {
+    res.status(422).json({ error: 'no processed file found' })
+    return
+  }
+
+  const { data: blob, error: dlErr } = await supabase.storage
+    .from(BUCKET)
+    .download(project.processed_file_path)
+  if (dlErr || !blob) {
+    res.status(500).json({ error: `download failed: ${dlErr?.message ?? 'no data'}` })
+    return
+  }
+
+  const inputBuf = new Uint8Array(await blob.arrayBuffer())
+  const { files, documentXml, stylesXml } = unzipDocx(inputBuf)
+  const finalXml = finalizeInputs(documentXml, fills, removals, pending)
+  const docxBuf = zipDocx(files, { documentXml: finalXml, stylesXml })
+
+  // Real cacheControl TTL (not '0') — the client keys the URL on `completed_at`,
+  // which this endpoint bumps below, so an overwrite is served fresh without
+  // disabling CDN caching for every view.
+  const { error: upErr } = await supabase.storage
+    .from(BUCKET)
+    .upload(project.processed_file_path, docxBuf, { contentType: DOCX_MIME, upsert: true, cacheControl: '3600' })
+  if (upErr) {
+    res.status(500).json({ error: `upload failed: ${upErr.message}` })
+    return
+  }
+
+  const { error: updErr } = await supabase
+    .from('projects')
+    .update({ status: 'complete', pending_inputs: null, completed_at: new Date().toISOString() })
+    .eq('id', projectId)
+  if (updErr) {
+    res.status(500).json({ error: `status update failed: ${updErr.message}` })
+    return
+  }
+
+  try {
+    await sendProjectReadyEmail(projectId)
+  } catch (err) {
+    console.error(`[finalize-inputs] email failed for ${projectId} (non-fatal):`, err)
+  }
+
+  res.json({ ok: true })
 })
 
 export default router

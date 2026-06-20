@@ -14,6 +14,7 @@ import { z } from 'zod'
 import { loadAiConfig, type AiConfig } from './config'
 import { loadGuidelineDoc, guidelineSection } from '../loadGuideline'
 import { repairDecisions } from './headingDecider'
+import { withConnectionRetry } from './retry'
 import { buildReferenceSystemPrompt, buildReferenceUserPrompt } from './referencesPrompt'
 import type { ReferenceChunk, ReferenceDecider, ReferenceDecision } from '../stepC'
 
@@ -40,25 +41,39 @@ export function createReferenceDecider(cfg: AiConfig = loadAiConfig()): Referenc
   return {
     async reformat(chunk: ReferenceChunk): Promise<ReferenceDecision[]> {
       const doc = loadGuidelineDoc(chunk.guideline)
-      const { object } = await generateObject({
-        model: openrouter.chat(cfg.model),
-        schema: decisionsSchema,
-        system: buildReferenceSystemPrompt(guidelineSection(doc, 6), guidelineSection(doc, 7), chunk.guideline),
-        prompt: buildReferenceUserPrompt(chunk),
-        // Determinism: greedy decode + fixed seed so the same doc yields the same entries.
-        temperature: cfg.temperature,
-        seed: cfg.seed,
-        maxOutputTokens: cfg.maxTokens,
-        maxRetries: cfg.maxRetries,
-        experimental_repairText: repairDecisions,
-        // Pin OpenRouter to a single backend when configured, so routing doesn't
-        // swap hardware/quantization between runs (a source of run-to-run variance).
-        ...(cfg.provider.length > 0 && {
-          providerOptions: {
-            openrouter: { provider: { order: cfg.provider, allow_fallbacks: false } },
-          },
+      // Retry the SDK's non-retryable connection resets (free models drop the
+      // socket mid-response); HTTP-status retries stay the SDK's job.
+      const { object, finishReason, usage } = await withConnectionRetry(
+        () => generateObject({
+          model: openrouter.chat(cfg.referenceModel),
+          schema: decisionsSchema,
+          system: buildReferenceSystemPrompt(guidelineSection(doc, 6), guidelineSection(doc, 7), chunk.guideline),
+          prompt: buildReferenceUserPrompt(chunk),
+          // Determinism: greedy decode + fixed seed so the same doc yields the same entries.
+          temperature: cfg.temperature,
+          seed: cfg.seed,
+          maxOutputTokens: cfg.maxTokens,
+          maxRetries: cfg.maxRetries,
+          experimental_repairText: repairDecisions,
+          // Pin OpenRouter to a single backend when configured, so routing doesn't
+          // swap hardware/quantization between runs (a source of run-to-run variance).
+          ...(cfg.provider.length > 0 && {
+            providerOptions: {
+              openrouter: { provider: { order: cfg.provider, allow_fallbacks: false } },
+            },
+          }),
         }),
-      })
+        { retries: cfg.maxRetries },
+      )
+
+      // Diagnostic: `finishReason: 'length'` means the model hit the output-token
+      // ceiling and the JSON was truncated — the salvage path then keeps only the
+      // entries that finished, so fewer than `sent` come back and the count varies
+      // run-to-run. If sent > got with reason 'length', shrink the chunk / raise tokens.
+      console.log(
+        `[referencesDecider] sent=${chunk.entries.length} got=${object.decisions.length} ` +
+        `finishReason=${finishReason} outTokens=${usage?.outputTokens ?? '?'} model=${cfg.referenceModel}`,
+      )
 
       // Guard: only trust decisions for indices we actually sent (the model can hallucinate i).
       // Coerce nullish emphasis → undefined so the segment matches ReferenceSegment exactly.

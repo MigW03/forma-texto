@@ -68,6 +68,16 @@ describe('rewriteStyles (ABNT)', () => {
     expect(h3).toContain('<w:b/>')
   })
 
+  it('defines a Caption style: centered, 10pt, single spacing, body font', () => {
+    const out = rewriteStyles(null, 'abnt')
+    const caption = out.match(/<w:style[^>]*w:styleId="Caption"[\s\S]*?<\/w:style>/)![0]
+    expect(caption).toContain('<w:jc w:val="center"/>')
+    expect(caption).toContain('<w:sz w:val="20"/>') // 10pt
+    expect(caption).toContain('w:line="240"') // single spacing
+    expect(caption).toContain('<w:ind w:left="0" w:firstLine="0"/>') // not indented
+    expect(caption).toContain('w:ascii="Times New Roman"') // same family as body
+  })
+
   it('does not collide Heading1 with Heading10-style ids', () => {
     const src = STYLES('<w:style w:type="paragraph" w:styleId="Heading10"><w:name w:val="x"/></w:style>')
     const out = rewriteStyles(src, 'abnt')

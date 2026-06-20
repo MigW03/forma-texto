@@ -39,6 +39,7 @@ export function buildHeadingUserPrompt(chunk: HeadingChunk): string {
         `"len": ${b.len}`,
       ]
       if (b.atPageStart) fields.push(`"atPageStart": true`) // soft h1 cue; absent = not at a page start
+      if (b.listItem) fields.push(`"listItem": true`) // part of a list — always body, never a heading
       return `{ ${fields.join(', ')} }`
     })
     .join('\n')

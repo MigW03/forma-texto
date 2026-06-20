@@ -39,3 +39,4 @@ export async function sendProjectReadyEmail(projectId: string): Promise<void> {
     throw new Error(`Failed to send project-ready email: ${emailError.message ?? emailError}`)
   }
 }
+
