@@ -12,6 +12,7 @@ import {
   normalizeNumberingXml,
   locateReferences,
   autoLocateReferences,
+  locateAppendixStart,
   resolveGuideline,
   stepC,
   stepD,
@@ -35,6 +36,16 @@ import {
 
 /** Tier label for a heading role, e.g. 'h2' → 'H2', 'title' → 'TITLE'. */
 const tierLabel = (role: string) => role.toUpperCase()
+
+/**
+ * Smallest valid (>= 0) block index among the given candidates, or -1 if none.
+ * Used to combine the references heading and the appendix/annex start into a single
+ * "stop classifying/proofreading past here" cutoff for Steps D and P.
+ */
+const earliestCutoff = (...idxs: Array<number | null | undefined>): number => {
+  const valid = idxs.filter((n): n is number => typeof n === 'number' && n >= 0)
+  return valid.length ? Math.min(...valid) : -1
+}
 
 /**
  * Log each identified heading on its own line: tier + page + text. Page is the
@@ -183,7 +194,15 @@ export async function processFormatting(projectId: string): Promise<void> {
         const numXml = Buffer.from(files[NUMBERING_PATH]).toString('utf-8')
         files[NUMBERING_PATH] = Buffer.from(normalizeNumberingXml(numXml), 'utf-8')
       }
-      const a = applyStepA({ documentXml: workingDocXml, stylesXml: workingStylesXml, guideline }) // Step A
+      // Locate the appendix/annex section (if any). It is frozen — never proofread or
+      // reformatted — but kept in the file. Computed before Step A so the strip-overrides
+      // pass already spares it; the index stays valid through Steps B/C/D (in-place splices).
+      const appendixStart = locateAppendixStart(workingDocXml)
+      if (appendixStart !== null) {
+        console.log(`[processFormatting] ${projectId} appendix/annex detected at block ${appendixStart} — section frozen (not formatted)`)
+      }
+
+      const a = applyStepA({ documentXml: workingDocXml, stylesXml: workingStylesXml, guideline, appendixStart }) // Step A
       workingStylesXml = a.stylesXml
       workingDocXml = formatReferences(a.documentXml, guideline, refInput) // Step B: references
       region = locateReferences(workingDocXml, refInput)
@@ -227,7 +246,7 @@ export async function processFormatting(projectId: string): Promise<void> {
           const dStart = Date.now()
           console.log(`[processFormatting] ${projectId} Step D: calling model (${aiCfg.headingModel})…`)
           const result = await stepD(workingDocXml, guideline, createHeadingDecider(aiCfg), {
-            refStartIndex: region?.headingIdx ?? -1,
+            refStartIndex: earliestCutoff(region?.headingIdx, appendixStart),
             maxChars: aiCfg.maxCharsPerChunk,
           })
           workingDocXml = result.documentXml
@@ -241,13 +260,19 @@ export async function processFormatting(projectId: string): Promise<void> {
       // Final deterministic touches, after the AI passes so they see the final heading
       // styles: (1) normalize inline image size/centering; (2) image captions;
       // (3) cancel the page break before the FIRST H1.
-      workingDocXml = formatImages(workingDocXml, guideline)
-      workingDocXml = formatCaptions(workingDocXml)
+      const freezeAt = appendixStart ?? Infinity
+      workingDocXml = formatImages(workingDocXml, guideline, freezeAt)
+      workingDocXml = formatCaptions(workingDocXml, freezeAt)
       workingDocXml = suppressFirstHeadingPageBreak(workingDocXml)
-      const { xml: docWithPlaceholders, pending: detected } = detectAndInsertPlaceholders(workingDocXml)
+      const { xml: docWithPlaceholders, pending: detected } = detectAndInsertPlaceholders(workingDocXml, freezeAt)
       workingDocXml = docWithPlaceholders
       pending = detected
     }
+
+    // Appendix/annex cutoff for the proofreading passes — recomputed here because the
+    // formatting block may have inserted placeholder blocks, shifting indices. The frozen
+    // section is excluded from both Step Punct and Step P (it is never proofread).
+    const proofreadFreezeAt = doProofreading ? (locateAppendixStart(workingDocXml) ?? Infinity) : Infinity
 
     // Proofreading. Step Punct (deterministic) always runs first when proofreading is
     // requested — it normalises spacing/punctuation so the AI sees clean text and can
@@ -255,7 +280,7 @@ export async function processFormatting(projectId: string): Promise<void> {
     // keeps the author's punctuation untouched. Step P (AI) follows when enabled.
     if (doProofreading) {
       const punctStart = Date.now()
-      const { xml: punctXml, stats } = applyPunctNormWithStats(workingDocXml) // Step Punct
+      const { xml: punctXml, stats } = applyPunctNormWithStats(workingDocXml, proofreadFreezeAt) // Step Punct
       workingDocXml = punctXml
       if (isNoopPunct(stats)) {
         console.log(`[processFormatting] ${projectId} Step Punct: no changes (${since(punctStart)})`)
@@ -276,7 +301,8 @@ export async function processFormatting(projectId: string): Promise<void> {
     // keeps the prior result. Toggled independently via AI_PROOFREADING_ENABLED.
     if (doProofreading && aiCfg.proofreadingEnabled) {
       try {
-        const refStart = (region ?? autoLocateReferences(workingDocXml))?.headingIdx ?? -1
+        const refHeading = (region ?? autoLocateReferences(workingDocXml))?.headingIdx
+        const refStart = earliestCutoff(refHeading, Number.isFinite(proofreadFreezeAt) ? proofreadFreezeAt : null)
         const pStart = Date.now()
         const preDocXml = workingDocXml
         console.log(`[processFormatting] ${projectId} Step P: calling model (${aiCfg.proofreadModel})…`)

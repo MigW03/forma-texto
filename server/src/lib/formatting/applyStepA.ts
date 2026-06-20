@@ -8,6 +8,9 @@ export interface StepAInput {
   documentXml: string
   stylesXml: string | null
   guideline: Guideline
+  /** First appendix/annex block index, or undefined. Blocks at/after it keep their
+   *  direct overrides (the frozen post-textual section is not reformatted). */
+  appendixStart?: number | null
 }
 
 export interface StepAOutput {
@@ -23,11 +26,11 @@ export interface StepAOutput {
  *   3. document.xml → strip direct layout overrides (so styles cascade)
  *   4. document.xml → guideline page margins
  */
-export function applyStepA({ documentXml, stylesXml, guideline }: StepAInput): StepAOutput {
+export function applyStepA({ documentXml, stylesXml, guideline, appendixStart }: StepAInput): StepAOutput {
   const g = getGuideline(guideline)
   const font = resolveDocumentFont(documentXml, stylesXml, g.accepted, g.body.font)
   const newStyles = rewriteStyles(stylesXml, guideline, font)
-  let doc = stripDirectOverrides(documentXml)
+  let doc = stripDirectOverrides(documentXml, appendixStart ?? Infinity)
   doc = rewriteMargins(doc, guideline)
   return { documentXml: doc, stylesXml: newStyles }
 }

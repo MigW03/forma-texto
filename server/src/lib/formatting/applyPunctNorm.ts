@@ -1,4 +1,4 @@
-import { BLOCK_RE, isParagraph } from './blocks'
+import { BLOCK_RE, isParagraph, getBlocks, replaceBlocks } from './blocks'
 
 /** Per-rule counts, surfaced for logging so we can see what the step actually did. */
 export interface PunctStats {
@@ -175,10 +175,28 @@ function fixCrossRunSpacing(paraXml: string, stats: PunctStats): string {
  *
  * The AI receives clean text after this step, so it can focus on grammar.
  */
-export function applyPunctNormWithStats(documentXml: string): { xml: string; stats: PunctStats } {
+export function applyPunctNormWithStats(
+  documentXml: string,
+  stopAt = Infinity,
+): { xml: string; stats: PunctStats } {
   const stats = emptyStats()
 
-  // Pass 1: intra-run normalization
+  // When a cutoff is set (appendix/annex), normalise only the blocks before it so the
+  // frozen section keeps the author's punctuation. Block-scoped: rewrite each block's
+  // <w:t> nodes (pass 1) + the cross-run fix for paragraphs (pass 2), then reassemble.
+  if (Number.isFinite(stopAt)) {
+    const blocks = getBlocks(documentXml)
+    const byIndex = new Map<number, string>()
+    blocks.forEach((b, i) => {
+      if (i >= stopAt) return
+      let nb = b.replace(WTEXT_RE, (_m, open: string, text: string, close: string) => open + normalizeRunText(text, stats) + close)
+      if (isParagraph(nb)) nb = fixCrossRunSpacing(nb, stats)
+      if (nb !== b) byIndex.set(i, nb)
+    })
+    return { xml: replaceBlocks(documentXml, byIndex), stats }
+  }
+
+  // Pass 1: intra-run normalization (whole document)
   let xml = documentXml.replace(
     WTEXT_RE,
     (_m, open: string, text: string, close: string) => open + normalizeRunText(text, stats) + close,

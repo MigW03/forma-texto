@@ -121,7 +121,7 @@ function sourceOccupied(blocks: string[], idx: number): boolean {
  * Returns the modified documentXml and the list of pending inputs whose
  * `insertedAt` reflects the block index in the returned XML.
  */
-export function detectAndInsertPlaceholders(documentXml: string): { xml: string; pending: PendingInput[] } {
+export function detectAndInsertPlaceholders(documentXml: string, stopAt = Infinity): { xml: string; pending: PendingInput[] } {
   const blocks = getBlocks(documentXml)
   if (blocks.length === 0) return { xml: documentXml, pending: [] }
 
@@ -131,6 +131,7 @@ export function detectAndInsertPlaceholders(documentXml: string): { xml: string;
   let tableOrdinal = 0
 
   for (let i = 0; i < blocks.length; i++) {
+    if (i >= stopAt) break // appendix/annex frozen — no placeholders for its images/tables
     const b = blocks[i]
 
     if (isImageParagraph(b)) {

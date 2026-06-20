@@ -277,6 +277,17 @@ describe('applyPunctNorm — pass 2: cross-run space-before-punctuation', () => 
   })
 })
 
+describe('applyPunctNorm — appendix/annex cutoff (stopAt)', () => {
+  it('normalizes blocks before the cutoff and freezes blocks at/after it', () => {
+    const input = doc(wp(wr('antes  do corte')), wp(wr('ANEXO  A')), wp(wr('dentro  do  anexo')))
+    const { xml, stats } = applyPunctNormWithStats(input, 1) // freeze from block 1 on
+    expect(xml).toContain(wt('antes do corte')) // block 0 normalized
+    expect(xml).toContain(wt('ANEXO  A')) // block 1 untouched
+    expect(xml).toContain(wt('dentro  do  anexo')) // block 2 untouched
+    expect(stats.doubleSpaces).toBe(1) // only the one in block 0
+  })
+})
+
 describe('applyPunctNorm — document structure preserved', () => {
   it('does not alter XML outside <w:t> nodes', () => {
     const input = doc(wp(`<w:pPr><w:jc w:val="both"/></w:pPr>`, wr('Normal text.')))

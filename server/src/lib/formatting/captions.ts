@@ -39,13 +39,13 @@ export const SOURCE_LABEL_RE = /^fonte\s*[:.\-–—]/i
  * captions. A neighbor is captioned only when its text matches the relevant
  * label; tables and stacked images never match (no label text).
  */
-export function formatCaptions(documentXml: string): string {
+export function formatCaptions(documentXml: string, stopAt = Infinity): string {
   const blocks = getBlocks(documentXml)
   if (!blocks.length) return documentXml
 
   const byIndex = new Map<number, string>()
   const tagIfLabelled = (j: number, re: RegExp) => {
-    if (j < 0 || j >= blocks.length) return
+    if (j < 0 || j >= blocks.length || j >= stopAt) return // appendix/annex frozen
     const b = blocks[j]
     if (!isParagraph(b) || isImageParagraph(b)) return
     if (!re.test(blockText(b))) return
@@ -53,6 +53,7 @@ export function formatCaptions(documentXml: string): string {
   }
 
   blocks.forEach((b, i) => {
+    if (i >= stopAt) return // appendix/annex frozen — don't caption its images
     if (!isImageParagraph(b)) return
     tagIfLabelled(i - 1, FIGURE_LABEL_RE) // "Figura 1 — …" above the image
     tagIfLabelled(i + 1, SOURCE_LABEL_RE) // "Fonte: …" below the image

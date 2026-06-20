@@ -12,8 +12,8 @@ import { calcPrice, trialDiscountBRL, formatBRL, type ServiceKey } from '../lib/
 import { useAuth } from '../lib/auth-context'
 import { supabase } from '../lib/supabase'
 import { getStoredFile } from '../lib/file-store'
-import { sliceDocxByLaudas } from '../lib/docx-slice'
-import { getLaudas, laudaBlockSet } from '../lib/laudas'
+import { sliceDocxByLaudas, getDocxBlocks } from '../lib/docx-slice'
+import { computeLaudas, laudaBlockSet } from '../lib/laudas'
 import { ROUTES } from '../lib/routes'
 
 const SERVICE_LABELS: Record<ServiceKey, string> = {
@@ -292,8 +292,10 @@ export default function CheckoutPage() {
       let fileToUpload: File | null = rawFile
       if (rawFile && selectedLaudas.length > 0 && !allSelected) {
         try {
-          const xmlLaudas = await getLaudas(rawFile)
-          const keep = laudaBlockSet(xmlLaudas, selectedLaudas)
+          const blocks = await getDocxBlocks(rawFile)
+          const xmlLaudas = computeLaudas(blocks)
+          // Pass blocks so the appendix/annex section is kept even when slicing to a subset.
+          const keep = laudaBlockSet(xmlLaudas, selectedLaudas, blocks)
           fileToUpload = await sliceDocxByLaudas(rawFile, keep)
         } catch (err) {
           console.error('Lauda slicing failed, uploading full file:', err)

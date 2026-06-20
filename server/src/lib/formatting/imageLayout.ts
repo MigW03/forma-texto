@@ -70,7 +70,7 @@ function centerParagraph(p: string): string {
  * center their paragraphs. Returns the document unchanged when no inline image
  * needs adjusting.
  */
-export function formatImages(documentXml: string, guideline: Guideline): string {
+export function formatImages(documentXml: string, guideline: Guideline, stopAt = Infinity): string {
   const blocks = getBlocks(documentXml)
   if (!blocks.length) return documentXml
 
@@ -81,6 +81,7 @@ export function formatImages(documentXml: string, guideline: Guideline): string 
 
   const byIndex = new Map<number, string>()
   blocks.forEach((b, i) => {
+    if (i >= stopAt) return // appendix/annex frozen — leave its images at source size
     if (!isParagraph(b) || !b.includes('<wp:inline')) return
 
     let changed = false

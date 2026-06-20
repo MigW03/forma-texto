@@ -34,7 +34,7 @@ Deeper docs (keep these as the real source of truth):
 
 - **Branch:** `feature/docx-page-detection` — lauda-based billing migration + pipeline improvements. The botched-merge fix is committed (`0641594`); the 2026-06-20 deterministic-text/interactive-input work is **uncommitted in the working tree** (see session log).
 - **Build:** web production build **verified green (2026-06-17)** (`npm run build` in `web/`).
-- **Tests:** server **224** passing (3 AI evals skipped); web **32** passing.
+- **Tests:** server **232** passing (3 AI evals skipped); web **38** passing.
 - **Working:** auth, onboarding flow, checkout (Stripe), dashboard, project detail/viewer,
   the DOCX formatting pipeline Steps A/B/C/D (both AI passes: reference reformatting + headings),
   and the server-side proofreading pass (Step P) — proofreading is no longer on n8n.
@@ -223,12 +223,21 @@ the rest is uncommitted in the working tree.**
     deterministic `formatCaptions` pass are still single (open question if those should match).
 - **`AI_REFERENCES_MODEL` corrected to super** in `.env` (was pinned to nano despite the in-file warning).
   Nano over-reasons and corrupts Step C JSON; super is enough. Only Step D headings need ultra.
+- **Appendix / annex (Apêndice / Anexo) exclusion.** New `postTextual.ts` (`locateAppendixStart`)
+  detects the first uppercase `APÊNDICE`/`ANEXO` heading. That block index is threaded as a cutoff into
+  every per-block pass — `stripDirectOverrides` (via `applyStepA`), Step D, `formatImages`,
+  `formatCaptions`, `detectAndInsertPlaceholders`, Step Punct, Step P — so the section is never
+  proofread or reformatted, but it is **never removed** (ships intact in the `.docx`). Billing:
+  `computeLaudas` stops at the boundary so the appendix isn't a billable lauda, and `laudaBlockSet`
+  keeps the appendix range unconditionally so it survives slicing into the upload (CheckoutPage passes
+  the blocks). Detection needs the heading typed UPPERCASE. Preview-UI marking of the frozen section is
+  deferred. +13 server tests + 6 web tests.
 - **PLAN.md:** added a new task — **missing-file recovery flow** (a paid order whose `original_file_path`
   is null because the volatile in-memory file was lost on a payment-redirect reload → email the user to
-  re-upload, never re-charge); updated the model notes (references = super).
+  re-upload, never re-charge); updated the model notes (references = super); logged the appendix feature.
 
-Server suite **224 passing** (3 evals skipped), `tsc` clean both sides. Restart the server to pick up
-the `.env` model change.
+Server suite **232 passing** (3 evals skipped), web **38 passing**, `tsc`/build clean both sides.
+Restart the server to pick up the `.env` model change.
 
 ### 2026-06-19 (later 6) — Viewer load: diagnosed (region) + CDN caching fix
 
