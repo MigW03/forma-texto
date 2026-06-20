@@ -17,6 +17,7 @@ import {
   stepD,
   stepProofread,
   loadAiConfig,
+  applyPunctNorm,
   createHeadingDecider,
   createReferenceDecider,
   createProofreadDecider,
@@ -161,66 +162,27 @@ export async function processFormatting(projectId: string): Promise<void> {
       selectedPages: project.selected_pages ?? [],
       referencePages: project.references_pages ?? [],
     }
+    const documentXmlB = formatReferences(a.documentXml, guideline, refInput) // Step B: references
+    const documentXmlP = applyPunctNorm(documentXmlB) // Step Punct: deterministic text normalisation
+
+    // Steps C & D (AI). Both are behind one feature flag, each wrapped on its own so
+    // any AI failure keeps the deterministic A/B result — a paid job is never blocked
+    // by the model. They share the references region: C reformats its entries, D uses
+    // its heading index to exclude references from heading classification. Both pass
+    // by absolute block index (count never changes), so the region stays valid across C.
+    let documentXmlAI = documentXmlP
     const aiCfg = loadAiConfig()
+    if (aiCfg.enabled) {
+      const region = locateReferences(documentXmlP, refInput)
 
-    // Working document/styles, mutated step by step. Proofreading-only projects skip
-    // the formatting passes entirely (we never reformat a doc the user didn't pay to
-    // format) and only run Step P over the original text.
-    let workingDocXml = documentXml
-    let workingStylesXml = stylesXml
-    let pending: PendingInput[] = []
-    // The located references region — shared by Steps C/D and used by Step P to skip
-    // references. Stays null in proofreading-only mode (Step P auto-detects instead).
-    let region: ReferenceRegion | null = null
-
-    if (doFormatting) {
-      // Compact list indentation before anything else so Step A + AI passes see the
-      // normalized numbering. Word defaults to 720 twips/level — we drop it to 480.
-      const NUMBERING_PATH = 'word/numbering.xml'
-      if (files[NUMBERING_PATH]) {
-        const numXml = Buffer.from(files[NUMBERING_PATH]).toString('utf-8')
-        files[NUMBERING_PATH] = Buffer.from(normalizeNumberingXml(numXml), 'utf-8')
-      }
-      const a = applyStepA({ documentXml: workingDocXml, stylesXml: workingStylesXml, guideline }) // Step A
-      workingStylesXml = a.stylesXml
-      workingDocXml = formatReferences(a.documentXml, guideline, refInput) // Step B: references
-      region = locateReferences(workingDocXml, refInput)
-
-      // Steps C & D (AI), behind the formatting flag, each wrapped on its own so any AI
-      // failure keeps the deterministic A/B result — a paid job is never blocked by the
-      // model. They share the references region: C reformats its entries, D uses its
-      // heading index to exclude references. Both act by absolute block index (count
-      // never changes), so the region stays valid across C.
-      if (aiCfg.enabled) {
-        // Diagnose why Step C might do nothing, so "references unchanged" is never
-        // ambiguous in the logs: no page flagged vs flagged-but-not-located vs ran.
-        if (refInput.referencePages.length === 0) {
-          console.log(`[processFormatting] ${projectId} Step C: no references page flagged — skipping`)
-        } else if (!region) {
-          const isContinuous = refInput.referencePages.length === 1 && refInput.referencePages[0] === 0
-          if (isContinuous) {
-            console.log(`[processFormatting] ${projectId} Step C: continuous mode — references heading not found in document, skipping`)
-          } else {
-            console.warn(`[processFormatting] ${projectId} Step C: references page(s) [${refInput.referencePages.join(', ')}] flagged but no references region located in the document`)
-          }
-        } else {
-          // Step C: reformat each reference entry into the guideline citation format.
-          try {
-            const cStart = Date.now()
-            console.log(`[processFormatting] ${projectId} Step C: calling model (${aiCfg.referenceModel}) on ${region.entryIndices.length} entr(ies)…`)
-            const result = await stepC(workingDocXml, guideline, createReferenceDecider(aiCfg), region, {
-              maxChars: aiCfg.maxCharsPerChunk,
-              maxEntries: aiCfg.referencesMaxEntries,
-            })
-            workingDocXml = result.documentXml
-            console.log(`[processFormatting] ${projectId} Step C: located ${region.entryIndices.length} entr(ies), reformatted ${result.decisions.length} (${since(cStart)})`)
-            logReferences(projectId, result.decisions)
-          } catch (err) {
-            console.error(`[processFormatting] Step C failed for ${projectId} (non-fatal, keeping deterministic result):`, err)
-          }
-        }
-
-        // Step D: reclassify headings typed as plain text.
+      // Diagnose why Step C might do nothing, so "references unchanged" is never
+      // ambiguous in the logs: no page flagged vs flagged-but-not-located vs ran.
+      if (refInput.referencePages.length === 0) {
+        console.log(`[processFormatting] ${projectId} Step C: no references page flagged — skipping`)
+      } else if (!region) {
+        console.warn(`[processFormatting] ${projectId} Step C: references page(s) [${refInput.referencePages.join(', ')}] flagged but no references region located in the document`)
+      } else {
+        // Step C: reformat each reference entry into the guideline citation format.
         try {
           const dStart = Date.now()
           console.log(`[processFormatting] ${projectId} Step D: calling model (${aiCfg.headingModel})…`)

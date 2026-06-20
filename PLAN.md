@@ -180,47 +180,9 @@
   - **Done:** frontend stores one file (references inline; the `references_file_path` column has been removed); `ProjectDetailPage` viewer handles the single file. **Trigger cutover done for both services** — `CheckoutPage` calls `POST /api/processing/start` (Bearer = project owner's Supabase token) after the row is created whenever formatting **or** proofreading is requested; the old n8n `/notify` path for proofreading-only is gone. The `/processing/start` route accepts the owner's Bearer token OR the `x-webhook-secret` (manual/curl).
 - [x] Convert processed `.zip` back to `.docx` for delivery
   - n8n repacks the processed output as `.docx` and stamps `processed_file_path` + `status = complete` in the `projects` table
-- [ ] Exclude appendices & attachments from processing — deterministic section detection before the pipeline runs
-  - Mirror the references approach (`autoLocateReferences` in `server/src/lib/formatting/references.ts`): a heading-anchored regex detects the start of the appendix/attachment region (pt-BR `Apêndice`/`Anexo`, with `Apêndices`/`Anexos`/`Appendix`/`Attachment` variants, optional numbering/letter like `APÊNDICE A`). Everything from that heading to end-of-document is flagged and skipped by the formatting (C/D) and proofreading (Step P) passes, the same way references are excluded from heading classification via `refStartIndex`. Deterministic — no AI for detection. Decide whether flagged appendix blocks are billed (likely excluded from lauda count too). Add unit tests alongside `references.test.ts`.
-
----
-
-## Interactive Content Completion (missing captions & sources)
-
-Rebuilt 2026-06-19 with a fundamentally different architecture: **batch finalize + side panel** instead of the old per-edit server writes + floating overlays.
-
-- [x] **Detection + placeholder insertion** — `missingInputs.ts` `detectAndInsertPlaceholders` walks image/table blocks, checks neighbours for existing labels/sources, inserts red Caption-style `<w:p>` placeholders for absent slots. Returns modified XML + `PendingInput[]` with output-index tracking (`insertedAt`). 16 unit tests.
-- [x] **`needs_input` pipeline branch** — `processFormatting.ts` calls `detectAndInsertPlaceholders` after `formatCaptions`; stamps `needs_input + pending_inputs` (no email) if gaps found, else `complete + pending_inputs: null` (+ email). Exported from `formatting/index.ts`.
-- [x] **Finalize endpoint** — `POST /api/processing/finalize-inputs` in `processing.ts`: validates status/IDs/resolution, downloads processed DOCX, calls `finalizeInputs` (single `replaceBlocks` pass for all fills+removals), re-uploads with `cacheControl: '0'`, stamps `complete + pending_inputs: null`, sends ready email.
-- [x] **Frontend — `needs_input` status** — `status.ts` + `badge.tsx` re-add `needs_input` (orange variant); `DashboardPage` counts it as active; `status.test.ts` updated.
-- [x] **Frontend — side panel** — `ProjectDetailPage.tsx`: `PendingInputFE` interface, `pending_inputs` in query, `fills`/`removals`/`finalizing`/`finalizeError` state, `handleFinalize`, side panel in details column listing each pending input with label + textarea + remove/restore toggle, "Save & finalize" button disabled until all resolved. `canSeeProcessed` includes `needs_input`; `canDownloadProcessed` still gated on `complete`. Realtime handler re-signs on `needs_input` path change and always re-signs with cache buster on `complete`. Three locale files updated with `project.inputs.*` and `dashboard.status.needs_input`.
-- [x] **Finalize reliability fixes** — (1) `finalize-inputs` endpoint returns 200 when project is already `complete` (idempotent, safe to retry); (2) `finalizingRef` ref-guard blocks double-submit before the button re-renders as disabled; (3) Realtime handler clears `finalizing` immediately on `complete` — Realtime arrives before the HTTP response, so without this the panel stayed stuck in "Salvando…" until the fetch round-trip completed; (4) `handleFinalize` calls `window.location.reload()` on success so the updated file is always shown in the viewer (simpler than patching the preview in place).
-
----
-
-## Word-Choice Suggestions (optional proofreading improvements)
-
-> **Goal.** Step P already auto-applies clear grammatical corrections. But proofreading also surfaces words that are not *wrong*, only *weaker* than an available alternative — e.g. the author wrote "titulado" where "intitulado" reads better. We must never silently swap these (it would change the author's wording on a judgement call), so instead the pipeline **flags** them and lets the user **choose**: keep the original or accept a suggested alternative. Once the user has reviewed, a deterministic edit drops the accepted words in and produces the final file. **No extra AI run happens at selection time** — the suggestions are computed once, during Step P.
->
-> This is a sibling of the *Interactive Content Completion* flow above: same `needs_input` gate, same "AI proposes / user decides / deterministic apply" shape, and it reuses the Step P run-splice core (`runs.ts` / `textDiff.ts`) so accepted swaps preserve the paragraph's run formatting exactly.
-
-- [ ] **Detection — identify optional word-choice improvements in Step P**
-  - Extend the proofreading model output with a SECOND, separate channel alongside the auto-applied corrections: a list of *suggestions*, each `{ i, original, replacement, reason? }` where `original` is the exact span as it appears in the (already grammar-corrected) paragraph and `replacement` is the better word/phrase. Keep this strictly for **style/word-choice** improvements that are NOT errors — anything clearly wrong stays in the auto-correction path. Prefer returning both channels from the **same model call** (no extra spend); update `proofreading.md` and the decider's zod schema accordingly. Each suggestion must be locatable: resolve `original` to a block index + char range via the existing `paragraphText`/run-offset mapping, and drop any suggestion whose span can't be uniquely/cleanly located (conservative, like the apply core).
-
-- [ ] **Persist the pending suggestions — `projects.pending_suggestions` (jsonb)**
-  - New nullable column storing the resolved descriptors: `[{ id, i, original, replacement, reason?, context }]` (`context` = a short snippet around the span for display; `id` stable + unique). Written by the pipeline when Step P finishes if any suggestions exist; cleared to `null` once the user submits their choices. Document in `supabase_tables.md`. (Decide whether to reuse the captions feature's `needs_input` status + a combined review step, or keep word-choice review as its own state — coordinate with that feature so a project that needs BOTH caption input AND word-choice review is handled in one pass.)
-
-- [ ] **Pipeline wiring — stamp the review state**
-  - In `processFormatting.ts`, after Step P, if suggestions exist set the project to the review state (`needs_input`) and write `pending_suggestions`; otherwise keep the normal `complete` path. The "project ready" email only fires on `complete`. The auto-applied corrections are already in the processed file the user reviews; suggestions are shown as *optional* overlays on top.
-
-- [ ] **Apply endpoint — `POST /api/processing/apply-suggestions`**
-  - Auth: project owner Bearer token (mirrors `/processing/start`). Body: `{ projectId, accepted: id[] }` (ids the user chose to apply; unlisted = keep original). Server downloads the processed `.docx`, applies each accepted suggestion with `spliceCorrectedText` (so run formatting is preserved and a span that no longer matches is skipped), re-zips, re-uploads to `processed_file_path`, clears `pending_suggestions`, stamps `status = complete` + `completed_at`, sends the ready email. Pure deterministic edit — no AI. Reject unknown ids.
-
-- [ ] **Frontend — suggestion review UI in the processed-file view**
-  - In `ProjectDetailPage`, when the project is in the review state: show the processed document plus a side panel listing each `pending_suggestions` entry as `original → replacement` with its context snippet and optional reason, each with accept / keep-original toggles (default = keep original, since these are optional). Submitting calls the apply endpoint; on success the status flips to `complete` and "Baixar Arquivo Final" unlocks. All strings via `t()` in the three locales; add the review-state badge styling. Coordinate the panel with the captions fill-in panel so both can be presented together when a project needs both.
-
-- [ ] **Tests**
-  - Server: detection returns suggestions only for word-choice (not for errors, which stay auto-applied); span resolution + skip-on-ambiguous; apply endpoint (accepted ids swapped via `spliceCorrectedText`, formatting preserved, unknown id rejected, unaccepted left as original, status → complete, `pending_suggestions` cleared). Web: render the review panel from `pending_suggestions`, accept a subset, assert the success transition.
+- [ ] Migrate proofreading off n8n into the server
+  - When building the server-side proofreading pipeline, use `applyPunctNorm` (`server/src/lib/formatting/applyPunctNorm.ts`) as the first deterministic step before any AI call. It normalises double spaces, space-before-punctuation, and ellipsis characters with zero token cost. The AI then handles only the remaining grammatical work.
+  - **LanguageTool** is a candidate for a deeper rule-based layer between `applyPunctNorm` and the AI. It is open-source, has hundreds of Portuguese grammar and punctuation rules, and is fully deterministic (no model calls). Two deployment options: self-hosted Java server (free, private, heavyweight) or the public HTTP API (simple, ~$0.001/request batch). It could handle agreement, accent, and word-order errors that the simple normaliser misses, while the AI handles fluency and style. Not a commitment — evaluate when the proofreading migration is actually scoped.
 
 ---
 
