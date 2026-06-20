@@ -10,6 +10,7 @@ import {
   stepC,
   stepD,
   loadAiConfig,
+  applyPunctNorm,
   createHeadingDecider,
   createReferenceDecider,
   pageForBlock,
@@ -125,16 +126,17 @@ export async function processFormatting(projectId: string): Promise<void> {
       referencePages: project.references_pages ?? [],
     }
     const documentXmlB = formatReferences(a.documentXml, guideline, refInput) // Step B: references
+    const documentXmlP = applyPunctNorm(documentXmlB) // Step Punct: deterministic text normalisation
 
     // Steps C & D (AI). Both are behind one feature flag, each wrapped on its own so
     // any AI failure keeps the deterministic A/B result — a paid job is never blocked
     // by the model. They share the references region: C reformats its entries, D uses
     // its heading index to exclude references from heading classification. Both pass
     // by absolute block index (count never changes), so the region stays valid across C.
-    let documentXmlAI = documentXmlB
+    let documentXmlAI = documentXmlP
     const aiCfg = loadAiConfig()
     if (aiCfg.enabled) {
-      const region = locateReferences(documentXmlB, refInput)
+      const region = locateReferences(documentXmlP, refInput)
 
       // Diagnose why Step C might do nothing, so "references unchanged" is never
       // ambiguous in the logs: no page flagged vs flagged-but-not-located vs ran.

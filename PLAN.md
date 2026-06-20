@@ -162,6 +162,9 @@
   - **Done:** frontend stores one file (references inline; the `references_file_path` column has been removed); `ProjectDetailPage` viewer handles the single file. **Trigger cutover done for formatting** — `CheckoutPage` calls `POST /api/processing/start` (Bearer = project owner's Supabase token) after the row is created; proofreading-only projects still hit the n8n `/notify`. The `/processing/start` route accepts the owner's Bearer token OR the `x-webhook-secret` (manual/curl).
 - [x] Convert processed `.zip` back to `.docx` for delivery
   - n8n repacks the processed output as `.docx` and stamps `processed_file_path` + `status = complete` in the `projects` table
+- [ ] Migrate proofreading off n8n into the server
+  - When building the server-side proofreading pipeline, use `applyPunctNorm` (`server/src/lib/formatting/applyPunctNorm.ts`) as the first deterministic step before any AI call. It normalises double spaces, space-before-punctuation, and ellipsis characters with zero token cost. The AI then handles only the remaining grammatical work.
+  - **LanguageTool** is a candidate for a deeper rule-based layer between `applyPunctNorm` and the AI. It is open-source, has hundreds of Portuguese grammar and punctuation rules, and is fully deterministic (no model calls). Two deployment options: self-hosted Java server (free, private, heavyweight) or the public HTTP API (simple, ~$0.001/request batch). It could handle agreement, accent, and word-order errors that the simple normaliser misses, while the AI handles fluency and style. Not a commitment — evaluate when the proofreading migration is actually scoped.
 
 ---
 
