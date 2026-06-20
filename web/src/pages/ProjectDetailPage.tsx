@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { createPortal } from 'react-dom'
 import { useParams, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, FileText, Download, Trash2 } from 'lucide-react'
+import { ArrowLeft, FileText, Download, Loader2 } from 'lucide-react'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { renderAsync } from 'docx-preview'
 import { ROUTES } from '../lib/routes'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../lib/auth-context'
 import { calcPrice, formatBRL } from '../lib/pricing'
 import type { ServiceKey } from '../lib/pricing'
 import { formatPageRanges } from '../lib/format'
@@ -16,14 +16,16 @@ import type { GuidelineId } from '../lib/guidelines'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+
 interface PendingInputFE {
   id: string
-  kind: 'figure-caption' | 'figure-source' | 'table-caption' | 'table-source'
+  kind: 'figure_caption' | 'figure_source' | 'table_caption' | 'table_source'
   ordinal: number
   insertedAt: number
 }
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 interface ProjectDetail {
   id: string
@@ -38,6 +40,7 @@ interface ProjectDetail {
   page_count: number
   selected_pages: number[] | null
   created_at: string
+  completed_at: string | null
   pending_inputs: PendingInputFE[] | null
 }
 
@@ -395,23 +398,18 @@ function DocxViewer({
   fileName,
   zoom,
   pageBreakLabel,
-  onRendered,
-  children,
 }: {
   url: string
   fileName: string
   zoom: number
   pageBreakLabel: string
-  onRendered?: (bodyEl: HTMLElement, outerEl: HTMLElement) => void
-  children?: React.ReactNode
 }) {
+  const { t } = useTranslation()
   const outerRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const styleRef = useRef<HTMLDivElement>(null)
   const [loadError, setLoadError] = useState(false)
   const [loading, setLoading] = useState(true)
-  const onRenderedRef = useRef(onRendered)
-  onRenderedRef.current = onRendered
 
   useEffect(() => {
     const body = bodyRef.current
@@ -423,9 +421,21 @@ function DocxViewer({
     body.replaceChildren()
     style.replaceChildren()
     setLoading(true)
+    const tFetch = performance.now()
     fetch(url)
       .then(r => r.blob())
-      .then(blob => renderAsync(blob, body, style, DOCX_RENDER_OPTIONS))
+      .then(async (blob) => {
+        console.log(`[DocxViewer timing] file download: ${Math.round(performance.now() - tFetch)}ms · ${(blob.size / 1024).toFixed(0)} KB`)
+        // docx-preview's renderAsync builds the whole document DOM synchronously and
+        // blocks the main thread (no streaming/worker mode). Yield two frames first so
+        // the browser paints the loading state before the freeze — otherwise the spinner
+        // never shows and the viewer looks crashed on large documents.
+        await new Promise<void>(res => requestAnimationFrame(() => requestAnimationFrame(() => res())))
+        if (cancelled) return
+        const tRender = performance.now()
+        await renderAsync(blob, body, style, DOCX_RENDER_OPTIONS)
+        console.log(`[DocxViewer timing] renderAsync: ${Math.round(performance.now() - tRender)}ms`)
+      })
       .then(() => {
         if (cancelled) return
         body.querySelectorAll('section.docx').forEach((section) => {
@@ -451,14 +461,6 @@ function DocxViewer({
         override.textContent = DOCX_PAGE_STYLES
         style.appendChild(override)
         setLoading(false)
-        if (outerRef.current && bodyRef.current) {
-          // Settle layout before scanning placeholder positions
-          requestAnimationFrame(() => {
-            if (!cancelled && outerRef.current && bodyRef.current) {
-              onRenderedRef.current?.(bodyRef.current, outerRef.current)
-            }
-          })
-        }
       })
       .catch(() => { if (!cancelled) { setLoadError(true); setLoading(false) } })
     return () => { cancelled = true }
@@ -469,17 +471,16 @@ function DocxViewer({
   return (
     <div ref={outerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-auto relative bg-[#E8E6DF]">
       {loading && (
-        <div className="flex flex-col items-center gap-6 py-8 px-8">
-          {[0, 1].map(i => (
-            <div key={i} className="bg-white rounded-xl shadow-sm animate-pulse" style={{ width: 595, height: 842 }} />
-          ))}
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 text-center px-8 bg-[#E8E6DF]">
+          <Loader2 size={28} className="text-forest animate-spin" strokeWidth={1.75} />
+          <p className="text-sm font-medium text-ink">{t('project.loadingPreview')}</p>
+          <p className="text-xs text-muted max-w-xs">{t('project.loadingPreviewHint')}</p>
         </div>
       )}
       <div style={{ zoom, display: loading ? 'none' : undefined }}>
         <div ref={styleRef} />
         <div ref={bodyRef} className="docx-body" />
       </div>
-      {children}
     </div>
   )
 }
@@ -496,19 +497,20 @@ function pdfPathFor(processedPath: string | null | undefined): string | null {
   return processedPath.replace(/\.docx$/i, '.pdf')
 }
 
-/**
- * The processed file at `processed_file_path` is overwritten in place by
- * /fill-content, so a signed URL can resolve to a stale cached copy. Append a
- * one-shot cache-buster (changes every time we sign) so the viewer and download
- * always fetch the current bytes.
- */
-function bustCache(signedUrl: string): string {
-  return `${signedUrl}&_cb=${Date.now()}`
+// Key the processed-file URL on a content version (the project's `completed_at`,
+// which the server bumps on every write to the file) rather than a one-shot
+// timestamp. A stable token lets the CDN cache repeat views; the token only
+// changes when the file actually changes, so an overwrite is still served fresh.
+// Falls back to `Date.now()` when there's no version yet (e.g. needs_input).
+function bustCache(signedUrl: string, version: string | null | undefined): string {
+  const token = version ? encodeURIComponent(version) : Date.now()
+  return `${signedUrl}&_cb=${token}`
 }
 
 export default function ProjectDetailPage() {
   const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
+  const { session } = useAuth()
   const [project, setProject] = useState<ProjectDetail | null>(null)
   const [fileUrl, setFileUrl] = useState<string | null>(null)
   const [processedFileUrl, setProcessedFileUrl] = useState<string | null>(null)
@@ -517,52 +519,30 @@ export default function ProjectDetailPage() {
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [scrolled, setScrolled] = useState(false)
+  const [fills, setFills] = useState<Map<string, string>>(new Map())
+  const [removals, setRemovals] = useState<Set<string>>(new Set())
+  const [finalizing, setFinalizing] = useState(false)
+  const [finalizeError, setFinalizeError] = useState<string | null>(null)
   const viewerWrapRef = useRef<HTMLDivElement>(null)
-
-  // needs_input state
-  const [pendingInputs, setPendingInputs] = useState<PendingInputFE[]>([])
-  const [fills, setFills] = useState<Record<string, string>>({})
-  const [removeTarget, setRemoveTarget] = useState<PendingInputFE | null>(null)
-  const [overlayPositions, setOverlayPositions] = useState<{ id: string; top: number; left: number }[]>([])
-  // Number of fill/remove writes still syncing to the server in the background.
-  const [bgSaving, setBgSaving] = useState(0)
-  // Last background-save error message (shown to the user; the state self-heals
-  // via reconcile so they can retry).
-  const [saveError, setSaveError] = useState<string | null>(null)
-  const docxBodyRef = useRef<HTMLElement | null>(null)
-  const docxOuterRef = useRef<HTMLElement | null>(null)
-  // Serial queue for background fill/remove writes. Each request downloads the
-  // current processed file, applies one change and re-uploads — so they MUST run
-  // one at a time, or concurrent writes would clobber each other (last upload wins).
-  const saveQueue = useRef<Promise<unknown>>(Promise.resolve())
-  // In-flight background writes + whether a reconcile (re-fetch + re-sign URL) is
-  // owed once they drain. We reconcile when the doc becomes complete (so the viewer
-  // and download reflect the freshly-saved file) or when a write failed.
-  const inFlight = useRef(0)
-  const reconcileNeeded = useRef(false)
-  // Rendered placeholder run elements, keyed by input id — lets us patch the doc
-  // in place on save/remove instead of re-rendering the whole file.
-  const placeholderEls = useRef<Map<string, HTMLElement>>(new Map())
-  // The processed-file path we've already signed a URL for. Guards the realtime
-  // handler from re-signing (and thus re-rendering the viewer) when only the row's
-  // status/pending_inputs change but the file itself is unchanged.
   const signedProcPathRef = useRef<string | null>(null)
+  const finalizingRef = useRef(false)
 
   useEffect(() => {
     if (!id) return
+    const t0 = performance.now()
     supabase
       .from('projects')
-      .select('id, title, original_file_name, original_file_path, processed_file_path, references_pages, selected_pages, services, guideline, status, page_count, created_at, pending_inputs')
+      .select('id, title, original_file_name, original_file_path, processed_file_path, references_pages, selected_pages, services, guideline, status, page_count, created_at, completed_at, pending_inputs')
       .eq('id', id)
       .single()
       .then(async ({ data, error }) => {
+        console.log(`[ProjectDetail timing] DB query: ${Math.round(performance.now() - t0)}ms`)
         if (error || !data) { setNotFound(true); setLoading(false); return }
         setProject(data as ProjectDetail)
-        const pend = (data.pending_inputs as PendingInputFE[] | null) ?? []
-        setPendingInputs(pend)
         setZoom(data.original_file_name.toLowerCase().endsWith('.docx') ? DOCX_ZOOM_DEFAULT : ZOOM_DEFAULT)
         const pdfPath = pdfPathFor(data.processed_file_path)
         const canSee = data.processed_file_path && (data.status === 'complete' || data.status === 'needs_input')
+        const tSign = performance.now()
         const [origSigned, procSigned, pdfSigned] = await Promise.all([
           data.original_file_path
             ? supabase.storage.from('projects').createSignedUrl(data.original_file_path, 3600)
@@ -570,15 +550,14 @@ export default function ProjectDetailPage() {
           canSee
             ? supabase.storage.from('projects').createSignedUrl(data.processed_file_path!, 3600)
             : Promise.resolve({ data: null }),
-          // The PDF export may be absent (older projects, or LibreOffice failed) —
-          // a missing object just errors and we leave the button hidden.
           pdfPath && data.status === 'complete'
             ? supabase.storage.from('projects').createSignedUrl(pdfPath, 3600)
             : Promise.resolve({ data: null }),
         ])
+        console.log(`[ProjectDetail timing] signed URLs: ${Math.round(performance.now() - tSign)}ms · total to viewer: ${Math.round(performance.now() - t0)}ms`)
         if (origSigned.data?.signedUrl) setFileUrl(origSigned.data.signedUrl)
         if (procSigned.data?.signedUrl) {
-          setProcessedFileUrl(bustCache(procSigned.data.signedUrl))
+          setProcessedFileUrl(bustCache(procSigned.data.signedUrl, data.completed_at))
           signedProcPathRef.current = data.processed_file_path
         }
         if (pdfSigned.data?.signedUrl) setProcessedPdfUrl(pdfSigned.data.signedUrl)
@@ -602,24 +581,22 @@ export default function ProjectDetailPage() {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'projects', filter: `id=eq.${id}` },
         async (payload) => {
-          const updated = payload.new as ProjectDetail & { pending_inputs?: PendingInputFE[] }
+          const updated = payload.new as ProjectDetail
           setProject((prev) => prev ? {
             ...prev,
             status: updated.status,
             processed_file_path: updated.processed_file_path,
-            pending_inputs: updated.pending_inputs ?? null,
+            completed_at: updated.completed_at,
+            pending_inputs: updated.pending_inputs,
           } : prev)
-          if (updated.pending_inputs) {
-            setPendingInputs(updated.pending_inputs)
-          } else if (updated.status === 'complete') {
-            setPendingInputs([])
+          // Realtime fires before the HTTP response returns to the client, so
+          // clear finalizing here rather than waiting for the fetch round-trip.
+          if (updated.status === 'complete') {
+            finalizingRef.current = false
+            setFinalizing(false)
           }
-          // Only (re-)sign when the actual file path changed. A fill/remove updates the
-          // row (status, pending_inputs) but not the path; re-signing there would swap the
-          // viewer's URL and force a full, slow re-render of the document on every input.
           const procPath = updated.processed_file_path
-          const visible = updated.status === 'complete' || updated.status === 'needs_input'
-          if (procPath && visible && procPath !== signedProcPathRef.current) {
+          if (procPath && (updated.status === 'needs_input' || updated.status === 'complete') && procPath !== signedProcPathRef.current) {
             const pdfPath = updated.status === 'complete' ? pdfPathFor(procPath) : null
             const [proc, pdf] = await Promise.all([
               supabase.storage.from('projects').createSignedUrl(procPath, 3600),
@@ -628,17 +605,21 @@ export default function ProjectDetailPage() {
                 : Promise.resolve({ data: null }),
             ])
             if (proc.data?.signedUrl) {
-              setProcessedFileUrl(bustCache(proc.data.signedUrl))
+              setProcessedFileUrl(bustCache(proc.data.signedUrl, updated.completed_at))
               signedProcPathRef.current = procPath
             }
             if (pdf.data?.signedUrl) setProcessedPdfUrl(pdf.data.signedUrl)
-          } else if (updated.status === 'complete') {
-            // File unchanged but the job just finished — make sure the PDF link resolves.
-            const pdfPath = pdfPathFor(updated.processed_file_path)
-            if (pdfPath) {
-              const { data: pdf } = await supabase.storage.from('projects').createSignedUrl(pdfPath, 3600)
-              if (pdf?.signedUrl) setProcessedPdfUrl(pdf.signedUrl)
-            }
+          } else if (updated.status === 'complete' && procPath) {
+            // same path, but finalize just landed — re-sign with cache buster
+            const pdfPath = pdfPathFor(procPath)
+            const [proc, pdf] = await Promise.all([
+              supabase.storage.from('projects').createSignedUrl(procPath, 3600),
+              pdfPath
+                ? supabase.storage.from('projects').createSignedUrl(pdfPath, 3600)
+                : Promise.resolve({ data: null }),
+            ])
+            if (proc.data?.signedUrl) setProcessedFileUrl(bustCache(proc.data.signedUrl, updated.completed_at))
+            if (pdf.data?.signedUrl) setProcessedPdfUrl(pdf.data.signedUrl)
           }
         }
       )
@@ -648,162 +629,6 @@ export default function ProjectDetailPage() {
 
   // ── All hooks must come before early returns (Rules of Hooks) ───────────────
 
-  const scanPlaceholders = useCallback(() => {
-    const body = docxBodyRef.current
-    const outer = docxOuterRef.current
-    if (!body || !outer || pendingInputs.length === 0) return
-    const outerRect = outer.getBoundingClientRect()
-    const scrollTop = outer.scrollTop
-    const scrollLeft = outer.scrollLeft
-
-    // Anchor the overlays in the gutter to the RIGHT of the page so they never
-    // overlap the rendered document. Fall back to a viewport-relative inset if the
-    // page wrapper isn't found yet.
-    const wrapper = body.querySelector('.docx-wrapper') as HTMLElement | null
-    const overlayLeft = wrapper
-      ? wrapper.getBoundingClientRect().right - outerRect.left + scrollLeft + 12
-      : Math.max(12, outerRect.width - 252)
-
-    const matched: { top: number; el: HTMLElement }[] = []
-    const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT)
-    let node: Text | null
-    while ((node = walker.nextNode() as Text | null)) {
-      if ((node.textContent ?? '').includes('[inserir')) {
-        const el = node.parentElement
-        if (el) {
-          const rect = el.getBoundingClientRect()
-          matched.push({ top: rect.top - outerRect.top + scrollTop, el })
-        }
-      }
-    }
-    const sortedPending = [...pendingInputs].sort((a, b) => a.insertedAt - b.insertedAt)
-    const els = new Map<string, HTMLElement>()
-    const positions = sortedPending.map((p, i) => {
-      if (!matched[i]) return null
-      els.set(p.id, matched[i].el)
-      return { id: p.id, top: matched[i].top, left: overlayLeft }
-    }).filter(Boolean) as { id: string; top: number; left: number }[]
-    placeholderEls.current = els
-    setOverlayPositions(positions)
-  }, [pendingInputs])
-
-  const handleDocxRendered = useCallback((bodyEl: HTMLElement, outerEl: HTMLElement) => {
-    docxBodyRef.current = bodyEl
-    docxOuterRef.current = outerEl
-    setTimeout(scanPlaceholders, 50)
-  }, [scanPlaceholders])
-
-  useEffect(() => { scanPlaceholders() }, [scanPlaceholders])
-
-  const callFillApi = useCallback(async (payload: { fills?: Record<string, string>; removals?: string[] }) => {
-    const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
-    const { data: { session } } = await supabase.auth.getSession()
-    const res = await fetch(`${apiUrl}/api/processing/fill-content`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session?.access_token ?? ''}`,
-      },
-      body: JSON.stringify({ projectId: id, ...payload }),
-    })
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({}))
-      throw new Error(`${res.status} ${d.error ?? res.statusText ?? 'request failed'}`)
-    }
-    return res.json() as Promise<{ ok: boolean; remaining: number }>
-  }, [id])
-
-  // Re-sync from the server's truth — used to self-heal if a background write fails.
-  const reloadProject = useCallback(async () => {
-    if (!id) return
-    const { data } = await supabase
-      .from('projects')
-      .select('status, pending_inputs, processed_file_path')
-      .eq('id', id)
-      .single()
-    if (!data) return
-    const pend = (data.pending_inputs as PendingInputFE[] | null) ?? []
-    setPendingInputs(pend)
-    setProject(prev => prev ? { ...prev, status: data.status, pending_inputs: pend.length > 0 ? pend : null } : prev)
-    if (data.processed_file_path) {
-      const { data: signed } = await supabase.storage.from('projects').createSignedUrl(data.processed_file_path, 3600)
-      if (signed?.signedUrl) {
-        signedProcPathRef.current = null // force the viewer to re-render from server truth
-        setProcessedFileUrl(bustCache(signed.signedUrl))
-      }
-    }
-  }, [id])
-
-  // Run a fill/remove write in the background, serialized after any in-flight write.
-  // The UI is already updated optimistically. Once the queue drains we reconcile
-  // with the server's truth (re-fetch + re-sign the URL) when it's owed — so the
-  // viewer and the download button reflect the actual saved file, not a stale cache.
-  const runInBackground = useCallback((task: () => Promise<unknown>) => {
-    inFlight.current += 1
-    setBgSaving(inFlight.current)
-    const settle = (errored: boolean) => {
-      if (errored) reconcileNeeded.current = true
-      inFlight.current -= 1
-      setBgSaving(inFlight.current)
-      if (inFlight.current === 0 && reconcileNeeded.current) {
-        reconcileNeeded.current = false
-        void reloadProject()
-      }
-    }
-    const run = saveQueue.current.then(task, task)
-    saveQueue.current = run.then(() => undefined, () => undefined)
-    run.then(
-      () => settle(false),
-      (err: unknown) => {
-        console.error('background save failed:', err)
-        setSaveError(err instanceof Error ? err.message : String(err))
-        settle(true)
-      },
-    )
-  }, [reloadProject])
-
-  const handleSave = useCallback((inputId: string) => {
-    const text = fills[inputId]?.trim()
-    if (!text) return
-    setSaveError(null)
-    // Optimistic: patch the rendered doc in place and drop the overlay immediately,
-    // then sync to the server in the background.
-    const el = placeholderEls.current.get(inputId)
-    if (el) { el.textContent = text; el.style.color = '' }
-    placeholderEls.current.delete(inputId)
-    const newPending = pendingInputs.filter(p => p.id !== inputId)
-    setPendingInputs(newPending)
-    setProject(prev => prev ? {
-      ...prev,
-      pending_inputs: newPending.length > 0 ? newPending : null,
-      status: newPending.length > 0 ? 'needs_input' : 'complete',
-    } : prev)
-    setFills(prev => { const n = { ...prev }; delete n[inputId]; return n })
-    runInBackground(() => callFillApi({ fills: { [inputId]: text } }))
-  }, [fills, pendingInputs, callFillApi, runInBackground])
-
-  const handleRemoveConfirm = useCallback(() => {
-    if (!removeTarget) return
-    setSaveError(null)
-    const removedId = removeTarget.id
-    // Optimistic: remove the placeholder paragraph from the rendered doc and close
-    // the modal at once, then sync the removal in the background.
-    const el = placeholderEls.current.get(removedId)
-    el?.closest('p')?.remove()
-    placeholderEls.current.delete(removedId)
-    const newPending = pendingInputs.filter(p => p.id !== removedId)
-    setPendingInputs(newPending)
-    setProject(prev => prev ? {
-      ...prev,
-      pending_inputs: newPending.length > 0 ? newPending : null,
-      status: newPending.length > 0 ? 'needs_input' : 'complete',
-    } : prev)
-    setRemoveTarget(null)
-    runInBackground(() => callFillApi({ removals: [removedId] }))
-  }, [removeTarget, pendingInputs, callFillApi, runInBackground])
-
-  // Creates a fresh short-lived signed URL at click time so the download always
-  // fetches the current file from storage, bypassing any CDN layer cache.
   const handleDownloadProcessed = useCallback(async () => {
     const path = project?.processed_file_path
     const name = project?.original_file_name
@@ -817,6 +642,36 @@ export default function ProjectDetailPage() {
     a.click()
     document.body.removeChild(a)
   }, [project?.processed_file_path, project?.original_file_name])
+
+  const handleFinalize = useCallback(async () => {
+    if (!project || !session || finalizingRef.current) return
+    finalizingRef.current = true
+    setFinalizing(true)
+    setFinalizeError(null)
+    try {
+      const res = await fetch(`${API_URL}/api/processing/finalize-inputs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          projectId: project.id,
+          fills: [...fills.entries()].map(([fillId, text]) => ({ id: fillId, text })),
+          removals: [...removals],
+        }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error((body as { error?: string }).error ?? String(res.status))
+      }
+      window.location.reload()
+    } catch (err) {
+      setFinalizeError(String(err instanceof Error ? err.message : err))
+      finalizingRef.current = false
+      setFinalizing(false)
+    }
+  }, [project, session, fills, removals])
 
   // ── Early returns (after all hooks) ─────────────────────────────────────────
 
@@ -847,10 +702,12 @@ export default function ProjectDetailPage() {
   const isPdf = nameLower.endsWith('.pdf')
   const isDocx = nameLower.endsWith('.docx')
   const totalCost = project.services.reduce((sum, s) => sum + calcPrice(s, project.page_count), 0)
+  const pendingInputs = project.pending_inputs ?? []
+  const hasNeedsInput = status === 'needs_input' && pendingInputs.length > 0
   const canSeeProcessed = !!processedFileUrl && (status === 'complete' || status === 'needs_input')
-  // Block download while background saves are still syncing — the signed URL would
-  // otherwise point at a file that hasn't received the latest fill/remove yet.
-  const canDownloadProcessed = !!processedFileUrl && status === 'complete' && bgSaving === 0
+  const canDownloadProcessed = !!processedFileUrl && status === 'complete'
+  const canFinalize = hasNeedsInput &&
+    pendingInputs.every(p => removals.has(p.id) || (fills.get(p.id) ?? '').trim().length > 0)
   const previewUrl = canSeeProcessed ? processedFileUrl : fileUrl
   const pdfDownloadName = project.original_file_name.replace(/\.docx$/i, '') + '.pdf'
   const selectedPages = project.selected_pages ?? []
@@ -876,18 +733,6 @@ export default function ProjectDetailPage() {
           {canSeeProcessed ? t('project.viewingFinal') : t('project.viewingOriginal')}
         </span>
 
-        {bgSaving > 0 && (
-          <span className="text-xs text-muted shrink-0 inline-flex items-center gap-1.5 bg-white/80 backdrop-blur-sm border border-border rounded-lg px-2.5 py-1 pointer-events-auto">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-            {t('project.fillIn.savingBackground')}
-          </span>
-        )}
-        {saveError && bgSaving === 0 && (
-          <span className="text-xs shrink-0 inline-flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-2.5 py-1 pointer-events-auto max-w-md">
-            <span className="truncate">{t('project.fillIn.saveError')}</span>
-            <button onClick={() => setSaveError(null)} className="text-red-400 hover:text-red-700 shrink-0" aria-label="dismiss">✕</button>
-          </span>
-        )}
 
         <div className="flex-1" />
 
@@ -914,73 +759,26 @@ export default function ProjectDetailPage() {
             fileName={project.original_file_name}
             zoom={zoom}
             pageBreakLabel={t('project.pageBreak')}
-            onRendered={handleDocxRendered}
-          >
-            {status === 'needs_input' && overlayPositions.map(({ id, top, left }) => {
-              const inp = pendingInputs.find(p => p.id === id)
-              if (!inp) return null
-              const labelKey = inp.kind === 'figure-caption' ? 'fillIn.figureCaption'
-                : inp.kind === 'figure-source' ? 'fillIn.figureSource'
-                : inp.kind === 'table-caption' ? 'fillIn.tableCaption'
-                : 'fillIn.tableSource'
-              const phKey = inp.kind.endsWith('-source') ? 'fillIn.placeholder.source' : 'fillIn.placeholder.caption'
-              return (
-                <div
-                  key={id}
-                  style={{ position: 'absolute', top, left, width: 240, zIndex: 10 }}
-                  className="bg-white border border-orange-200 rounded-xl shadow-sm p-3 flex flex-col gap-2"
-                >
-                  <span className="text-xs font-medium text-orange-700 leading-tight">
-                    {t(`project.${labelKey}`, { n: inp.ordinal })}
-                  </span>
-                  <input
-                    type="text"
-                    value={fills[id] ?? ''}
-                    onChange={e => setFills(prev => ({ ...prev, [id]: e.target.value }))}
-                    onKeyDown={e => { if (e.key === 'Enter') handleSave(id) }}
-                    placeholder={t(`project.${phKey}`)}
-                    className="text-xs text-ink border border-border rounded-lg px-2.5 py-1.5 outline-none focus:border-forest transition-colors w-full"
-                  />
-                  <div className="flex gap-1.5">
-                    <button
-                      onClick={() => handleSave(id)}
-                      disabled={!fills[id]?.trim()}
-                      className="flex-1 text-xs font-medium bg-ink text-[#F0EEE8] rounded-lg px-2 py-1.5 hover:bg-ink/90 transition-colors disabled:opacity-40"
-                    >
-                      {t('project.fillIn.save')}
-                    </button>
-                    <button
-                      onClick={() => setRemoveTarget(inp)}
-                      className="w-7 h-7 flex items-center justify-center rounded-lg text-muted hover:text-red-600 hover:bg-red-50 transition-colors shrink-0"
-                      aria-label={t('project.fillIn.removeButton')}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </DocxViewer>
+          />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8">
             <div className="w-14 h-14 rounded-2xl bg-white border border-border flex items-center justify-center">
               <FileText size={24} className="text-muted" strokeWidth={1.5} />
             </div>
             <p className="text-sm text-muted max-w-xs">{t('project.noPreview')}</p>
-            {(canSeeProcessed || fileUrl) && (
-              canSeeProcessed ? (
-                <Button variant="outline" onClick={handleDownloadProcessed}>
+            {canSeeProcessed && (
+              <Button variant="outline" onClick={handleDownloadProcessed}>
+                <Download size={14} />
+                {t('project.downloadFinalFile')}
+              </Button>
+            )}
+            {!canSeeProcessed && fileUrl && (
+              <Button asChild variant="outline">
+                <a href={fileUrl} download={project.original_file_name}>
                   <Download size={14} />
-                  {t('project.downloadFinalFile')}
-                </Button>
-              ) : (
-                <Button asChild variant="outline">
-                  <a href={fileUrl!} download={project.original_file_name}>
-                    <Download size={14} />
-                    {t('project.downloadFile')}
-                  </a>
-                </Button>
-              )
+                  {t('project.downloadFile')}
+                </a>
+              </Button>
             )}
           </div>
         )}
@@ -1032,17 +830,62 @@ export default function ProjectDetailPage() {
           </DetailRow>
         </div>
 
+        {hasNeedsInput && (
+          <div className="px-6 py-5 border-t border-border shrink-0 flex flex-col gap-4">
+            <h2 className="text-sm font-semibold text-ink">{t('project.inputs.title')}</h2>
+            {pendingInputs.map((p) => {
+              const isRemoved = removals.has(p.id)
+              const labelKey = `project.inputs.${p.kind}` as const
+              const placeholderKey = `project.inputs.placeholder_${p.kind}` as const
+              return (
+                <div key={p.id} className={`flex flex-col gap-1.5 ${isRemoved ? 'opacity-50' : ''}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-muted uppercase tracking-wider">
+                      {t(labelKey, { n: p.ordinal })}
+                    </span>
+                    <button
+                      className="text-xs text-muted hover:text-ink transition-colors shrink-0"
+                      onClick={() => {
+                        if (isRemoved) {
+                          setRemovals(prev => { const s = new Set(prev); s.delete(p.id); return s })
+                        } else {
+                          setRemovals(prev => new Set([...prev, p.id]))
+                          setFills(prev => { const m = new Map(prev); m.delete(p.id); return m })
+                        }
+                      }}
+                    >
+                      {isRemoved ? t('project.inputs.restore') : t('project.inputs.remove')}
+                    </button>
+                  </div>
+                  {!isRemoved && (
+                    <textarea
+                      className="w-full text-sm text-ink border border-border rounded-xl px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-forest/30 focus:border-forest-light transition-colors bg-white placeholder:text-muted/50"
+                      rows={2}
+                      placeholder={t(placeholderKey)}
+                      value={fills.get(p.id) ?? ''}
+                      onChange={e => setFills(prev => new Map([...prev, [p.id, e.target.value]]))}
+                    />
+                  )}
+                </div>
+              )
+            })}
+            {finalizeError && (
+              <p className="text-xs text-red-600">{t('project.inputs.finalizeError')}</p>
+            )}
+            <Button
+              className="w-full"
+              disabled={!canFinalize || finalizing}
+              onClick={handleFinalize}
+            >
+              {finalizing ? t('project.inputs.finalizing') : t('project.inputs.finalize')}
+            </Button>
+          </div>
+        )}
+
         {(canDownloadProcessed || fileUrl) && (
           <div className="px-6 pb-6 mt-auto shrink-0 flex flex-col gap-2">
-            {canDownloadProcessed ? (
+            {canDownloadProcessed && (
               <Button className="w-full" onClick={handleDownloadProcessed}>
-                <Download size={14} />
-                {t('project.downloadFinalFile')}
-              </Button>
-            ) : (
-              // Genuinely disabled — `disabled` on an `asChild` <a> is a no-op, so we
-              // render a real <button> to keep the final file locked until it's ready.
-              <Button className="w-full" disabled title={t('project.downloadLockedHint')}>
                 <Download size={14} />
                 {t('project.downloadFinalFile')}
               </Button>
@@ -1067,31 +910,6 @@ export default function ProjectDetailPage() {
         )}
       </div>
     </div>
-
-    {/* Remove confirmation modal */}
-    {removeTarget && createPortal(
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm px-4">
-        <div className="bg-white rounded-2xl border border-border shadow-lg max-w-sm w-full p-6 flex flex-col gap-4">
-          <h2 className="text-base font-semibold text-ink">{t('project.fillIn.removeConfirm.title')}</h2>
-          <p className="text-sm text-muted leading-relaxed">{t('project.fillIn.removeConfirm.body')}</p>
-          <div className="flex gap-2 justify-end">
-            <button
-              onClick={() => setRemoveTarget(null)}
-              className="text-sm font-medium text-muted hover:text-ink px-4 py-2 rounded-xl transition-colors"
-            >
-              {t('project.fillIn.removeConfirm.cancel')}
-            </button>
-            <button
-              onClick={handleRemoveConfirm}
-              className="text-sm font-medium bg-red-600 text-white px-4 py-2 rounded-xl hover:bg-red-700 transition-colors"
-            >
-              {t('project.fillIn.removeConfirm.confirm')}
-            </button>
-          </div>
-        </div>
-      </div>,
-      document.body
-    )}
     </>
   )
 }

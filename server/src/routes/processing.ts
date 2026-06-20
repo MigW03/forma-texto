@@ -1,15 +1,8 @@
 import { Router, Request, Response } from 'express'
 import { supabase } from '../lib/supabase'
 import { processFormatting } from '../lib/processFormatting'
-import {
-  fillContent,
-  removeContent,
-  shiftPendingAfterRemovals,
-  unzipDocx,
-  zipDocx,
-  type PendingInput,
-  type RemovedInput,
-} from '../lib/formatting'
+import { unzipDocx, zipDocx, finalizeInputs, type PendingInput } from '../lib/formatting'
+import { sendProjectReadyEmail } from '../lib/notify'
 
 const router = Router()
 
@@ -60,14 +53,12 @@ router.post('/start', async (req: Request, res: Response) => {
 const BUCKET = 'projects'
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
-// POST /api/processing/fill-content  { projectId, fills?, removals? }
-// Applies user-supplied caption text (fills) and/or intentional removals to the
-// processed DOCX, then updates project status (needs_input → complete when all
-// pending inputs are resolved).
-router.post('/fill-content', async (req: Request, res: Response) => {
-  const { projectId, fills, removals } = req.body as {
+// POST /api/processing/finalize-inputs  { projectId, fills, removals }
+// Applies all pending caption fills and removals atomically, stamps complete, sends email.
+router.post('/finalize-inputs', async (req: Request, res: Response) => {
+  const { projectId, fills = [], removals = [] } = req.body as {
     projectId?: string
-    fills?: Record<string, string>
+    fills?: { id: string; text: string }[]
     removals?: string[]
   }
 
@@ -76,128 +67,96 @@ router.post('/fill-content', async (req: Request, res: Response) => {
     return
   }
 
-  const hasFills    = fills    && Object.keys(fills).length    > 0
-  const hasRemovals = removals && removals.length > 0
-  if (!hasFills && !hasRemovals) {
-    res.status(400).json({ error: 'at least one fill or removal required' })
-    return
-  }
-
   if (!(await authorize(req, projectId))) {
     res.status(401).json({ error: 'Unauthorized' })
     return
   }
 
-  const { data: project, error: projErr } = await supabase
+  const { data: project, error: fetchErr } = await supabase
     .from('projects')
-    .select('status, pending_inputs, removed_inputs, processed_file_path, user_id')
+    .select('id, user_id, processed_file_path, status, pending_inputs, original_file_name')
     .eq('id', projectId)
     .single()
 
-  if (projErr || !project) {
+  if (fetchErr || !project) {
     res.status(404).json({ error: 'project not found' })
     return
   }
-  if (project.status !== 'needs_input' || !project.pending_inputs) {
-    res.status(409).json({ error: 'project is not awaiting input' })
+
+  if (project.status === 'complete') {
+    // Already finalized — idempotent success (retry-safe after a network hiccup)
+    res.json({ ok: true })
+    return
+  }
+  if (project.status !== 'needs_input') {
+    res.status(409).json({ error: `project status is '${project.status}', expected 'needs_input'` })
     return
   }
 
-  const pendingInputs = project.pending_inputs as PendingInput[]
-  const pendingIds = new Set(pendingInputs.map(p => p.id))
+  const pending = (project.pending_inputs ?? []) as PendingInput[]
+  const pendingIds = new Set(pending.map(p => p.id))
 
-  const unknownFillKeys    = Object.keys(fills    ?? {}).filter(k => !pendingIds.has(k))
-  const unknownRemovalKeys = (removals ?? []).filter(k => !pendingIds.has(k))
-  if (unknownFillKeys.length || unknownRemovalKeys.length) {
-    res.status(400).json({ error: 'unknown input ids', unknownFillKeys, unknownRemovalKeys })
+  // All IDs in fills and removals must be known
+  const allIds = [...fills.map(f => f.id), ...removals]
+  const unknown = allIds.filter(id => !pendingIds.has(id))
+  if (unknown.length > 0) {
+    res.status(400).json({ error: `unknown pending input id(s): ${unknown.join(', ')}` })
     return
   }
 
-  // Download the current processed DOCX
-  const { data: fileData, error: dlErr } = await supabase.storage
+  // Every pending slot must be resolved (filled or removed)
+  const resolvedIds = new Set(allIds)
+  const unresolved = pending.filter(p => !resolvedIds.has(p.id))
+  if (unresolved.length > 0) {
+    res.status(400).json({ error: `${unresolved.length} pending input(s) not resolved` })
+    return
+  }
+
+  if (!project.processed_file_path) {
+    res.status(422).json({ error: 'no processed file found' })
+    return
+  }
+
+  const { data: blob, error: dlErr } = await supabase.storage
     .from(BUCKET)
     .download(project.processed_file_path)
-  if (dlErr || !fileData) {
-    res.status(500).json({ error: 'failed to download processed file' })
+  if (dlErr || !blob) {
+    res.status(500).json({ error: `download failed: ${dlErr?.message ?? 'no data'}` })
     return
   }
 
-  const arrayBuf  = await fileData.arrayBuffer()
-  const unzipped  = unzipDocx(Buffer.from(arrayBuf))
-  const { files, documentXml, stylesXml } = unzipped
+  const inputBuf = new Uint8Array(await blob.arrayBuffer())
+  const { files, documentXml, stylesXml } = unzipDocx(inputBuf)
+  const finalXml = finalizeInputs(documentXml, fills, removals, pending)
+  const docxBuf = zipDocx(files, { documentXml: finalXml, stylesXml })
 
-  let workingDocXml = documentXml
-  if (hasFills)    workingDocXml = fillContent(workingDocXml, pendingInputs, fills!)
-  if (hasRemovals) workingDocXml = removeContent(workingDocXml, pendingInputs, removals!)
-
-  const docxBuf = zipDocx(files, { documentXml: workingDocXml, stylesXml })
-
-  // Upload back (upsert). cacheControl '0' so the overwritten file isn't served
-  // from a stale CDN cache (Supabase caches by path for 1h by default).
+  // Real cacheControl TTL (not '0') — the client keys the URL on `completed_at`,
+  // which this endpoint bumps below, so an overwrite is served fresh without
+  // disabling CDN caching for every view.
   const { error: upErr } = await supabase.storage
     .from(BUCKET)
-    .upload(project.processed_file_path, docxBuf, { contentType: DOCX_MIME, upsert: true, cacheControl: '0' })
+    .upload(project.processed_file_path, docxBuf, { contentType: DOCX_MIME, upsert: true, cacheControl: '3600' })
   if (upErr) {
-    res.status(500).json({ error: 'failed to upload updated file' })
+    res.status(500).json({ error: `upload failed: ${upErr.message}` })
     return
   }
 
-  const resolvedIds = new Set([
-    ...Object.keys(fills ?? {}),
-    ...(removals ?? []),
-  ])
-  // Removals delete a block each, so the survivors' stored block indices shift up.
-  const removedInsertedAts = (removals ?? []).map(id => pendingInputs.find(p => p.id === id)!.insertedAt)
-  const remaining = shiftPendingAfterRemovals(
-    pendingInputs.filter(p => !resolvedIds.has(p.id)),
-    removedInsertedAts,
-  )
-
-  const now = new Date().toISOString()
-  const newRemovedInputs: RemovedInput[] = [
-    ...((project.removed_inputs as RemovedInput[] | null) ?? []),
-    ...(removals ?? []).map(id => {
-      const inp = pendingInputs.find(p => p.id === id)!
-      return { id, kind: inp.kind, removedAt: now }
-    }),
-  ]
-
-  if (remaining.length === 0) {
-    const { error: updErr } = await supabase
-      .from('projects')
-      .update({
-        status: 'complete',
-        completed_at: now,
-        pending_inputs: null,
-        removed_inputs: newRemovedInputs.length > 0 ? newRemovedInputs : null,
-      })
-      .eq('id', projectId)
-    if (updErr) {
-      res.status(500).json({ error: 'failed to update project status' })
-      return
-    }
-    // Non-fatal ready email
-    try {
-      const { sendProjectReadyEmail } = await import('../lib/notify')
-      await sendProjectReadyEmail(projectId)
-    } catch (err) {
-      console.error(`[fill-content] email failed for ${projectId} (non-fatal):`, err)
-    }
-  } else {
-    const { error: updErr } = await supabase
-      .from('projects')
-      .update({
-        pending_inputs: remaining,
-        removed_inputs: newRemovedInputs.length > 0 ? newRemovedInputs : null,
-      })
-      .eq('id', projectId)
-    if (updErr) {
-      res.status(500).json({ error: 'failed to update project' })
-      return
-    }
+  const { error: updErr } = await supabase
+    .from('projects')
+    .update({ status: 'complete', pending_inputs: null, completed_at: new Date().toISOString() })
+    .eq('id', projectId)
+  if (updErr) {
+    res.status(500).json({ error: `status update failed: ${updErr.message}` })
+    return
   }
 
-  res.json({ ok: true, remaining: remaining.length })
+  try {
+    await sendProjectReadyEmail(projectId)
+  } catch (err) {
+    console.error(`[finalize-inputs] email failed for ${projectId} (non-fatal):`, err)
+  }
+
+  res.json({ ok: true })
 })
 
 export default router

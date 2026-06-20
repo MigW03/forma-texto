@@ -1,220 +1,201 @@
 import { describe, it, expect } from 'vitest'
-import { detectAndInsertPlaceholders, fillContent, removeContent, shiftPendingAfterRemovals, type PendingInput } from './missingInputs'
+import { detectAndInsertPlaceholders, finalizeInputs } from './missingInputs'
 import { getBlocks, blockText } from './blocks'
-import { CAPTION_STYLE } from './guidelines'
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+const DOC = (body: string) =>
+  '<?xml version="1.0"?>' +
+  '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+  `<w:body>${body}</w:body></w:document>`
 
-const wrap = (inner: string) =>
-  `<w:document><w:body>${inner}</w:body></w:document>`
+const para = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`
+const captionPara = (text: string) => `<w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`
+const imagePara = '<w:p><w:r><w:drawing><wp:inline><a:blip r:embed="rId7"/></wp:inline></w:drawing></w:r></w:p>'
+const tablePara = '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
 
-const para = (text: string, style?: string) => {
-  const pPr = style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : ''
-  return `<w:p>${pPr}<w:r><w:t>${text}</w:t></w:r></w:p>`
-}
-
-const captionPara = (text: string) => para(text, CAPTION_STYLE)
-
-// Minimal <w:drawing> so isImageParagraph recognises it
-const imagePara = () => `<w:p><w:r><w:drawing><wp:inline/></w:drawing></w:r></w:p>`
-
-const tableBlock = () => `<w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`
-
-const hasCaptionStyle = (xml: string) => xml.includes(`w:val="${CAPTION_STYLE}"`)
-const isRed = (xml: string) => xml.includes('w:val="FF0000"')
-
-// ── detectAndInsertPlaceholders ───────────────────────────────────────────────
+const styleOf = (b: string) => b.match(/<w:pStyle\b[^>]*w:val="([^"]*)"/)?.[1] ?? null
+const isRed = (b: string) => b.includes('w:val="FF0000"')
+const isPlaceholder = (b: string) => styleOf(b) === 'Caption' && isRed(b)
 
 describe('detectAndInsertPlaceholders', () => {
-  it('returns empty pending when no images or tables', () => {
-    const xml = wrap(para('just text') + para('more text'))
-    const { pending } = detectAndInsertPlaceholders(xml)
+  it('returns document unchanged when no images or tables', () => {
+    const doc = DOC(para('text'))
+    const { xml, pending } = detectAndInsertPlaceholders(doc)
+    expect(xml).toBe(doc)
     expect(pending).toHaveLength(0)
   })
 
-  it('inserts both caption and source placeholders for image with plain neighbours', () => {
-    const xml = wrap(para('plain before') + imagePara() + para('plain after'))
-    const { xml: out, pending } = detectAndInsertPlaceholders(xml)
+  it('inserts caption and source placeholders around an image', () => {
+    const doc = DOC(para('intro') + imagePara + para('body'))
+    const { xml, pending } = detectAndInsertPlaceholders(doc)
+    const blocks = getBlocks(xml)
+    // intro, [caption placeholder], image, [source placeholder], body
+    expect(blocks).toHaveLength(5)
+    expect(isPlaceholder(blocks[1])).toBe(true)
+    expect(isPlaceholder(blocks[3])).toBe(true)
     expect(pending).toHaveLength(2)
-    expect(pending.find(p => p.kind === 'figure-caption')).toBeDefined()
-    expect(pending.find(p => p.kind === 'figure-source')).toBeDefined()
-    // Placeholder paragraphs must be red
-    const blocks = getBlocks(out)
-    for (const p of pending) {
-      const block = blocks[p.insertedAt]
-      expect(hasCaptionStyle(block)).toBe(true)
-      expect(isRed(block)).toBe(true)
-    }
+    expect(pending[0].kind).toBe('figure_caption')
+    expect(pending[0].ordinal).toBe(1)
+    expect(pending[0].insertedAt).toBe(1)
+    expect(pending[1].kind).toBe('figure_source')
+    expect(pending[1].ordinal).toBe(1)
+    expect(pending[1].insertedAt).toBe(3)
   })
 
-  it('caption placeholder text contains figure ordinal', () => {
-    const xml = wrap(imagePara())
-    const { xml: out, pending } = detectAndInsertPlaceholders(xml)
-    const captionPending = pending.find(p => p.kind === 'figure-caption')!
-    const block = getBlocks(out)[captionPending.insertedAt]
-    expect(blockText(block)).toMatch(/Figura 1/)
+  it('inserts caption and source placeholders around a table', () => {
+    const doc = DOC(para('intro') + tablePara + para('body'))
+    const { xml, pending } = detectAndInsertPlaceholders(doc)
+    const blocks = getBlocks(xml)
+    expect(blocks).toHaveLength(5)
+    expect(isPlaceholder(blocks[1])).toBe(true) // table_caption
+    expect(isPlaceholder(blocks[3])).toBe(true) // table_source
+    expect(pending[0].kind).toBe('table_caption')
+    expect(pending[1].kind).toBe('table_source')
   })
 
-  it('skips caption when existing Caption-styled paragraph is before image', () => {
-    const xml = wrap(captionPara('Figura 1 — My caption') + imagePara() + para('plain after'))
-    const { pending } = detectAndInsertPlaceholders(xml)
-    expect(pending.find(p => p.kind === 'figure-caption')).toBeUndefined()
-    expect(pending.find(p => p.kind === 'figure-source')).toBeDefined()
+  it('does not insert caption placeholder when figure label already present', () => {
+    const doc = DOC(para('Figura 1 — já existe') + imagePara + para('body'))
+    const { xml, pending } = detectAndInsertPlaceholders(doc)
+    const blocks = getBlocks(xml)
+    // existing label, image, [source placeholder], body
+    expect(blocks).toHaveLength(4)
+    expect(pending).toHaveLength(1)
+    expect(pending[0].kind).toBe('figure_source')
   })
 
-  it('skips caption when labelled paragraph is before image (text match)', () => {
-    const xml = wrap(para('Figura 1 — unlabelled but text matches') + imagePara() + para('plain after'))
-    const { pending } = detectAndInsertPlaceholders(xml)
-    expect(pending.find(p => p.kind === 'figure-caption')).toBeUndefined()
+  it('does not insert caption placeholder when Caption-styled paragraph is above image', () => {
+    const doc = DOC(captionPara('Figura 1 — legenda') + imagePara + para('body'))
+    const { xml, pending } = detectAndInsertPlaceholders(doc)
+    const blocks = getBlocks(xml)
+    expect(blocks).toHaveLength(4) // caption, image, [source placeholder], body
+    expect(pending).toHaveLength(1)
+    expect(pending[0].kind).toBe('figure_source')
   })
 
-  it('styles unlabelled-but-text-matching neighbour as Caption without inserting pending', () => {
-    const xml = wrap(imagePara() + para('Fonte: elaborado pelo autor'))
-    const { xml: out, pending } = detectAndInsertPlaceholders(xml)
-    expect(pending.find(p => p.kind === 'figure-source')).toBeUndefined()
-    // The source para should now have Caption style
-    const blocks = getBlocks(out)
-    const sourceBlock = blocks.find(b => blockText(b).includes('Fonte:'))!
-    expect(hasCaptionStyle(sourceBlock)).toBe(true)
+  it('does not insert source placeholder when Fonte line already present', () => {
+    const doc = DOC(para('intro') + imagePara + para('Fonte: autor (2024).'))
+    const { xml, pending } = detectAndInsertPlaceholders(doc)
+    const blocks = getBlocks(xml)
+    expect(blocks).toHaveLength(4) // intro, [caption placeholder], image, fonte
+    expect(pending).toHaveLength(1)
+    expect(pending[0].kind).toBe('figure_caption')
   })
 
-  it('handles image at the very start of the document', () => {
-    const xml = wrap(imagePara() + para('plain after'))
-    const { pending } = detectAndInsertPlaceholders(xml)
-    expect(pending.find(p => p.kind === 'figure-caption')).toBeDefined()
+  it('skips placeholders between stacked images', () => {
+    const doc = DOC(imagePara + imagePara)
+    const { xml, pending } = detectAndInsertPlaceholders(doc)
+    const blocks = getBlocks(xml)
+    // [caption for fig 1], img, img, [source for fig 2]
+    expect(blocks).toHaveLength(4)
+    expect(pending).toHaveLength(2)
+    expect(pending[0].kind).toBe('figure_caption')
+    expect(pending[0].insertedAt).toBe(0)
+    expect(pending[1].kind).toBe('figure_source')
+    expect(pending[1].insertedAt).toBe(3)
   })
 
-  it('handles image at the very end of the document', () => {
-    const xml = wrap(para('plain before') + imagePara())
-    const { pending } = detectAndInsertPlaceholders(xml)
-    expect(pending.find(p => p.kind === 'figure-source')).toBeDefined()
+  it('tracks correct insertedAt for multiple images', () => {
+    const doc = DOC(imagePara + para('mid') + imagePara)
+    const { xml, pending } = detectAndInsertPlaceholders(doc)
+    const blocks = getBlocks(xml)
+    // [cap1], img1, [src1], mid, [cap2], img2, [src2]
+    expect(blocks).toHaveLength(7)
+    expect(pending).toHaveLength(4)
+    expect(pending[0].insertedAt).toBe(0)
+    expect(pending[1].insertedAt).toBe(2)
+    expect(pending[2].insertedAt).toBe(4)
+    expect(pending[3].insertedAt).toBe(6)
   })
 
-  it('tracks ordinals correctly across two images', () => {
-    const xml = wrap(imagePara() + para('between') + imagePara())
-    const { pending } = detectAndInsertPlaceholders(xml)
-    const captions = pending.filter(p => p.kind === 'figure-caption').sort((a, b) => a.ordinal - b.ordinal)
-    expect(captions).toHaveLength(2)
-    expect(captions[0].ordinal).toBe(1)
-    expect(captions[1].ordinal).toBe(2)
-    expect(captions[0].id).toBe('figure-1-caption')
-    expect(captions[1].id).toBe('figure-2-caption')
+  it('assigns sequential ordinals per kind across mixed images and tables', () => {
+    const doc = DOC(imagePara + para('mid') + tablePara)
+    const { pending } = detectAndInsertPlaceholders(doc)
+    const figItems = pending.filter(p => p.kind.startsWith('figure'))
+    const tblItems = pending.filter(p => p.kind.startsWith('table'))
+    expect(figItems[0].ordinal).toBe(1)
+    expect(tblItems[0].ordinal).toBe(1)
   })
 
-  it('insertedAt indices are correct in the returned xml', () => {
-    const xml = wrap(imagePara())
-    const { xml: out, pending } = detectAndInsertPlaceholders(xml)
-    const blocks = getBlocks(out)
-    for (const p of pending) {
-      expect(blocks[p.insertedAt]).toBeDefined()
-      expect(isRed(blocks[p.insertedAt])).toBe(true)
-    }
+  it('returns unique ids for each pending input', () => {
+    const doc = DOC(imagePara + para('mid') + imagePara)
+    const { pending } = detectAndInsertPlaceholders(doc)
+    const ids = new Set(pending.map(p => p.id))
+    expect(ids.size).toBe(pending.length)
   })
 
-  it('inserts table-caption placeholder for table with no caption above', () => {
-    const xml = wrap(para('intro') + tableBlock() + para('after'))
-    const { pending } = detectAndInsertPlaceholders(xml)
-    const cap = pending.find(p => p.kind === 'table-caption')
-    expect(cap).toBeDefined()
-    expect(cap?.id).toBe('table-1-caption')
-  })
-
-  it('skips table-caption when Tabela label present above', () => {
-    const xml = wrap(para('Tabela 1 — Resultados') + tableBlock() + para('after'))
-    const { pending } = detectAndInsertPlaceholders(xml)
-    expect(pending.find(p => p.kind === 'table-caption')).toBeUndefined()
-  })
-
-  it('does not insert placeholders between adjacent stacked images', () => {
-    const xml = wrap(imagePara() + imagePara())
-    const { pending } = detectAndInsertPlaceholders(xml)
-    // No pending should reference positions between the two images
-    // (conservative: stacked images don't get placeholders between them)
-    const ids = pending.map(p => p.id)
-    // figure-1-source and figure-2-caption would be the "between" entries — they shouldn't exist
-    expect(ids).not.toContain('figure-1-source')
-    expect(ids).not.toContain('figure-2-caption')
-  })
-})
-
-// ── fillContent ───────────────────────────────────────────────────────────────
-
-describe('fillContent', () => {
-  it('replaces placeholder with user text, no red color', () => {
-    const xml = wrap(imagePara())
-    const { xml: withPlaceholders, pending } = detectAndInsertPlaceholders(xml)
-    const cap = pending.find(p => p.kind === 'figure-caption')!
-    const filled = fillContent(withPlaceholders, pending, { [cap.id]: 'My caption text' })
-    const block = getBlocks(filled)[cap.insertedAt]
-    expect(blockText(block)).toBe('My caption text')
-    expect(isRed(block)).toBe(false)
-    expect(hasCaptionStyle(block)).toBe(true)
-  })
-
-  it('partial fill leaves other placeholders untouched', () => {
-    const xml = wrap(imagePara())
-    const { xml: withPlaceholders, pending } = detectAndInsertPlaceholders(xml)
-    const [cap, src] = pending.sort((a, b) => a.insertedAt - b.insertedAt)
-    const filled = fillContent(withPlaceholders, pending, { [cap.id]: 'Caption text' })
-    const srcBlock = getBlocks(filled)[src.insertedAt]
-    expect(isRed(srcBlock)).toBe(true)
-  })
-
-  it('no fills → xml unchanged', () => {
-    const xml = wrap(imagePara())
-    const { xml: withPlaceholders, pending } = detectAndInsertPlaceholders(xml)
-    const filled = fillContent(withPlaceholders, pending, {})
-    expect(filled).toBe(withPlaceholders)
+  it('returns unchanged document when all captions and sources already exist', () => {
+    const doc = DOC(
+      para('Figura 1 — legenda') +
+      imagePara +
+      para('Fonte: autor.') +
+      para('Tabela 1 — outra') +
+      tablePara +
+      para('Fonte: IBGE.')
+    )
+    const { xml, pending } = detectAndInsertPlaceholders(doc)
+    expect(xml).toBe(doc)
+    expect(pending).toHaveLength(0)
   })
 })
 
-// ── removeContent ─────────────────────────────────────────────────────────────
-
-describe('removeContent', () => {
-  it('removes the placeholder block entirely', () => {
-    const xml = wrap(imagePara())
-    const { xml: withPlaceholders, pending } = detectAndInsertPlaceholders(xml)
-    const blocksBefore = getBlocks(withPlaceholders).length
-    const cap = pending.find(p => p.kind === 'figure-caption')!
-    const removed = removeContent(withPlaceholders, pending, [cap.id])
-    expect(getBlocks(removed).length).toBe(blocksBefore - 1)
-    expect(removed).not.toContain('[inserir legenda]')
+describe('finalizeInputs', () => {
+  it('replaces a placeholder with a proper Caption paragraph (no red)', () => {
+    const doc = DOC(imagePara)
+    const { xml: docWithPlaceholders, pending } = detectAndInsertPlaceholders(doc)
+    const filled = finalizeInputs(
+      docWithPlaceholders,
+      [{ id: pending[0].id, text: 'Figura 1 — minha legenda' }],
+      [],
+      pending,
+    )
+    const blocks = getBlocks(filled)
+    const captionBlock = blocks[pending[0].insertedAt]
+    expect(styleOf(captionBlock)).toBe('Caption')
+    expect(isRed(captionBlock)).toBe(false)
+    expect(blockText(captionBlock)).toBe('Figura 1 — minha legenda')
   })
 
-  it('does not remove untargeted placeholders', () => {
-    const xml = wrap(imagePara())
-    const { xml: withPlaceholders, pending } = detectAndInsertPlaceholders(xml)
-    const cap = pending.find(p => p.kind === 'figure-caption')!
-    const removed = removeContent(withPlaceholders, pending, [cap.id])
-    // Source placeholder text must still be present after only removing the caption
-    expect(removed).toContain('[inserir fonte]')
-  })
-})
-
-// ── shiftPendingAfterRemovals ──────────────────────────────────────────────────
-
-describe('shiftPendingAfterRemovals', () => {
-  const mk = (id: string, insertedAt: number): PendingInput =>
-    ({ id, kind: 'figure-source', ordinal: 1, insertedAt })
-
-  it('returns the same array when nothing was removed', () => {
-    const remaining = [mk('a', 3), mk('b', 7)]
-    expect(shiftPendingAfterRemovals(remaining, [])).toEqual(remaining)
+  it('removes a placeholder when its id is in removals', () => {
+    const doc = DOC(imagePara)
+    const { xml: docWithPlaceholders, pending } = detectAndInsertPlaceholders(doc)
+    const filled = finalizeInputs(docWithPlaceholders, [], [pending[0].id], pending)
+    const blocks = getBlocks(filled)
+    // caption placeholder deleted → image is now the first block
+    expect(blocks[0]).toBe(imagePara)
   })
 
-  it('shifts survivors after a removed block down by one', () => {
-    // caption@5 removed; source@7 must become @6 in the re-saved doc
-    const remaining = [mk('src', 7)]
-    expect(shiftPendingAfterRemovals(remaining, [5])).toEqual([mk('src', 6)])
+  it('handles a mix of fills and removals in one call', () => {
+    const doc = DOC(imagePara)
+    const { xml: docWithPlaceholders, pending } = detectAndInsertPlaceholders(doc)
+    // fill caption, remove source
+    const result = finalizeInputs(
+      docWithPlaceholders,
+      [{ id: pending[0].id, text: 'Figura 1 — legenda ok' }],
+      [pending[1].id],
+      pending,
+    )
+    const blocks = getBlocks(result)
+    // [captionBlock, imagePara] — source removed
+    expect(blocks).toHaveLength(2)
+    expect(blockText(blocks[0])).toBe('Figura 1 — legenda ok')
+    expect(isRed(blocks[0])).toBe(false)
   })
 
-  it('leaves survivors before the removed block unchanged', () => {
-    const remaining = [mk('before', 3), mk('after', 9)]
-    expect(shiftPendingAfterRemovals(remaining, [5])).toEqual([mk('before', 3), mk('after', 8)])
+  it('escapes XML special characters in fill text', () => {
+    const doc = DOC(imagePara)
+    const { xml: docWithPlaceholders, pending } = detectAndInsertPlaceholders(doc)
+    const result = finalizeInputs(
+      docWithPlaceholders,
+      [{ id: pending[0].id, text: 'a & b < c > d' }],
+      [],
+      pending,
+    )
+    const blocks = getBlocks(result)
+    expect(blocks[pending[0].insertedAt]).toContain('a &amp; b &lt; c &gt; d')
   })
 
-  it('subtracts one per earlier removal (multiple removals)', () => {
-    const remaining = [mk('x', 10)]
-    expect(shiftPendingAfterRemovals(remaining, [2, 6])).toEqual([mk('x', 8)])
+  it('returns document unchanged when fills and removals are both empty', () => {
+    const doc = DOC(imagePara)
+    const { xml: docWithPlaceholders, pending } = detectAndInsertPlaceholders(doc)
+    expect(finalizeInputs(docWithPlaceholders, [], [], pending)).toBe(docWithPlaceholders)
   })
 })

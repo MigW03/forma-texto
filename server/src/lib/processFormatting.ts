@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { sendProjectReadyEmail, sendProjectNeedsInputEmail } from './notify'
+import { sendProjectReadyEmail } from './notify'
 import { docxToPdf } from './docxToPdf'
 import {
   unzipDocx,
@@ -8,7 +8,6 @@ import {
   formatReferences,
   formatCaptions,
   formatImages,
-  detectAndInsertPlaceholders,
   suppressFirstHeadingPageBreak,
   normalizeNumberingXml,
   locateReferences,
@@ -24,6 +23,7 @@ import {
   pageForBlock,
   getBlocks,
   blockText,
+  detectAndInsertPlaceholders,
   type HeadingDecision,
   type ReferenceDecision,
   type ProofreadDecision,
@@ -168,13 +168,10 @@ export async function processFormatting(projectId: string): Promise<void> {
     // format) and only run Step P over the original text.
     let workingDocXml = documentXml
     let workingStylesXml = stylesXml
+    let pending: PendingInput[] = []
     // The located references region — shared by Steps C/D and used by Step P to skip
     // references. Stays null in proofreading-only mode (Step P auto-detects instead).
     let region: ReferenceRegion | null = null
-    // Pending caption/source inputs — populated by detectAndInsertPlaceholders when
-    // formatting runs; empty for proofreading-only jobs. Scoped here so step 7 can
-    // branch on it.
-    let pending: PendingInput[] = []
 
     if (doFormatting) {
       // Compact list indentation before anything else so Step A + AI passes see the
@@ -240,18 +237,14 @@ export async function processFormatting(projectId: string): Promise<void> {
       }
 
       // Final deterministic touches, after the AI passes so they see the final heading
-      // styles: (1) normalize inline image size/centering; (2) image captions; (3) detect
-      // missing caption/source slots and insert red placeholders; (4) cancel the page
-      // break before the FIRST H1.
+      // styles: (1) normalize inline image size/centering; (2) image captions;
+      // (3) cancel the page break before the FIRST H1.
       workingDocXml = formatImages(workingDocXml, guideline)
       workingDocXml = formatCaptions(workingDocXml)
+      workingDocXml = suppressFirstHeadingPageBreak(workingDocXml)
       const { xml: docWithPlaceholders, pending: detected } = detectAndInsertPlaceholders(workingDocXml)
       workingDocXml = docWithPlaceholders
       pending = detected
-      if (pending.length > 0) {
-        console.log(`[processFormatting] ${projectId} missing inputs detected: ${pending.map(p => p.id).join(', ')}`)
-      }
-      workingDocXml = suppressFirstHeadingPageBreak(workingDocXml)
     }
 
     // Step P (AI proofreading) — runs after formatting so it sees the classified
@@ -279,13 +272,14 @@ export async function processFormatting(projectId: string): Promise<void> {
     const out = { documentXml: workingDocXml, stylesXml: workingStylesXml }
     const docxBuf = zipDocx(files, out)
 
-    // 6. Upload processed .docx. cacheControl '0' because a needs_input file is
-    // overwritten in place by /fill-content — a cached copy (Supabase default is
-    // 1h, keyed by path) would make the user download/view a stale version.
+    // 6. Upload processed .docx. cacheControl is a real TTL so the CDN can serve
+    // repeat views fast; staleness after an overwrite is handled client-side by
+    // keying the URL on `completed_at` (changes on every content write), not by
+    // disabling caching.
     const processedPath = `${project.user_id}/${projectId}/processed/${processedName(project.original_file_name)}`
     const { error: upError } = await supabase.storage
       .from(BUCKET)
-      .upload(processedPath, docxBuf, { contentType: DOCX_MIME, upsert: true, cacheControl: '0' })
+      .upload(processedPath, docxBuf, { contentType: DOCX_MIME, upsert: true, cacheControl: '3600' })
     if (upError) throw new Error(`upload failed: ${upError.message}`)
 
     // 6b. PDF export alongside the .docx (non-fatal — the .docx is the primary
@@ -303,8 +297,9 @@ export async function processFormatting(projectId: string): Promise<void> {
       console.error(`[processFormatting] pdf export failed for ${projectId} (non-fatal):`, err)
     }
 
-    // 7. Stamp status — needs_input when placeholders were inserted, complete otherwise.
-    //    Frontend gates download on status === 'complete'; 'needs_input' shows overlays.
+    // 7. Stamp status. If the pipeline detected missing captions/sources, stamp
+    // needs_input and store the pending list so the user can fill them. Otherwise
+    // stamp complete immediately and send the ready email.
     if (pending.length > 0) {
       const { error: updError } = await supabase
         .from('projects')
@@ -312,25 +307,19 @@ export async function processFormatting(projectId: string): Promise<void> {
           processed_file_path: processedPath,
           status: 'needs_input',
           pending_inputs: pending,
+          completed_at: null,
         })
         .eq('id', projectId)
       if (updError) throw new Error(`status update failed: ${updError.message}`)
-      console.log(`[processFormatting] ${projectId} -> needs_input (${pending.length} placeholder(s))`)
-
-      // Notify the user that input is needed (non-fatal, like the ready email).
-      try {
-        await sendProjectNeedsInputEmail(projectId)
-      } catch (err) {
-        console.error(`[processFormatting] needs-input email failed for ${projectId} (non-fatal):`, err)
-      }
+      console.log(`[processFormatting] ${projectId} → needs_input (${pending.length} placeholder(s))`)
     } else {
       const { error: updError } = await supabase
         .from('projects')
         .update({
           processed_file_path: processedPath,
           status: 'complete',
-          completed_at: new Date().toISOString(),
           pending_inputs: null,
+          completed_at: new Date().toISOString(),
         })
         .eq('id', projectId)
       if (updError) throw new Error(`status update failed: ${updError.message}`)

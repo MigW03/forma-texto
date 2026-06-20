@@ -136,7 +136,7 @@
     "status": {
       "pending": "Em espera",
       "processing": "A processar",
-      "needs_input": "Ação necessária",
+      "needs_input": "Aguardando resposta",
       "complete": "Pronto para revisão"
     },
     "time": {
@@ -181,6 +181,22 @@
   "project": {
     "backToDashboard": "Voltar para documentos",
     "details": "Detalhes",
+    "inputs": {
+      "title": "Itens pendentes",
+      "figure_caption": "Legenda da Figura {{n}}",
+      "figure_source": "Fonte da Figura {{n}}",
+      "table_caption": "Legenda da Tabela {{n}}",
+      "table_source": "Fonte da Tabela {{n}}",
+      "remove": "Remover",
+      "restore": "Restaurar",
+      "finalize": "Guardar e finalizar",
+      "finalizing": "A guardar…",
+      "finalizeError": "Não foi possível guardar — tente novamente",
+      "placeholder_figure_caption": "Ex: Figura 1 — Gráfico de precipitação anual",
+      "placeholder_figure_source": "Fonte: …",
+      "placeholder_table_caption": "Ex: Tabela 1 — Resultados por região",
+      "placeholder_table_source": "Fonte: …"
+    },
     "fileName": "Ficheiro",
     "service": "Serviço",
     "status": "Estado",
@@ -190,36 +206,16 @@
     "cost": "Valor",
     "noPreview": "Pré-visualização não disponível para este formato.",
     "previewError": "Não foi possível pré-visualizar este ficheiro.",
+    "loadingPreview": "A carregar documento…",
+    "loadingPreviewHint": "Documentos maiores podem demorar alguns segundos a carregar.",
     "viewingFinal": "A ver ficheiro final",
     "viewingOriginal": "A ver ficheiro original",
     "downloadFile": "Transferir ficheiro",
     "downloadFinalFile": "Transferir ficheiro final",
-    "downloadLockedHint": "Preencha as informações necessárias para libertar o ficheiro final",
     "downloadFinalPdf": "Transferir PDF final",
     "downloadOriginalFile": "Transferir ficheiro original",
     "pageBreak": "Quebra de página",
     "notFound": "Projeto não encontrado.",
-    "fillIn": {
-      "figureCaption": "Legenda da Figura {{n}}",
-      "figureSource": "Fonte da Figura {{n}}",
-      "tableCaption": "Título da Tabela {{n}}",
-      "tableSource": "Fonte da Tabela {{n}}",
-      "save": "Guardar",
-      "saving": "A guardar…",
-      "savingBackground": "A guardar alterações…",
-      "saveError": "Não foi possível guardar — tente novamente",
-      "placeholder": {
-        "caption": "ex: Figura 1 — Evolução histórica de...",
-        "source": "ex: Fonte: elaborado pelo autor (2024)"
-      },
-      "removeButton": "Remover",
-      "removeConfirm": {
-        "title": "Remover esta legenda?",
-        "body": "As normas ABNT exigem legendas para todas as figuras e tabelas. Esta ação será registada.",
-        "cancel": "Cancelar",
-        "confirm": "Remover"
-      }
-    },
     "references": {
       "title": "Referências",
       "hasSection": "Este documento possui uma secção de referências",

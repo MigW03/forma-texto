@@ -1,240 +1,178 @@
-import { FIGURE_LABEL_RE, SOURCE_LABEL_RE, isImageParagraph } from './captions'
+import { randomUUID } from 'crypto'
 import { CAPTION_STYLE } from './guidelines'
-import { getBlocks, isParagraph, replaceBlocks, setParagraphStyle, BLOCK_RE, blockText } from './blocks'
+import { getBlocks, isParagraph, blockText, replaceBlocks } from './blocks'
+import { isImageParagraph, FIGURE_LABEL_RE, SOURCE_LABEL_RE } from './captions'
 import { escapeXml } from './xmlText'
 
 export type MissingInputKind =
-  | 'figure-caption' | 'figure-source'
-  | 'table-caption'  | 'table-source'
+  | 'figure_caption'
+  | 'figure_source'
+  | 'table_caption'
+  | 'table_source'
 
 export interface PendingInput {
-  /** Stable unique id per project, e.g. "fig-1-caption", "tbl-2-source". */
-  id:         string
-  kind:       MissingInputKind
-  /** 1-indexed ordinal of the figure or table in document order. */
-  ordinal:    number
-  /** Absolute block index of the placeholder paragraph in the stored processed docx. */
+  id: string
+  kind: MissingInputKind
+  ordinal: number
+  /** Absolute block index in the stored processed DOCX (post-insertion). */
   insertedAt: number
 }
 
-export interface RemovedInput {
-  id:        string
-  kind:      MissingInputKind
-  removedAt: string  // ISO timestamp
+/** Table caption label at start of line: "Tabela 1 — ", "Quadro 2: ", etc. */
+const TABLE_LABEL_RE = /^(?:tabela|quadro)\s+\d+(?:[.\-–—]\d+)*\s*[-–—:]/i
+
+const isTableBlock = (b: string) => /^<w:tbl\b/.test(b)
+
+const isImageOrTable = (b: string) => isImageParagraph(b) || isTableBlock(b)
+
+const hasCaptionStyle = (b: string) => /<w:pStyle\b[^>]*w:val="Caption"/.test(b)
+
+const PLACEHOLDER_TEXT: Record<MissingInputKind, string> = {
+  figure_caption: '[inserir legenda da figura]',
+  figure_source: '[inserir fonte]',
+  table_caption: '[inserir legenda da tabela]',
+  table_source: '[inserir fonte]',
 }
 
-/** Table caption label: "Tabela 1 —", "Quadro 2:". */
-const TABLE_LABEL_RE = /^(?:tabela|quadro)\s+\d+/i
-
-const isTable = (b: string) => /^<w:tbl\b/.test(b)
-
-const hasCaptionStyle = (b: string) => b.includes(`w:val="${CAPTION_STYLE}"`)
-
-function buildPlaceholderXml(text: string): string {
-  return (
-    `<w:p>` +
-    `<w:pPr><w:pStyle w:val="${CAPTION_STYLE}"/></w:pPr>` +
-    `<w:r><w:rPr><w:color w:val="FF0000"/></w:rPr>` +
-    `<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>` +
-    `</w:p>`
-  )
+function buildPlaceholderXml(kind: MissingInputKind): string {
+  return `<w:p><w:pPr><w:pStyle w:val="${CAPTION_STYLE}"/></w:pPr><w:r><w:rPr><w:color w:val="FF0000"/></w:rPr><w:t>${PLACEHOLDER_TEXT[kind]}</w:t></w:r></w:p>`
 }
 
-function buildFinalCaptionXml(text: string): string {
-  return (
-    `<w:p>` +
-    `<w:pPr><w:pStyle w:val="${CAPTION_STYLE}"/></w:pPr>` +
-    `<w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>` +
-    `</w:p>`
-  )
+function buildCaptionXml(text: string): string {
+  return `<w:p><w:pPr><w:pStyle w:val="${CAPTION_STYLE}"/></w:pPr><w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`
 }
 
-function insertAroundBlocks(
-  documentXml: string,
-  insertBefore: Map<number, string>,
-  insertAfter: Map<number, string>,
-): string {
-  let i = 0
-  return documentXml.replace(BLOCK_RE, m => {
-    const cur = i++
-    return (insertBefore.get(cur) ?? '') + m + (insertAfter.get(cur) ?? '')
-  })
+interface InsertEntry { kind: MissingInputKind; ordinal: number }
+
+/** True when the slot at `idx` is already occupied by a caption or label paragraph. */
+function captionOccupied(blocks: string[], idx: number, labelRe: RegExp): boolean {
+  if (idx < 0 || idx >= blocks.length) return false
+  const b = blocks[idx]
+  if (!isParagraph(b) || isImageOrTable(b)) return false
+  return hasCaptionStyle(b) || labelRe.test(blockText(b))
 }
 
-interface Insertion {
-  id:          string
-  kind:        MissingInputKind
-  ordinal:     number
-  text:        string
-  originalIdx: number
-  position:    'before' | 'after'
+/** True when the slot at `idx` has a source ("Fonte: …") paragraph. */
+function sourceOccupied(blocks: string[], idx: number): boolean {
+  if (idx < 0 || idx >= blocks.length) return false
+  const b = blocks[idx]
+  if (!isParagraph(b) || isImageOrTable(b)) return false
+  return SOURCE_LABEL_RE.test(blockText(b))
 }
 
 /**
- * After `formatCaptions` has run, detect missing figure/table caption and source
- * slots, apply Caption style to existing unstyled neighbors, and insert red
- * placeholder paragraphs for truly absent slots.
+ * Walk the processed document looking for images and tables that are missing
+ * required ABNT caption or source lines. For each gap, insert a pre-formatted
+ * red placeholder paragraph (Caption style + red text) and record its location.
  *
- * Returns the modified documentXml and a `pending` array describing each
- * placeholder's position in the new XML — suitable for storage in `pending_inputs`.
+ * Stacked images/tables (adjacent without a paragraph between them) are skipped
+ * conservatively — no placeholder is inserted between them.
+ *
+ * Returns the modified documentXml and the list of pending inputs whose
+ * `insertedAt` reflects the block index in the returned XML.
  */
 export function detectAndInsertPlaceholders(documentXml: string): { xml: string; pending: PendingInput[] } {
   const blocks = getBlocks(documentXml)
-  if (!blocks.length) return { xml: documentXml, pending: [] }
+  if (blocks.length === 0) return { xml: documentXml, pending: [] }
 
-  const styleFixMap = new Map<number, string>()
-  const insertions: Insertion[] = []
-  let figOrdinal = 0
-  let tblOrdinal = 0
+  const insertBefore = new Map<number, InsertEntry>()
+  const insertAfter = new Map<number, InsertEntry>()
+  let figureOrdinal = 0
+  let tableOrdinal = 0
 
-  blocks.forEach((b, i) => {
-    const isImg = isImageParagraph(b)
-    const isTbl = isTable(b)
-    if (!isImg && !isTbl) return
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i]
 
-    if (isImg) figOrdinal++
-    else tblOrdinal++
+    if (isImageParagraph(b)) {
+      figureOrdinal++
+      const ord = figureOrdinal
+      const prevIsImageOrTable = i > 0 && isImageOrTable(blocks[i - 1])
+      const nextIsImageOrTable = i + 1 < blocks.length && isImageOrTable(blocks[i + 1])
 
-    const ordinal = isImg ? figOrdinal : tblOrdinal
-    const anchorKind = isImg ? 'figure' : 'table'
-    const labelRE = isImg ? FIGURE_LABEL_RE : TABLE_LABEL_RE
-
-    // ── Caption slot (block immediately before the anchor) ───────────────────
-    const prevIsRegularParagraph =
-      i > 0 && isParagraph(blocks[i - 1]) && !isImageParagraph(blocks[i - 1])
-
-    if (prevIsRegularParagraph) {
-      const prev = blocks[i - 1]
-      const styled   = hasCaptionStyle(prev)
-      const labelled  = labelRE.test(blockText(prev))
-      if (!styled && !labelled) {
-        // No label at all — insert a red placeholder above the anchor
-        const text = isImg
-          ? `Figura ${ordinal} — [inserir legenda]`
-          : `Tabela ${ordinal} — [inserir título]`
-        insertions.push({ id: `${anchorKind}-${ordinal}-caption`, kind: `${anchorKind}-caption` as MissingInputKind, ordinal, text, originalIdx: i, position: 'before' })
-      } else if (labelled && !styled) {
-        // Label exists but wasn't styled by formatCaptions (e.g. table neighbor)
-        styleFixMap.set(i - 1, setParagraphStyle(prev, CAPTION_STYLE))
+      if (!captionOccupied(blocks, i - 1, FIGURE_LABEL_RE) && !prevIsImageOrTable) {
+        insertBefore.set(i, { kind: 'figure_caption', ordinal: ord })
       }
-      // else: already Caption-styled — nothing to do
-    } else if (i === 0) {
-      // Anchor is the very first block — nothing can appear above it
-      const text = isImg
-        ? `Figura ${ordinal} — [inserir legenda]`
-        : `Tabela ${ordinal} — [inserir título]`
-      insertions.push({ id: `${anchorKind}-${ordinal}-caption`, kind: `${anchorKind}-caption` as MissingInputKind, ordinal, text, originalIdx: i, position: 'before' })
-    }
-    // else: prev block is another image/table/sdt — conservative, don't insert between stacked elements
-
-    // ── Source slot (block immediately after the anchor) ─────────────────────
-    const nextIsRegularParagraph =
-      i + 1 < blocks.length && isParagraph(blocks[i + 1]) && !isImageParagraph(blocks[i + 1])
-
-    if (nextIsRegularParagraph) {
-      const next = blocks[i + 1]
-      const styled   = hasCaptionStyle(next)
-      const labelled  = SOURCE_LABEL_RE.test(blockText(next))
-      if (!styled && !labelled) {
-        insertions.push({ id: `${anchorKind}-${ordinal}-source`, kind: `${anchorKind}-source` as MissingInputKind, ordinal, text: 'Fonte: [inserir fonte]', originalIdx: i, position: 'after' })
-      } else if (labelled && !styled) {
-        styleFixMap.set(i + 1, setParagraphStyle(next, CAPTION_STYLE))
+      if (!sourceOccupied(blocks, i + 1) && !nextIsImageOrTable) {
+        insertAfter.set(i, { kind: 'figure_source', ordinal: ord })
       }
-    } else if (i + 1 >= blocks.length) {
-      // Anchor is the very last block — no source possible
-      insertions.push({ id: `${anchorKind}-${ordinal}-source`, kind: `${anchorKind}-source` as MissingInputKind, ordinal, text: 'Fonte: [inserir fonte]', originalIdx: i, position: 'after' })
+    } else if (isTableBlock(b)) {
+      tableOrdinal++
+      const ord = tableOrdinal
+      const prevIsImageOrTable = i > 0 && isImageOrTable(blocks[i - 1])
+      const nextIsImageOrTable = i + 1 < blocks.length && isImageOrTable(blocks[i + 1])
+
+      if (!captionOccupied(blocks, i - 1, TABLE_LABEL_RE) && !prevIsImageOrTable) {
+        insertBefore.set(i, { kind: 'table_caption', ordinal: ord })
+      }
+      if (!sourceOccupied(blocks, i + 1) && !nextIsImageOrTable) {
+        insertAfter.set(i, { kind: 'table_source', ordinal: ord })
+      }
     }
-    // else: next block is another image/table/sdt — conservative, skip
-  })
+  }
 
-  // 1. Apply style-only fixes (no count change, so indices are unaffected)
-  let workingXml = styleFixMap.size > 0 ? replaceBlocks(documentXml, styleFixMap) : documentXml
+  if (insertBefore.size === 0 && insertAfter.size === 0) {
+    return { xml: documentXml, pending: [] }
+  }
 
-  if (insertions.length === 0) return { xml: workingXml, pending: [] }
-
-  // 2. Sort: by originalIdx ascending; 'before' before 'after' at the same index
-  insertions.sort((a, b) => {
-    if (a.originalIdx !== b.originalIdx) return a.originalIdx - b.originalIdx
-    return a.position === 'before' ? -1 : 1
-  })
-
-  // 3. Compute insertedAt for each insertion, tracking the cumulative offset
-  //    caused by earlier insertions shifting later block indices.
-  const insertBefore = new Map<number, string>()
-  const insertAfter  = new Map<number, string>()
+  // Build the modified document and track each placeholder's output index.
   const pending: PendingInput[] = []
-  let offset = 0
+  const byIndex = new Map<number, string>()
+  let outputIdx = 0
 
-  for (const ins of insertions) {
-    const placeholderXml = buildPlaceholderXml(ins.text)
-    let insertedAt: number
-    if (ins.position === 'before') {
-      insertedAt = ins.originalIdx + offset
-      insertBefore.set(ins.originalIdx, placeholderXml)
-      offset++
-    } else {
-      insertedAt = ins.originalIdx + 1 + offset
-      insertAfter.set(ins.originalIdx, placeholderXml)
-      offset++
+  for (let i = 0; i < blocks.length; i++) {
+    const parts: string[] = []
+    const before = insertBefore.get(i)
+    if (before) {
+      pending.push({ id: randomUUID(), kind: before.kind, ordinal: before.ordinal, insertedAt: outputIdx })
+      parts.push(buildPlaceholderXml(before.kind))
+      outputIdx++
     }
-    pending.push({ id: ins.id, kind: ins.kind, ordinal: ins.ordinal, insertedAt })
+
+    parts.push(blocks[i])
+    outputIdx++
+
+    const after = insertAfter.get(i)
+    if (after) {
+      pending.push({ id: randomUUID(), kind: after.kind, ordinal: after.ordinal, insertedAt: outputIdx })
+      parts.push(buildPlaceholderXml(after.kind))
+      outputIdx++
+    }
+
+    if (parts.length > 1) byIndex.set(i, parts.join(''))
   }
 
-  // 4. Insert placeholder paragraphs into the XML
-  workingXml = insertAroundBlocks(workingXml, insertBefore, insertAfter)
-  return { xml: workingXml, pending }
+  return { xml: replaceBlocks(documentXml, byIndex), pending }
 }
 
 /**
- * Replace placeholder paragraphs with the user's supplied text (black, Caption
- * style). Only ids present in `fills` are replaced; others are left as-is.
+ * Apply all fills and removals in a single pass over the stored processed DOCX.
+ * fills → replace each placeholder with a properly-styled Caption paragraph.
+ * removals → delete the placeholder block entirely.
+ * pending is used only to look up insertedAt for each id.
  */
-export function fillContent(
+export function finalizeInputs(
   documentXml: string,
-  pendingInputs: PendingInput[],
-  fills: Record<string, string>,
+  fills: { id: string; text: string }[],
+  removals: string[],
+  pending: PendingInput[],
 ): string {
-  const byIndex = new Map<number, string>()
-  for (const input of pendingInputs) {
-    const text = fills[input.id]?.trim()
-    if (!text) continue
-    byIndex.set(input.insertedAt, buildFinalCaptionXml(text))
-  }
-  return byIndex.size > 0 ? replaceBlocks(documentXml, byIndex) : documentXml
-}
+  if (fills.length === 0 && removals.length === 0) return documentXml
 
-/**
- * After some placeholders are removed (each deletes one block), the surviving
- * pending inputs' `insertedAt` indices shift up — every block after a deleted one
- * moves down by one. Recompute each survivor's index so it still points at its
- * paragraph in the re-saved document. `fills` don't change block count, so only
- * removals matter. Returns a new array (input order preserved).
- */
-export function shiftPendingAfterRemovals(
-  remaining: PendingInput[],
-  removedInsertedAts: number[],
-): PendingInput[] {
-  if (removedInsertedAts.length === 0) return remaining
-  return remaining.map(p => ({
-    ...p,
-    insertedAt: p.insertedAt - removedInsertedAts.filter(pos => pos < p.insertedAt).length,
-  }))
-}
-
-/**
- * Replace placeholder paragraphs for the given ids with empty paragraphs
- * (the slot is intentionally removed by the user).
- */
-export function removeContent(
-  documentXml: string,
-  pendingInputs: PendingInput[],
-  removalIds: string[],
-): string {
-  const removalSet = new Set(removalIds)
+  const byId = new Map(pending.map(p => [p.id, p]))
   const byIndex = new Map<number, string>()
-  for (const input of pendingInputs) {
-    if (!removalSet.has(input.id)) continue
-    byIndex.set(input.insertedAt, '')
+
+  for (const fill of fills) {
+    const p = byId.get(fill.id)
+    if (!p) continue
+    byIndex.set(p.insertedAt, buildCaptionXml(fill.text))
   }
-  return byIndex.size > 0 ? replaceBlocks(documentXml, byIndex) : documentXml
+
+  for (const id of removals) {
+    const p = byId.get(id)
+    if (!p) continue
+    byIndex.set(p.insertedAt, '')
+  }
+
+  if (byIndex.size === 0) return documentXml
+  return replaceBlocks(documentXml, byIndex)
 }

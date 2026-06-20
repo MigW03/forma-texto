@@ -129,9 +129,21 @@ file; the separate references file (column `references_file_path`) has been remo
 Gateway is **OpenRouter** via the OpenAI-compatible protocol, called through the
 Vercel AI SDK (`generateObject` + zod). Model-agnostic by design — swapping models
 is a config change (`AI_MODEL`), never a code change, because the `Decider`
-interface is the seam. Determinism knobs (`AI_TEMPERATURE=0`, `AI_SEED`, optional
-`AI_PROVIDER` pin) keep heading results stable run-to-run. All knobs live in
-`ai/config.ts`; see `server/.env.example`.
+interface is the seam. **Each pass can run a different model:** `AI_HEADING_MODEL`
+(Step D), `AI_REFERENCES_MODEL` (Step C), `AI_PROOFREAD_MODEL` (Step P), each falling
+back to `AI_MODEL` when unset (resolved in `config.ts`). Determinism knobs
+(`AI_TEMPERATURE=0`, `AI_SEED`, optional `AI_PROVIDER` pin) keep heading results
+stable run-to-run. All knobs live in `ai/config.ts`; see `server/.env.example`.
+
+## Delivery & caching
+
+The processed `.docx` is uploaded to `processed/` with a real `cacheControl` TTL
+(not `'0'`), so Supabase's CDN can serve repeat views fast. Staleness after an
+overwrite (a finalize-inputs or a reprocess writes the same path) is handled on the
+client, not by disabling caching: the project viewer keys the signed-URL cache-buster
+on the project's `completed_at`, which the server bumps on every write to the file —
+same version → cached, new version → fresh fetch. See `HANDOFF.md` (2026-06-19) for
+the latency analysis behind this.
 
 ## Key files
 

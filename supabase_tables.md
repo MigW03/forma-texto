@@ -54,5 +54,7 @@
 
 > `pending_inputs` stores `[{ id, kind, ordinal, insertedAt }]` — one entry per red placeholder paragraph inserted by the pipeline. Null when all resolved. Add with: `ALTER TABLE projects ADD COLUMN pending_inputs jsonb;`
 
-> `removed_inputs` stores `[{ id, kind, removedAt }]` — audit trail of placeholders the user intentionally removed. Append-only; never cleared. Add with: `ALTER TABLE projects ADD COLUMN removed_inputs jsonb;`
+> `removed_inputs` — **unused** since the 2026-06-19 interactive-input rebuild (batch finalize). The current `finalize-inputs` endpoint applies all fills + removals in one pass and stamps `pending_inputs: null`; it no longer writes a removals audit trail. The column is harmless and can be dropped (`ALTER TABLE projects DROP COLUMN removed_inputs;`). Original definition: `[{ id, kind, removedAt }]`.
+
+> `completed_at` is bumped on every write to the processed file (pipeline completion **and** `finalize-inputs`). The project viewer keys the processed-file URL's cache-buster on it so the CDN can cache repeat views while an overwrite still serves fresh — see [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md) § Delivery & caching.
 

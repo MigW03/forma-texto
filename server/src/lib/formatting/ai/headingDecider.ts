@@ -26,6 +26,34 @@ const decisionsSchema = z.object({
 })
 
 /**
+ * Escape literal control characters (U+0000–U+001F) inside JSON string values.
+ * Reasoning models sometimes emit a raw newline or tab inside a JSON string (which is
+ * invalid per RFC 8259 — only `\uXXXX` escapes are allowed), causing every parse
+ * attempt to fail even when the surrounding JSON structure is valid. Sanitizing before
+ * any parse gives the repair chain the best chance of salvaging complete decisions.
+ */
+function sanitizeControlChars(text: string): string {
+  let out = ''
+  let inStr = false
+  let esc = false
+  for (let k = 0; k < text.length; k++) {
+    const c = text[k]
+    const code = c.charCodeAt(0)
+    if (inStr) {
+      if (esc) { esc = false; out += c }
+      else if (c === '\\') { esc = true; out += c }
+      else if (c === '"') { inStr = false; out += c }
+      else if (code < 0x20) { out += `\\u${code.toString(16).padStart(4, '0')}` }
+      else out += c
+    } else {
+      if (c === '"') inStr = true
+      out += c
+    }
+  }
+  return out
+}
+
+/**
  * Pull every COMPLETE decision object out of a (possibly truncated) decisions array.
  * Reasoning models can hit the output-token ceiling and stop mid-JSON (finishReason
  * "length"), which makes a strict parse fail and lose the whole chunk — even the
@@ -76,6 +104,10 @@ function salvageCompleteDecisions(text: string): unknown[] | null {
  * salvageable is found (the SDK then errors as before).
  */
 export async function repairDecisions({ text }: { text: string }): Promise<string | null> {
+  // Sanitize first — reasoning models sometimes embed literal control chars (e.g. a
+  // raw 0x0A newline) inside JSON strings, which breaks every subsequent parse attempt.
+  const sanitized = sanitizeControlChars(text)
+
   const wrap = (v: unknown): string | null => {
     if (Array.isArray(v)) return JSON.stringify({ decisions: v })
     if (v && typeof v === 'object') {
@@ -86,10 +118,10 @@ export async function repairDecisions({ text }: { text: string }): Promise<strin
     return null
   }
   try {
-    return wrap(JSON.parse(text))
+    return wrap(JSON.parse(sanitized))
   } catch {
     // Salvage a JSON array embedded in prose or ```json fences.
-    const m = text.match(/\[[\s\S]*\]/)
+    const m = sanitized.match(/\[[\s\S]*\]/)
     if (m) {
       try {
         return wrap(JSON.parse(m[0]))
@@ -98,7 +130,8 @@ export async function repairDecisions({ text }: { text: string }): Promise<strin
       }
     }
     // Last resort: the response was cut off mid-JSON — keep the complete decisions.
-    const salvaged = salvageCompleteDecisions(text)
+    // Pass the sanitized text so per-element JSON.parse calls have the best chance.
+    const salvaged = salvageCompleteDecisions(sanitized)
     return salvaged ? JSON.stringify({ decisions: salvaged }) : null
   }
 }

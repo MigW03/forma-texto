@@ -136,7 +136,7 @@
     "status": {
       "pending": "In queue",
       "processing": "Processing",
-      "needs_input": "Action required",
+      "needs_input": "Needs your input",
       "complete": "Ready for review"
     },
     "time": {
@@ -190,35 +190,31 @@
     "cost": "Amount",
     "noPreview": "Preview not available for this file type.",
     "previewError": "This file could not be previewed.",
+    "loadingPreview": "Loading document…",
+    "loadingPreviewHint": "Larger documents may take a few seconds to render.",
     "viewingFinal": "Viewing processed file",
     "viewingOriginal": "Viewing original file",
     "downloadFile": "Download file",
     "downloadFinalFile": "Download final file",
-    "downloadLockedHint": "Fill in the required information to unlock the final file",
     "downloadFinalPdf": "Download final PDF",
     "downloadOriginalFile": "Download original file",
     "pageBreak": "Page break",
     "notFound": "Project not found.",
-    "fillIn": {
-      "figureCaption": "Caption for Figure {{n}}",
-      "figureSource": "Source for Figure {{n}}",
-      "tableCaption": "Caption for Table {{n}}",
-      "tableSource": "Source for Table {{n}}",
-      "save": "Save",
-      "saving": "Saving…",
-      "savingBackground": "Saving changes…",
-      "saveError": "Couldn't save your change — please try again",
-      "placeholder": {
-        "caption": "e.g., Figure 1 — Historical evolution of...",
-        "source": "e.g., Source: elaborated by the author (2024)"
-      },
-      "removeButton": "Remove",
-      "removeConfirm": {
-        "title": "Remove this caption?",
-        "body": "ABNT requires captions for all figures and tables. This action will be recorded.",
-        "cancel": "Cancel",
-        "confirm": "Remove"
-      }
+    "inputs": {
+      "title": "Pending items",
+      "figure_caption": "Figure {{n}} caption",
+      "figure_source": "Figure {{n}} source",
+      "table_caption": "Table {{n}} caption",
+      "table_source": "Table {{n}} source",
+      "remove": "Remove",
+      "restore": "Restore",
+      "finalize": "Save & finalize",
+      "finalizing": "Saving…",
+      "finalizeError": "Could not save — please try again",
+      "placeholder_figure_caption": "e.g. Figure 1 — Chart showing annual rainfall",
+      "placeholder_figure_source": "Source: …",
+      "placeholder_table_caption": "e.g. Table 1 — Survey results by region",
+      "placeholder_table_source": "Source: …"
     },
     "references": {
       "title": "References",

@@ -6,7 +6,7 @@
 > bottom, and adjust **Open work** as things land. Keep it short and current —
 > deep reference lives in the docs linked below, not here.
 
-**Last updated:** 2026-06-17
+**Last updated:** 2026-06-19 (later 6)
 
 ---
 
@@ -34,7 +34,7 @@ Deeper docs (keep these as the real source of truth):
 
 - **Branch:** `feature/docx-page-detection` — lauda-based billing migration + pipeline improvements. All changes committed.
 - **Build:** web production build **verified green (2026-06-17)** (`npm run build` in `web/`).
-- **Tests:** server **179** passing (3 AI evals skipped); web **32** passing.
+- **Tests:** server **173** passing (3 AI evals skipped); web **32** passing.
 - **Working:** auth, onboarding flow, checkout (Stripe), dashboard, project detail/viewer,
   the DOCX formatting pipeline Steps A/B/C/D (both AI passes: reference reformatting + headings),
   and the server-side proofreading pass (Step P) — proofreading is no longer on n8n.
@@ -102,13 +102,15 @@ Deeper docs (keep these as the real source of truth):
   falling back to `AI_MODEL` when unset (resolved in `config.ts` → `headingModel`/`referenceModel`/
   `proofreadModel`; the "calling model" logs print the per-step slug). Config-file default is
   `nemotron-3-super-...:free`; **current `.env`: `AI_MODEL=nemotron-3-ultra-550b-a55b:free`
-  (Step D/C) with `AI_PROOFREAD_MODEL=nemotron-3-nano-30b-a3b:free` (Step P)** — strong model where
-  it matters (headings), light/fast where it may not (proofreading). `AI_MAX_TOKENS=8192` and
-  `AI_MAX_CHARS_PER_CHUNK=3000` — reasoning models need the larger token budget or JSON truncates
-  mid-response. **Step P has its own token budget** `AI_PROOFREAD_MAX_TOKENS` (default 4096) so
-  proofreading generations are shorter (faster, fewer mid-stream resets) without starving Step C/D.
-  **Watch nano on Step P:** it's small (30B/3B active) — if proofreading starts introducing or
-  missing pt-BR grammar/citation fixes, bump it up a tier.
+  (Step D), `AI_REFERENCES_MODEL=nvidia/nemotron-3-nano-30b-a3b:free` (Step C),
+  `AI_PROOFREAD_MODEL=nemotron-3-nano-30b-a3b:free` (Step P)** — ultra for headings, nano for
+  references and proofreading. `AI_MAX_TOKENS=8192` and `AI_MAX_CHARS_PER_CHUNK=3000` —
+  reasoning models need the larger token budget or JSON truncates mid-response. **Step P has its
+  own token budget** `AI_PROOFREAD_MAX_TOKENS` (default 4096) so proofreading generations are
+  shorter (faster, fewer mid-stream resets) without starving Step C/D.
+  **Watch nano on Step C and Step P:** it's small (30B/3B active) — if reference reformatting or
+  proofreading quality degrades, bump to super or ultra. Nano works on Step C now that
+  `sanitizeControlChars` (added 2026-06-19) handles its occasional control-char JSON output.
 - **Free models drop the socket mid-response** (`ECONNRESET`/"terminated", `200` then body killed).
   The AI SDK marks these `isRetryable:false`, so `ai/retry.ts` (`withConnectionRetry`) wraps all
   three deciders' `generateObject` calls and retries only transport resets (backoff + jitter; reuses
@@ -117,11 +119,20 @@ Deeper docs (keep these as the real source of truth):
   free-models-per-day"`). Once exhausted, **every** AI pass (Step C/D/P) fails until the daily
   reset — all are non-fatal, so the job still finishes (deterministic formatting + placeholders
   run), but the doc gets no AI heading/reference/proofreading work. Add credits to OpenRouter
-  (unlocks 1000/day) or wait for reset. This does **not** affect `/fill-content` (no AI there).
+  (unlocks 1000/day) or wait for reset. This affects Steps C/D/P only — all non-fatal, so the job finishes with deterministic formatting only.
 - **All model-authored text is sanitized before it touches XML.** A stray NUL byte from the model
   once corrupted a Step C reference splice and made the whole `document.xml` unparseable (viewer went
   blank). `formatting/xmlText.ts` `escapeXml` now strips XML-1.0-illegal control chars before escaping;
   used by `stepC.ts` and `runs.ts`.
+- **`repairDecisions` now sanitizes control chars before any parse attempt.** The nano model (when used
+  for Step C) sometimes emits a literal `0x0A` newline inside a JSON string value — invalid per RFC 8259,
+  causing every parse in `repairDecisions` (JSON.parse, the array-extract fallback, and
+  `salvageCompleteDecisions`) to fail. `headingDecider.ts` `sanitizeControlChars` escapes all
+  `U+0000–U+001F` inside JSON string values (tracking string/escape state char-by-char) and is called at
+  the top of `repairDecisions` so the entire repair chain works on clean text. Since `referencesDecider`
+  imports `repairDecisions` from `headingDecider`, this fixes both Step C and Step D. The root cause
+  (nano over-reasons on Step C — 7290 reasoning tokens for 1 entry, leaving ~661 tokens of corrupted
+  output) is also fixed: `AI_REFERENCES_MODEL` is now set to ultra in `.env`.
 - **Gated live evals** for the AI path (no spend in CI), e.g. for Step D:
   `cd server && set -a; . ./.env; set +a; RUN_AI_EVALS=1 npx vitest run src/lib/formatting/stepD.eval.test.ts`.
   Step C has a sibling `stepC.eval.test.ts`, but its fixture page flags (`refInput`) are a
@@ -133,25 +144,9 @@ Deeper docs (keep these as the real source of truth):
 
 ---
 
-## Pipeline state additions (caption placeholders)
-
-- **`detectAndInsertPlaceholders`** (`missingInputs.ts`) — runs after `formatCaptions()`. For every image/table block, checks caption slot (i-1) and source slot (i+1). If the neighbour has neither Caption style nor matching label text, inserts a red `<w:p>` placeholder (Caption style + `FF0000` color) at the correct position. Returns the modified XML + `PendingInput[]` (id, kind, ordinal, insertedAt). 18 unit tests.
-- **`needs_input` status** — if any placeholders were inserted, pipeline stamps `status: 'needs_input'`, stores `pending_inputs: PendingInput[]` on the project row, and skips the ready email. When all slots are resolved, stamps `complete` and sends the email.
-- **`POST /api/processing/fill-content`** — accepts `{ projectId, fills?, removals? }`. Downloads/transforms/re-uploads the processed DOCX; stamps `removed_inputs` (audit trail); flips to `complete` when no pending slots remain.
-- **`removeContent` behaviour** — when a user removes a caption/source, `removeContent` sets the block replacement to `''` (empty string), which causes `replaceBlocks` to **fully delete** the placeholder `<w:p>` from the XML. No empty paragraph is left behind. The test suite verifies this via block-count before/after.
-- **Frontend** — `needs_input` badge (orange), query includes `pending_inputs`, viewer opens the processed file in read-only mode, floating red-border input overlays appear aligned with each placeholder text node in the DocxViewer, each overlay has save + remove (with confirmation modal).
-- **DB columns needed** (run in Supabase console before deploying):
-  ```sql
-  ALTER TABLE projects ADD COLUMN pending_inputs  jsonb;
-  ALTER TABLE projects ADD COLUMN removed_inputs  jsonb;
-  ```
-
----
-
 ## Open work / next steps
 
 - [x] ~~**Confirm Step C live**~~ — **confirmed 2026-06-17**. Bold renders correctly in the output `.docx`.
-- [ ] **Live end-to-end `needs_input` fill/save verification** — reprocess a fresh doc with a missing figure/table caption, then: (a) fill an input and confirm saved text appears in the downloaded file; (b) remove a placeholder and confirm it's gone from the download; (c) fill the last slot → project flips to `complete`, download unlocks; (d) disconnect the server mid-save → red `saveError` banner appears with the HTTP status. Use a **freshly reprocessed** doc (files processed before 2026-06-17 may still be cached up to 1h). Also confirm the error banner is clear + dismissible when OpenRouter is rate-limited (fill/remove are AI-free, so they should succeed regardless).
 - [ ] **Merge `feature/docx-page-detection`** into main — build not yet verified.
 - [x] ~~Migrate proofreading off n8n into the server~~ — done (Step P). Live-confirm on a real
       multi-page `.docx` upload (the inline eval fixture passed; one real end-to-end run pending).
@@ -181,91 +176,120 @@ Deeper docs (keep these as the real source of truth):
 
 ## Session log
 
-### 2026-06-17 (later 2) — Surface background fill/remove failures
+### 2026-06-19 (later 6) — Viewer load: diagnosed (region) + CDN caching fix
 
-Background saves were silently swallowed — a failed write would just revert (reconcile) with no explanation, appearing to the user as "input not saving."
+Timing probe results on a real 1.2 MB doc: **DB query ~320–580ms · signed URLs ~1.1–1.6s ·
+file download ~3.4–4.0s · renderAsync 50ms.** So the render is NOT the bottleneck — it's all
+Supabase network. A 1.5s round-trip just to *mint a signed URL* (a tiny operation) is the smoking
+gun for **region latency**: the project is likely hosted far from Brazil. **Primary fix is infra:
+confirm the Supabase project region is `sa-east-1` (São Paulo); if it's us-east/eu, migrate.** That
+is the only thing that speeds up the *first* load (sign + origin download are region-bound).
 
-- `callFillApi` now includes the HTTP status in the thrown error (`${res.status} ${d.error ?? res.statusText}`).
-- `runInBackground` stores the error message in new `saveError: string | null` state, cleared on the next save attempt.
-- Dismissible red banner in the viewer top bar shows `project.fillIn.saveError` ("Não foi possível salvar — tente novamente") when `saveError && bgSaving === 0`, so the user knows to retry.
-- `project.fillIn.saveError` key added to all 3 locales.
-- Root cause of the reported "input not saving" was almost certainly the **OpenRouter free-tier 429** (`free-models-per-day` exhausted — 50 req/day account-wide). `/fill-content` uses no AI, so it's unaffected once the quota resets or credits are added; the banner now makes any other failure reason immediately visible.
-- Server 179 passing, web 32 passing, tsc clean, production build green.
-- **Next session:** live end-to-end verify (see Open work above).
+Code fix shipped for **repeat** loads — the processed `.docx` was uploaded with `cacheControl: '0'`,
+which disables CDN caching entirely, so every view was a full origin fetch. Changed both upload sites
+(`processFormatting.ts`, `processing.ts` finalize) to `cacheControl: '3600'`, and reworked the client
+cache-buster: `bustCache(url, version)` now keys on the project's `completed_at` (a stable per-content-
+version token) instead of `Date.now()`. Same content version → same URL → CDN hit (fast); a finalize/
+reprocess bumps `completed_at` → new URL → fresh bytes (no staleness — the original reason for `'0'`).
+Added `completed_at` to the query + `ProjectDetail` + the realtime merge. **Only affects files uploaded
+AFTER this change — reprocess a doc to test the cache win.** Restart the server.
 
-### 2026-06-17 (later) — Image layout + needs_input UX polish
+Side notes from the probe: the **400 on the PDF signed URL** is just the missing `.pdf` (LibreOffice
+not installed) — harmless. The **3× download** in the log is React StrictMode double-invoke in dev
+(prod = 1×). Timing `console.log`s are still in place; remove them once region is confirmed/fixed.
 
-Three improvements requested after the first interactive-input run.
+### 2026-06-19 (later 5) — Viewer load timing instrumentation (Supabase latency probe)
 
-- **Inline image sizing & centering (server).** Word kept the source doc's absolute
-  image dimensions, so figures came in oversized. New deterministic `imageLayout.ts` →
-  `formatImages(documentXml, guideline)` scales every `<wp:inline>` image to 70% of the
-  page content width (`IMAGE_WIDTH_FRACTION`, aspect ratio preserved) and centers its
-  paragraph. Content width = `<w:pgSz>` width − guideline margins, in EMU (635 EMU/twip);
-  reads the primary `<wp:extent>`, computes one scale factor, applies it to every `cx`/`cy`
-  in the drawing. Floating `<wp:anchor>` images are left alone. Wired into `processFormatting`
-  first in the final-touches block (before `formatCaptions`). 8 unit tests. **No image in the
-  test fixture yet — live confirmation still pending** (same gap as captions).
-- **Overlay placement (frontend).** The fill-in inputs overlapped the page at higher zoom.
-  `scanPlaceholders` now anchors them in the right gutter outside the page (`.docx-wrapper`
-  right edge + 12px, scroll-adjusted) instead of `right: 12`.
-- **needs_input load/interaction speed (frontend).** Filling an input used to re-render the
-  whole document twice over: `refreshProcessedUrl` swapped the signed URL, and the realtime
-  UPDATE re-signed it again — each change to a stable file forced a full `docx-preview`
-  re-render. Now save/remove patch the rendered DOM in place (`placeholderEls` ref: replace
-  the red run's text + drop its color on fill; remove the closest `<p>` on remove), and the
-  realtime handler skips re-signing when `processed_file_path` is unchanged (`signedProcPathRef`).
-  `refreshProcessedUrl` removed.
-- **needs_input email (server).** When the pipeline stamps `needs_input`, it now emails the
-  user (same shape as the ready email) pointing them to fill in the missing captions/sources.
-  `sendProjectNeedsInputEmail` in `notify.ts` + template `emails/projectNeedsInput.ts`, called
-  non-fatally from `processFormatting` step 7. Fires only on first entry into `needs_input`;
-  the ready email still fires when the final slot is resolved.
-- **Fix — stale processed file after fill/remove (server + frontend).** Removing a caption
-  cleared the UI but the exported file kept the red placeholder and a reload brought it back.
-  Cause: the `needs_input` file is overwritten by `/fill-content`, but it was uploaded with
-  the default `cacheControl` (1h, keyed by path) and the client reused the **same signed URL**,
-  so download + reload fetched a **stale CDN copy** (the CDN keys by path, ignoring the token).
-  Fixes: both processed-file uploads now use `cacheControl: '0'`; **every processed signed URL is
-  cache-busted** (`bustCache` appends `&_cb=<ts>`) at all sign sites so a fetch can't resolve to a
-  stale copy; the frontend **reconciles** (re-fetch + re-sign) once the background queue drains on
-  completion/error; download is gated on `bgSaving === 0`. **Note:** files uploaded BEFORE this
-  change are still cached for up to 1h — reprocess a doc fresh to test. **Caveat:** `/fill-content`
-  doesn't regenerate the PDF export, so a completed-via-input project's `.pdf` is stale — harmless
-  now (LibreOffice not installed) but fix before PDF export ships.
-- **Fix — final-download button clickable in needs_input (frontend).** `<Button asChild disabled>`
-  is a no-op on an `<a>`; now a real disabled `<button>` renders until the project is `complete`
-  and not mid-save (`downloadLockedHint` tooltip, 3 locales).
-- **Fix — stale `insertedAt` after a removal (server).** A removal deletes a block, shifting
-  every later pending input's index up by one, but the endpoint kept the survivors' original
-  indices — so a second fill/remove on a multi-figure doc hit the wrong block. New
-  `shiftPendingAfterRemovals` recomputes survivor indices; `fill-content` applies it before
-  persisting `pending_inputs`. 4 tests. Single-placeholder docs were unaffected.
-- **Background fill/remove saves (frontend).** The `fill-content` server round-trip (download →
-  re-zip → re-upload the whole DOCX) no longer blocks the UI. `handleSave`/`handleRemoveConfirm`
-  apply the change optimistically (DOM + state + dismiss the overlay/modal instantly) and push
-  the API call onto a **serial queue** (`saveQueue` ref) — must be serial, since each call
-  reads-modifies-writes the same file and concurrent writes would clobber each other. A
-  "Salvando alterações…" pill shows while writes are in flight (`bgSaving`); a failed write
-  self-heals via `reloadProject`. New key `project.fillIn.savingBackground` (3 locales).
-- **Stale test fixed.** `web/src/lib/status.test.ts` predated the `needs_input` badge variant
-  and was failing; updated to include it.
-- Server suite **175 passing**, web **32 passing**, both `tsc` clean, web build green.
+The viewer's *loading indication itself* was slow to appear — pointing at the Supabase round-trips
+that gate it, not the render. Before the DocxViewer even mounts the page runs two **sequential**
+Supabase hops: (1) the `.single()` DB query, then (2) `createSignedUrl` ×3 (parallel). Then the
+viewer does (3) `fetch(url)` to download the file from Storage (processed URL is cache-busted →
+full re-download every view) and (4) `renderAsync` (CPU). Hops 1–3 are all Supabase and compound;
+far region = +150–300ms each.
 
-### 2026-06-17 — Interactive content completion (caption placeholders)
+Added **temporary `console.log` timing** to pinpoint the bottleneck on a real load:
+`[ProjectDetail timing] DB query` / `signed URLs` / `total to viewer`, and
+`[DocxViewer timing] file download (+KB)` / `renderAsync`. **Remove these logs once the bottleneck
+is identified.** Likely levers: confirm the Supabase project region is `sa-east-1` (São Paulo) for
+Brazil-first users; relax the processed-file cache-bust for stable `complete` files; optionally batch
+the 3 signed-URL calls via `createSignedUrls` (plural).
 
-Full `needs_input` lifecycle for missing ABNT captions and source lines on figures and tables.
+### 2026-06-19 (later 4) — Viewer loading feedback (anti-"frozen")
 
-- **`server/src/lib/formatting/missingInputs.ts`** (new) — `detectAndInsertPlaceholders`, `fillContent`, `removeContent`. Walks image/table anchors, checks i-1 and i+1 slots, inserts red Caption-style placeholder paragraphs for absent slots and applies Caption style to existing-but-unstyled neighbours without inserting pending entries. `insertedAt` tracks block index in stored processed DOCX. 18 unit tests.
-- **`server/src/lib/formatting/captions.ts`** — exported `isImageParagraph`, `FIGURE_LABEL_RE`, `SOURCE_LABEL_RE` so `missingInputs.ts` can import them.
-- **`server/src/lib/formatting/index.ts`** — re-exported new types/functions.
-- **`server/src/lib/processFormatting.ts`** — `pending` scoped before `if (doFormatting)`, `detectAndInsertPlaceholders` called after `formatCaptions`, step 7 branches on `pending.length`: → `needs_input + pending_inputs` (no email) or → `complete + pending_inputs: null` (+ email).
-- **`server/src/routes/processing.ts`** — `POST /api/processing/fill-content` endpoint with `authorize()` reuse, partial-fill support, `removed_inputs` audit trail, `complete` flip when all resolved.
-- **Frontend:** `status.ts` adds `needs_input` type + `normalizeStatus`; `badge.tsx` adds orange variant; `DashboardPage.tsx` includes `needs_input` in active count; `ProjectDetailPage.tsx` queries `pending_inputs`, gates download (preview OK, download only on `complete`), floating overlays in DocxViewer (inside scroll container, aligned with placeholder text via `getBoundingClientRect`), per-input save + remove buttons, confirmation modal with `createPortal`; three locale files updated with `dashboard.status.needs_input` and `project.fillIn.*` keys.
-- **`supabase_tables.md`** — documented `pending_inputs` and `removed_inputs` columns + SQL.
-- **DB migration required before deploying:** `ALTER TABLE projects ADD COLUMN pending_inputs jsonb; ALTER TABLE projects ADD COLUMN removed_inputs jsonb;`
-- **`removeContent` correction (end of session):** originally set the removed block to `'<w:p/>'` (left an empty paragraph). Changed to `''` so `replaceBlocks` deletes the block entirely — no empty paragraph remains in the final file. Related test updated (`'removes the placeholder block entirely'`, checks `blockCount - 1` and no `[inserir legenda]` text; untargeted-placeholder test updated to use `toContain` instead of stale `insertedAt` index).
-- Server suite **167 passing**, `tsc` clean both sides.
+The project-detail document preview felt frozen on larger docs. Root cause: docx-preview's
+`renderAsync` builds the whole document DOM **synchronously and blocks the main thread** (no
+streaming/worker mode), so even the old pulse-skeleton animation stalled mid-render — looked
+crashed. No clean way to make the render itself faster.
+
+Fix in `web/src/pages/ProjectDetailPage.tsx` (`DocxViewer`):
+- **Yield before render.** After `fetch → blob`, `await` a double `requestAnimationFrame` before
+  calling `renderAsync`, so the browser paints the loading state *before* the main-thread freeze.
+  Without this the spinner never showed.
+- **Real loading UI.** Replaced the bare pulsing page rectangles with a centered `Loader2`
+  spinner + `project.loadingPreview` ("Carregando documento…") + `project.loadingPreviewHint`
+  ("Documentos maiores podem levar alguns segundos…"). The freeze now reads as "working," not broken.
+- Two i18n keys added to all 3 locales. Also covers the post-finalize `window.location.reload()` path.
+
+tsc clean, web 32 tests pass. Not browser-verified (viewer needs an authed project + real doc).
+
+### 2026-06-19 (later 3) — Step C → nano + finalize page reload
+
+**Step C model** (`server/.env`): `AI_REFERENCES_MODEL` changed from `nemotron-3-super-120b-a12b:free`
+to `nvidia/nemotron-3-nano-30b-a3b:free`. Nano now on both Step C and Step P. Confirmed working —
+`sanitizeControlChars` (added earlier today) handles the control-char corruption that previously
+made nano unusable on Step C. Restart the server to apply.
+
+**Finalize page reload** (`web/src/pages/ProjectDetailPage.tsx`): `handleFinalize` now calls
+`window.location.reload()` on a successful POST response instead of relying on the Realtime
+subscription to patch the viewer in place. On error the catch block still clears `finalizing`.
+The Realtime handler's re-sign path remains for the normal `processing → complete` transition.
+
+### 2026-06-19 (later 2) — Switch Step C model from ultra to super
+
+`AI_REFERENCES_MODEL` in `server/.env` changed from `nvidia/nemotron-3-ultra-550b-a55b:free` to
+`nvidia/nemotron-3-super-120b-a12b:free`. Step D (headings) stays on ultra via `AI_MODEL`.
+Restart the server to apply.
+
+### 2026-06-19 (later) — Fix Step C `NoObjectGeneratedError` (control chars + wrong model)
+
+Two-part fix for `NoObjectGeneratedError` thrown by `referencesDecider` during Step C:
+
+1. **Model config** (`server/.env`): `AI_REFERENCES_MODEL` was set to `nemotron-3-nano-30b-a3b:free`. The nano model is a reasoning model — it burned 7290 reasoning tokens on a single 1-entry chunk (3 entries max), leaving only 661 tokens for actual JSON output, which arrived corrupted (literal `0x0A` newline inside a JSON string value). Changed to `nvidia/nemotron-3-ultra-550b-a55b:free` (same as `AI_MODEL`), matching the documented intent. Restart the server.
+
+2. **Code fix** (`server/src/lib/formatting/ai/headingDecider.ts`): Added `sanitizeControlChars(text)` — walks the raw model output char-by-char tracking string/escape state and replaces any `U+0000–U+001F` control character inside a JSON string with `\uXXXX`. Called at the top of `repairDecisions` so ALL fallback paths (JSON.parse, array-extract, `salvageCompleteDecisions`) work on clean text. Since `referencesDecider` imports `repairDecisions`, this also hardens Step D against the same class of model output bug.
+
+Tests: 173/176 (3 evals skipped), `tsc` clean.
+
+### 2026-06-19 — Rebuild interactive input feature (batch finalize + side panel)
+
+Rebuilt the `needs_input` caption-fill feature from scratch with a fundamentally different architecture that eliminates the root causes of the previous bug (placeholder reappearing after delete).
+
+**Core change:** no per-edit server writes. All fills and removals live in local React state. One "Save & finalize" button sends everything atomically to `POST /api/processing/finalize-inputs`, which applies all changes in a single `replaceBlocks` pass and stamps `complete`.
+
+**Server:**
+- `server/src/lib/formatting/missingInputs.ts` (new) — `detectAndInsertPlaceholders` (walks image/table blocks, inserts red Caption-style placeholder `<w:p>` for absent captions/sources, returns modified XML + `PendingInput[]` with cumulative `insertedAt`), `finalizeInputs` (one `replaceBlocks` call for all fills+removals). 16 unit tests in `missingInputs.test.ts`.
+- `server/src/lib/formatting/index.ts` — added `detectAndInsertPlaceholders`, `finalizeInputs`, `PendingInput`, `MissingInputKind` exports.
+- `server/src/lib/processFormatting.ts` — calls `detectAndInsertPlaceholders` after `formatCaptions`; branches step 7: `pending.length > 0` → stamps `needs_input + pending_inputs` (no email); else → stamps `complete + pending_inputs: null` (+ email).
+- `server/src/routes/processing.ts` — added `POST /api/processing/finalize-inputs`: validates status=`needs_input`, all IDs known, all slots resolved; downloads DOCX → `finalizeInputs` → re-upload `cacheControl:'0'` → stamp `complete` → send ready email (non-fatal).
+
+**Frontend:**
+- `web/src/lib/status.ts` — re-added `needs_input` to union + `STATUS_BADGE_VARIANT`.
+- `web/src/components/ui/badge.tsx` — re-added `needs_input: bg-orange-50 text-orange-700 border-orange-200`.
+- `web/src/pages/DashboardPage.tsx` — `needs_input` counted as active.
+- `web/src/pages/ProjectDetailPage.tsx` — `PendingInputFE` type, `pending_inputs` in DB query, `fills`/`removals`/`finalizing`/`finalizeError` state, `handleFinalize` (POST + let realtime handle transition), side panel in details column (one row per pending input: label + textarea + remove/restore; "Save & finalize" disabled until all resolved). `canSeeProcessed` = `complete || needs_input`; `canDownloadProcessed` = `complete` only. Realtime handler: re-signs on path change for `needs_input`, always re-signs with cache buster on `complete`.
+- All 3 locale files: `dashboard.status.needs_input`, `project.inputs.*` block (title, per-kind labels, placeholders, finalize/remove/restore/error strings).
+- `web/src/lib/status.test.ts` — re-added `needs_input` test case.
+
+Build: server 173/176 (3 evals skipped), web build green, tsc clean both sides.
+
+**Finalize UX fixes (same session):**
+- **Server idempotency** — `POST /api/processing/finalize-inputs` now returns `{ ok: true }` when the project is already `complete` (was 409). Safe to retry after a network hiccup or double-click without showing an error.
+- **Double-submit guard** — `finalizingRef` (a `useRef`) blocks a second `handleFinalize` invocation synchronously, before React has had a chance to re-render the button as disabled.
+- **Stuck saving state** — Supabase Realtime fires (via WebSocket) before the HTTP response returns, so `finalizing` was staying `true` while the fetch was still in-flight. The Realtime handler now clears `finalizingRef.current` and calls `setFinalizing(false)` immediately when it sees `status = 'complete'`, so the panel unsticks as soon as the server confirms the write.
+
+**Still pending:** live end-to-end verify — reprocess a `.docx` with an image/table missing a caption or source to confirm the `needs_input` → fill → `complete` flow works end-to-end.
+
+
 
 ### 2026-06-16 (later 2) — Full-flow hardening + PDF export
 
