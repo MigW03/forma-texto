@@ -1,5 +1,6 @@
 import { getGuideline, REFERENCES_HEADING_STYLE, type Guideline, type GuidelineSpec } from './guidelines'
 import { getBlocks, isParagraph, blockText, setParagraphStyle, replaceBlocks } from './blocks'
+import { locateAppendixStart } from './postTextual'
 
 /**
  * Step B (deterministic) — format the references section.
@@ -147,6 +148,10 @@ const REFERENCE_HEADING_RE = /^(?:\d+[\.\s]+\s*)?(?:references?|refer[eê]nci[ao
 export function autoLocateReferences(documentXml: string): ReferenceRegion | null {
   const blocks = getBlocks(documentXml)
   const searchFrom = Math.floor(blocks.length * 0.4)
+  // References never extend into the appendix/annex. Without this bound, every paragraph
+  // after the "Referências" heading — including the whole appendix — would be treated as a
+  // reference entry, so Step B would lay it out and Step C would send it to the model.
+  const limit = locateAppendixStart(documentXml) ?? blocks.length
 
   for (let i = searchFrom; i < blocks.length; i++) {
     if (!isParagraph(blocks[i])) continue
@@ -154,7 +159,7 @@ export function autoLocateReferences(documentXml: string): ReferenceRegion | nul
     if (!text || text.length > 80) continue
     if (REFERENCE_HEADING_RE.test(text)) {
       const entryIndices: number[] = []
-      for (let j = i + 1; j < blocks.length; j++) {
+      for (let j = i + 1; j < limit; j++) {
         if (isParagraph(blocks[j]) && blockText(blocks[j]).trim()) {
           entryIndices.push(j)
         }
@@ -199,7 +204,9 @@ export function locateReferences(
   }
   if (refBlocks.size === 0) return null
 
-  const ordered = [...refBlocks].sort((a, b) => a - b)
+  // Never let a flagged references page bleed into the appendix/annex.
+  const appendixAt = locateAppendixStart(documentXml) ?? blocks.length
+  const ordered = [...refBlocks].sort((a, b) => a - b).filter(i => i < appendixAt)
   const nonEmptyParas = ordered.filter(i => isParagraph(blocks[i]) && blockText(blocks[i]))
   if (nonEmptyParas.length === 0) return null
 

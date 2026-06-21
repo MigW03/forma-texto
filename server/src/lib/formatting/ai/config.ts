@@ -58,7 +58,20 @@ export interface AiConfig {
   enabled: boolean
   /** Feature flag for the proofreading AI pass (Step P), toggled independently of C/D. */
   proofreadingEnabled: boolean
+  /**
+   * Reasoning effort for the proofreading pass (Step P), passed to OpenRouter. Step Punct
+   * already handles the mechanical spacing/punctuation deterministically, so the model only
+   * does light grammar — a low effort keeps reasoning models (e.g. nemotron) from burning the
+   * whole output budget on chain-of-thought and never emitting the JSON. One of
+   * `none|minimal|low|medium|high|xhigh`.
+   */
+  proofreadReasoningEffort: ReasoningEffort
 }
+
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+const REASONING_EFFORTS: ReasoningEffort[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh']
+const effort = (v: string | undefined, fallback: ReasoningEffort): ReasoningEffort =>
+  REASONING_EFFORTS.includes(v as ReasoningEffort) ? (v as ReasoningEffort) : fallback
 
 const num = (v: string | undefined, fallback: number) => {
   const n = Number(v)
@@ -87,5 +100,6 @@ export function loadAiConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
     provider: (env.AI_PROVIDER ?? '').split(',').map(s => s.trim()).filter(Boolean),
     enabled: env.AI_FORMATTING_ENABLED === 'true',
     proofreadingEnabled: env.AI_PROOFREADING_ENABLED === 'true',
+    proofreadReasoningEffort: effort(env.AI_PROOFREAD_REASONING_EFFORT, 'low'),
   }
 }

@@ -12,23 +12,21 @@ import { getBlocks, isParagraph, blockText } from './blocks'
  * the downloaded file.
  */
 
-// A heading that opens with "Apêndice", "Apêndices", "Anexo" or "Anexos" — optionally
-// followed by a letter/number and a title ("ANEXO A — Questionário"). Case-insensitive
-// for the word match; the uppercase check below is what gives confidence.
-const APPENDIX_HEADING_RE = /^(?:ap[eê]ndices?|anexos?)\b/i
-
 /**
- * True when a paragraph's text is an appendix/annex section heading. ABNT writes these
- * titles in UPPERCASE; requiring the leading label to be uppercase is what separates a
- * real section heading ("ANEXO A — …") from an in-body mention ("ver anexo A").
+ * A heading-like paragraph: the whole text is the label ("Apêndice(s)"/"Anexo(s)"),
+ * an optional enumerator (A, B, 1, II, IV…), and an optional "— Título". Anchored at
+ * BOTH ends so an in-body mention ("o anexo A contém os formulários") never matches —
+ * that is what lets us be case-insensitive and so accept EVERY casing: "ANEXO A",
+ * "Anexo A", "Apêndice B — Questionário", "anexo i: mapa", etc.
  */
+const APPENDIX_HEADING_RE =
+  /^(?:ap[eê]ndices?|anexos?)(?:\s+[a-z0-9ivxlcdm]{1,4})?(?:\s*[-–—:]\s*\S.*)?$/i
+
+/** True when a paragraph's text is an appendix/annex section heading (any casing). */
 export function looksLikeAppendixHeading(text: string): boolean {
   const t = text.trim()
   if (!t || t.length > 120) return false
-  if (!APPENDIX_HEADING_RE.test(t)) return false
-  const lead = t.split(/\s+/)[0]
-  // Has cased letters AND they are uppercase (digits-only would equal both forms).
-  return lead === lead.toUpperCase() && lead !== lead.toLowerCase()
+  return APPENDIX_HEADING_RE.test(t)
 }
 
 /**

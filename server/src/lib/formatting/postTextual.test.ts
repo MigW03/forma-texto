@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { locateAppendixStart, looksLikeAppendixHeading } from './postTextual'
+import { autoLocateReferences } from './references'
 
 const wp = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`
 const doc = (...paras: string[]) =>
@@ -15,9 +16,21 @@ describe('looksLikeAppendixHeading', () => {
     expect(looksLikeAppendixHeading('APENDICE A')).toBe(true) // no accent
   })
 
-  it('rejects in-body lowercase mentions', () => {
+  it('matches other casings (title case, lowercase, roman/numeric enumerator)', () => {
+    expect(looksLikeAppendixHeading('Apêndice A')).toBe(true)
+    expect(looksLikeAppendixHeading('Apêndice B — Questionário')).toBe(true)
+    expect(looksLikeAppendixHeading('Anexo A')).toBe(true)
+    expect(looksLikeAppendixHeading('Anexo I: Mapa')).toBe(true)
+    expect(looksLikeAppendixHeading('anexo ii – tabela de dados')).toBe(true)
+    expect(looksLikeAppendixHeading('Apêndices')).toBe(true)
+    expect(looksLikeAppendixHeading('Anexo 1')).toBe(true)
+  })
+
+  it('rejects in-body mentions (extra prose, no heading structure)', () => {
     expect(looksLikeAppendixHeading('ver o anexo A para detalhes')).toBe(false)
     expect(looksLikeAppendixHeading('como mostra o apêndice')).toBe(false)
+    expect(looksLikeAppendixHeading('Apêndice A contém os formulários do estudo')).toBe(false)
+    expect(looksLikeAppendixHeading('Anexo. Segue o documento completo abaixo')).toBe(false)
   })
 
   it('rejects unrelated headings', () => {
@@ -54,5 +67,26 @@ describe('locateAppendixStart', () => {
   it('is not fooled by a body mention of the word', () => {
     const d = doc(wp('O anexo A traz os dados completos.'), wp('Conclusão'))
     expect(locateAppendixStart(d)).toBeNull()
+  })
+})
+
+describe('autoLocateReferences — stops at the appendix', () => {
+  // Pad to clear the 40%-of-document search-start gate.
+  const pad = Array(8).fill(wp('texto do corpo do trabalho')).join('')
+
+  it('does not include appendix paragraphs as reference entries', () => {
+    const d = doc(
+      pad,
+      wp('REFERÊNCIAS'),       // index 8
+      wp('SILVA, J. Título. 2020.'), // 9 — real entry
+      wp('SOUZA, M. Outro. 2021.'),  // 10 — real entry
+      wp('APÊNDICE A — Questionário'), // 11 — appendix start
+      wp('Pergunta 1 do questionário'), // 12 — must NOT be an entry
+      wp('Pergunta 2 do questionário'), // 13
+    )
+    const region = autoLocateReferences(d)
+    expect(region).not.toBeNull()
+    expect(region!.headingIdx).toBe(8)
+    expect(region!.entryIndices).toEqual([9, 10]) // appendix (11+) excluded
   })
 })

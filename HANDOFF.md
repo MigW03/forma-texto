@@ -6,7 +6,7 @@
 > bottom, and adjust **Open work** as things land. Keep it short and current —
 > deep reference lives in the docs linked below, not here.
 
-**Last updated:** 2026-06-20
+**Last updated:** 2026-06-21
 
 ---
 
@@ -32,9 +32,9 @@ Deeper docs (keep these as the real source of truth):
 
 ## Current status
 
-- **Branch:** `feature/docx-page-detection` — lauda-based billing migration + pipeline improvements. The botched-merge fix is committed (`0641594`); the 2026-06-20 deterministic-text/interactive-input work is **uncommitted in the working tree** (see session log).
+- **Branch:** `feature/docx-page-detection` — lauda-based billing migration + pipeline improvements. The deterministic-text / interactive-input / appendix-exclusion work is committed (`43ced91`); the 2026-06-21 appendix-casing + Step P reasoning-effort changes are **uncommitted in the working tree** (see session log).
 - **Build:** web production build **verified green (2026-06-17)** (`npm run build` in `web/`).
-- **Tests:** server **232** passing (3 AI evals skipped); web **38** passing.
+- **Tests:** server **234** passing (3 AI evals skipped); web **38** passing.
 - **Working:** auth, onboarding flow, checkout (Stripe), dashboard, project detail/viewer,
   the DOCX formatting pipeline Steps A/B/C/D (both AI passes: reference reformatting + headings),
   and the server-side proofreading pass (Step P) — proofreading is no longer on n8n.
@@ -118,8 +118,13 @@ Deeper docs (keep these as the real source of truth):
   own token budget** `AI_PROOFREAD_MAX_TOKENS` (default 4096) so proofreading generations are
   shorter (faster, fewer mid-stream resets) without starving Step C/D.
   **Never use nano for Step C:** it over-reasons (7k+ reasoning tokens on a single reference entry)
-  and corrupts the JSON → `NoObjectGeneratedError` (incidents 2026-06-19/06-20). Nano is fine for
-  Step P, which makes direct text edits rather than structured JSON.
+  and corrupts the JSON → `NoObjectGeneratedError` (incidents 2026-06-19/06-20). **Step P is also
+  structured JSON** (`{i,text}` via `generateObject`), so nano over-reasoned it too and hit
+  `finishReason: length` (3.7k reasoning tokens, never emitted the JSON; incident 2026-06-21). Capping the
+  effort (`AI_PROOFREAD_REASONING_EFFORT`, OpenRouter `reasoning.effort`, default **low**, passed in
+  `proofreadDecider`) did **not** tame nano, so **Step P now runs on `nemotron-3-super-120b-a12b:free`** in
+  `.env` — the same model that emits clean JSON on Step C. **Lesson: every structured-JSON pass (C/D/P) needs
+  super/ultra; nano is unsafe for all of them.** The reasoning knob stays (it trims super's token use too).
 - **Free models drop the socket mid-response** (`ECONNRESET`/"terminated", `200` then body killed).
   The AI SDK marks these `isRetryable:false`, so `ai/retry.ts` (`withConnectionRetry`) wraps all
   three deciders' `generateObject` calls and retries only transport resets (backoff + jitter; reuses
@@ -191,6 +196,32 @@ Deeper docs (keep these as the real source of truth):
 ---
 
 ## Session log
+
+### 2026-06-21 — Appendix detection (any casing) + Step P reasoning cap
+
+Follow-ups on the 2026-06-20 work. **Uncommitted** in the working tree.
+
+- **Appendix/annex detection now accepts every casing.** The first version required the heading to be
+  UPPERCASE, which missed title-case "Apêndice A". `looksLikeAppendixHeading` (mirrored in
+  `server/.../postTextual.ts` and `web/.../laudas.ts`) now uses a both-ends-anchored, case-insensitive
+  pattern — the whole paragraph must be `label + optional enumerator (A, B, 1, II…) + optional "— título"`.
+  The anchoring is what keeps it safe: an in-body mention ("o anexo A contém os formulários", "Anexo. Segue…")
+  has extra prose or no separator, so it never matches. Matches `APÊNDICE A`, `Apêndice A`, `anexo i: mapa`,
+  `Anexo 1`, etc. +3 server test groups; server 233 passing, web 38, builds clean.
+- **Step P reasoning effort knob + model move to super.** A real Step P run on nano produced no JSON — the
+  model poured 3.7k reasoning tokens of chain-of-thought into the output channel on a *tiny* (1141-token) chunk
+  and hit the 4096 output cap before emitting anything. (Batching doesn't help: it bounds input, not the
+  model's reasoning output.) Added an OpenRouter `reasoning: { effort }` knob in `proofreadDecider` — config
+  `proofreadReasoningEffort` / env `AI_PROOFREAD_REASONING_EFFORT`, **default `low`** (Step Punct already does
+  the mechanical punctuation, so light grammar is all that's left). Scoped to Step P. **`low` did NOT tame
+  nano** (it under-honoured the cap), so `.env` `AI_PROOFREAD_MODEL` was moved to
+  `nemotron-3-super-120b-a12b:free` — the same model that emits clean JSON on Step C. The reasoning knob stays
+  (it also trims super's token use). **Restart the server.**
+- **Appendix no longer leaks into the references region (Step B/C).** In continuous mode `autoLocateReferences`
+  treated *every* paragraph after the "Referências" heading as a reference entry — including the appendix/annex
+  that follows references — so Step B laid them out as citations and Step C sent them to the model (wasted AI).
+  Both `autoLocateReferences` and the page-flagged `locateReferences` now bound the region at
+  `locateAppendixStart`, so the appendix is excluded from the entry list. +1 test; server 234 passing.
 
 ### 2026-06-20 — Botched-merge fix, deterministic punctuation, interactive-input polish
 

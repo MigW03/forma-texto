@@ -28,17 +28,17 @@ export function countWords(text: string): number {
 }
 
 // Mirror of the server's appendix/annex detection (server/src/lib/formatting/postTextual.ts).
-// ABNT post-textual sections ("APÊNDICE", "ANEXO") are NOT billed or processed — but they
-// stay in the file. The leading label must be UPPERCASE so a body mention ("ver anexo A")
-// is never mistaken for the heading.
-const APPENDIX_HEADING_RE = /^(?:ap[eê]ndices?|anexos?)\b/i
+// ABNT post-textual sections (Apêndice / Anexo) are NOT billed or processed — but they
+// stay in the file. The pattern is anchored at both ends (the whole paragraph is the
+// label + optional enumerator + optional "— título") so an in-body mention is never
+// matched, which lets it accept every casing ("ANEXO A", "Anexo A", "anexo i: mapa").
+const APPENDIX_HEADING_RE =
+  /^(?:ap[eê]ndices?|anexos?)(?:\s+[a-z0-9ivxlcdm]{1,4})?(?:\s*[-–—:]\s*\S.*)?$/i
 
 function looksLikeAppendixHeading(text: string): boolean {
   const t = text.trim()
   if (!t || t.length > 120) return false
-  if (!APPENDIX_HEADING_RE.test(t)) return false
-  const lead = t.split(/\s+/)[0]
-  return lead === lead.toUpperCase() && lead !== lead.toLowerCase()
+  return APPENDIX_HEADING_RE.test(t)
 }
 
 /**

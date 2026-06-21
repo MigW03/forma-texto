@@ -50,13 +50,19 @@ export function createProofreadDecider(cfg: AiConfig = loadAiConfig()): Proofrea
           maxOutputTokens: cfg.proofreadMaxTokens,
           maxRetries: cfg.maxRetries,
           experimental_repairText: repairDecisions,
-          // Pin OpenRouter to a single backend when configured, so routing doesn't
-          // swap hardware/quantization between runs (a source of run-to-run variance).
-          ...(cfg.provider.length > 0 && {
-            providerOptions: {
-              openrouter: { provider: { order: cfg.provider, allow_fallbacks: false } },
+          providerOptions: {
+            openrouter: {
+              // Low reasoning effort: Step Punct already did the mechanical work, so the
+              // model only needs light grammar. Keeps reasoning models from spending the
+              // whole output budget on chain-of-thought and never emitting the JSON.
+              reasoning: { effort: cfg.proofreadReasoningEffort },
+              // Pin OpenRouter to a single backend when configured, so routing doesn't
+              // swap hardware/quantization between runs (a source of run-to-run variance).
+              ...(cfg.provider.length > 0 && {
+                provider: { order: cfg.provider, allow_fallbacks: false },
+              }),
             },
-          }),
+          },
         }),
         { retries: cfg.maxRetries },
       )
