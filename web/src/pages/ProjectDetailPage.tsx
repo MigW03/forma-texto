@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, FileText, Download, Loader2 } from 'lucide-react'
+import { ArrowLeft, FileText, Download, Loader2, Upload, Link2 } from 'lucide-react'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { renderAsync } from 'docx-preview'
@@ -12,9 +12,12 @@ import { calcPrice, formatBRL } from '../lib/pricing'
 import type { ServiceKey } from '../lib/pricing'
 import { formatPageRanges } from '../lib/format'
 import { normalizeStatus, STATUS_BADGE_VARIANT } from '../lib/status'
+import { sliceDocxByLaudas, getDocxBlocks } from '../lib/docx-slice'
+import { computeLaudas, laudaBlockSet } from '../lib/laudas'
 import type { GuidelineId } from '../lib/guidelines'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
@@ -526,6 +529,8 @@ export default function ProjectDetailPage() {
   const [removals, setRemovals] = useState<Set<string>>(new Set())
   const [finalizing, setFinalizing] = useState(false)
   const [finalizeError, setFinalizeError] = useState<string | null>(null)
+  const [recovering, setRecovering] = useState(false)
+  const [recoverError, setRecoverError] = useState<string | null>(null)
   const viewerWrapRef = useRef<HTMLDivElement>(null)
   const signedProcPathRef = useRef<string | null>(null)
   const finalizingRef = useRef(false)
@@ -676,6 +681,70 @@ export default function ProjectDetailPage() {
     }
   }, [project, session, fills, removals])
 
+  // Missing-file recovery: re-upload the (paid) project's file. Uploads to Storage under
+  // the project's own folder, then asks the server to stamp the path and re-trigger the
+  // pipeline. No new order is created — the user is not re-charged.
+  const handleRecoverUpload = useCallback(async (file: File) => {
+    if (!project || !session || recovering) return
+    if (!file.name.toLowerCase().endsWith('.docx')) {
+      setRecoverError('invalidType')
+      return
+    }
+    setRecovering(true)
+    setRecoverError(null)
+    try {
+      // Re-slice to the laudas the user originally paid for. The server never slices
+      // (checkout slices before upload), so a full re-uploaded file would otherwise get
+      // ALL laudas processed. `selected_pages` holds the paid lauda numbers; recompute
+      // them from this file (same word-boundary algorithm) and keep only those blocks.
+      // Same file ⇒ same lauda numbering, so the selection maps 1:1.
+      let fileToUpload = file
+      const selectedLaudas = project.selected_pages ?? []
+      if (selectedLaudas.length > 0) {
+        try {
+          const blocks = await getDocxBlocks(file)
+          const laudas = computeLaudas(blocks)
+          // Only slice when the selection is a real subset — if it already covers every
+          // lauda, keep the file whole (avoids a pointless re-zip).
+          if (selectedLaudas.length < laudas.length) {
+            fileToUpload = await sliceDocxByLaudas(file, laudaBlockSet(laudas, selectedLaudas))
+          }
+        } catch (err) {
+          console.error('Recovery slicing failed, uploading full file:', err)
+        }
+      }
+
+      // Mirror checkout's upload: store the .docx bytes as a .zip-renamed object.
+      const uploadFile = new File([fileToUpload], file.name.replace(/\.docx$/i, '.zip'), { type: 'application/zip' })
+      const safeName = uploadFile.name
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .replace(/\s+/g, '_')
+      const path = `${session.user.id}/${project.id}/original/${safeName}`
+      const { error: upErr } = await supabase.storage
+        .from('projects')
+        .upload(path, uploadFile, { upsert: true })
+      if (upErr) throw new Error(upErr.message)
+
+      const res = await fetch(`${API_URL}/api/processing/recover-file`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ projectId: project.id, path, fileName: file.name }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error((body as { error?: string }).error ?? String(res.status))
+      }
+      window.location.reload()
+    } catch (err) {
+      setRecoverError(String(err instanceof Error ? err.message : err))
+      setRecovering(false)
+    }
+  }, [project, session, recovering])
+
   // ── Early returns (after all hooks) ─────────────────────────────────────────
 
   if (loading) {
@@ -707,6 +776,7 @@ export default function ProjectDetailPage() {
   const totalCost = project.services.reduce((sum, s) => sum + calcPrice(s, project.page_count), 0)
   const pendingInputs = project.pending_inputs ?? []
   const hasNeedsInput = status === 'needs_input' && pendingInputs.length > 0
+  const isMissingFile = status === 'missing_file'
   const canSeeProcessed = !!processedFileUrl && (status === 'complete' || status === 'needs_input')
   const canDownloadProcessed = !!processedFileUrl && status === 'complete'
   const canFinalize = hasNeedsInput &&
@@ -746,9 +816,13 @@ export default function ProjectDetailPage() {
         )}
       </div>
 
-      {/* File viewer */}
+      {/* File viewer — or the missing-file recovery uploader in its place */}
       <div ref={viewerWrapRef} className="flex-1 min-h-0 bg-[#E8E6DF] flex flex-col">
-        {previewUrl && isPdf ? (
+        {isMissingFile ? (
+          <div className="flex-1 flex items-center justify-center p-8 overflow-y-auto">
+            <RecoverUpload onFile={handleRecoverUpload} busy={recovering} submitError={recoverError} />
+          </div>
+        ) : previewUrl && isPdf ? (
           <PdfViewer
             url={previewUrl}
             fileName={project.original_file_name}
@@ -922,6 +996,162 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
     <div className="flex flex-col gap-0.5">
       <span className="text-xs font-medium text-muted uppercase tracking-wider">{label}</span>
       {children}
+    </div>
+  )
+}
+
+/**
+ * Missing-file recovery uploader, shown in place of the viewer when a paid project has no
+ * file. Mirrors GetStartedPage's input: a tab switcher between a local `.docx` drop zone
+ * and a Google-Docs URL fetch. Both paths resolve to a File handed to `onFile`, which the
+ * parent uploads + recovers. `busy` covers the parent's upload; `submitError` is its error.
+ */
+function RecoverUpload({
+  onFile,
+  busy,
+  submitError,
+}: {
+  onFile: (file: File) => void
+  busy: boolean
+  submitError: string | null
+}) {
+  const { t } = useTranslation()
+  const [tab, setTab] = useState<'upload' | 'link'>('upload')
+  const [dragging, setDragging] = useState(false)
+  const [typeError, setTypeError] = useState<'doc' | 'invalid' | null>(null)
+  const [url, setUrl] = useState('')
+  const [linkError, setLinkError] = useState<string | null>(null)
+  const [fetching, setFetching] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const isDocConvert = (f: File) => /\.doc$/i.test(f.name) && !/\.docx$/i.test(f.name)
+  const isDocx = (f: File) => /\.docx$/i.test(f.name)
+
+  function pick(f: File) {
+    if (isDocConvert(f)) { setTypeError('doc'); return }
+    if (!isDocx(f)) { setTypeError('invalid'); return }
+    setTypeError(null)
+    onFile(f)
+  }
+
+  async function fetchFromUrl() {
+    if (!url.trim() || fetching || busy) return
+    setLinkError(null)
+    setFetching(true)
+    try {
+      const res = await fetch(`${API_URL}/api/documents/fetch?url=${encodeURIComponent(url)}`)
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setLinkError((data as { error?: string }).error ?? t('project.recover.error'))
+        setFetching(false)
+        return
+      }
+      const blob = await res.blob()
+      const filename = res.headers.get('X-Filename') ?? 'document.docx'
+      onFile(new File([blob], filename, { type: blob.type }))
+      // Leave `fetching` true — the parent's busy state + reload take over from here.
+    } catch {
+      setLinkError(t('project.recover.error'))
+      setFetching(false)
+    }
+  }
+
+  const working = busy || fetching
+
+  return (
+    <div className="w-full max-w-lg bg-white rounded-2xl border border-border px-6 py-6 shadow-sm">
+      <h2 className="text-base font-semibold text-ink mb-1">{t('project.recover.title')}</h2>
+      <p className="text-sm text-muted mb-5 leading-relaxed">{t('project.recover.description')}</p>
+
+      {working ? (
+        <div className="h-48 rounded-xl border border-border bg-[#F0EEE8] flex flex-col items-center justify-center gap-3">
+          <Loader2 size={22} className="text-forest animate-spin" />
+          <p className="text-sm font-medium text-ink">{t('project.recover.uploading')}</p>
+        </div>
+      ) : (
+        <>
+          {/* Tab switcher */}
+          <div className="flex rounded-lg border border-border overflow-hidden mb-4">
+            <button
+              type="button"
+              onClick={() => setTab('upload')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors ${
+                tab === 'upload' ? 'bg-[#F0EEE8] text-ink' : 'text-muted hover:text-ink'
+              }`}
+            >
+              <Upload size={14} />
+              {t('hero.uploadTab')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('link')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors ${
+                tab === 'link' ? 'bg-[#F0EEE8] text-ink' : 'text-muted hover:text-ink'
+              }`}
+            >
+              <Link2 size={14} />
+              {t('hero.linkTab')}
+            </button>
+          </div>
+
+          {tab === 'upload' ? (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".docx"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) pick(f); e.target.value = '' }}
+              />
+              <div
+                onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files?.[0]; if (f) pick(f) }}
+                onClick={() => fileInputRef.current?.click()}
+                className={`h-48 rounded-xl border-2 border-dashed cursor-pointer flex flex-col items-center justify-center gap-3 transition-colors ${
+                  typeError ? 'border-red-400 bg-red-50' : dragging ? 'border-forest-mid bg-forest-mid/5' : 'border-border hover:border-forest-mid/50'
+                }`}
+              >
+                <Upload size={24} className={typeError ? 'text-red-400' : 'text-muted'} strokeWidth={1.5} />
+                <p className="text-sm font-medium text-ink">{t('hero.dropPrompt')}</p>
+                {typeError === 'doc' ? (
+                  <p className="text-xs text-red-500 text-center px-6">{t('getStarted.fileCard.docConvert')}</p>
+                ) : typeError === 'invalid' ? (
+                  <p className="text-xs text-red-500 text-center px-6">{t('project.recover.invalidType')}</p>
+                ) : (
+                  <p className="text-xs text-muted">{t('hero.fileLimit')}</p>
+                )}
+                <span className="text-xs border border-border rounded px-2 py-0.5 text-muted">.docx</span>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-xl border border-border px-4 py-4 flex flex-col gap-3">
+              <label className="text-xs font-medium text-muted uppercase tracking-wider">
+                {t('hero.documentUrl')}
+              </label>
+              <Input
+                type="url"
+                placeholder="https://docs.google.com/..."
+                value={url}
+                onChange={(e) => { setUrl(e.target.value); setLinkError(null) }}
+                className="rounded-lg py-2.5"
+              />
+              {linkError ? (
+                <p className="text-xs text-red-500">{linkError}</p>
+              ) : (
+                <p className="text-xs text-muted">{t('hero.linksSupported')}</p>
+              )}
+              <Button className="w-full" disabled={!url.trim()} onClick={fetchFromUrl}>
+                {t('project.recover.button')}
+              </Button>
+            </div>
+          )}
+
+          {submitError && (
+            <p className="text-xs text-red-600 mt-3">{t('project.recover.error')}</p>
+          )}
+        </>
+      )}
     </div>
   )
 }

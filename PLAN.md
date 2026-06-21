@@ -61,6 +61,18 @@
   - `supabase.from('projects').insert(...)` in `handleSuccess()` after Stripe confirms
 - [x] Original file uploaded to Supabase Storage on payment success
   - `supabase.storage.from('projects').upload(path, file)`, path: `{userId}/{projectId}/original/{filename}`
+- [x] Missing-file recovery flow
+  - A paid order can land with `original_file_path: null` (the upload lives in volatile browser
+    memory; a payment-redirect reload / refresh can wipe it before `handleSuccess` uploads). The
+    pipeline's null-path guard (`processFormatting`) now stamps `status: 'missing_file'` and emails the
+    user to re-upload (`sendReuploadNeededEmail` + `emails/reuploadNeeded.ts`, makes clear there is no
+    re-charge). For `missing_file` projects, `ProjectDetailPage` replaces the file viewer with a
+    `RecoverUpload` container (mirrors GetStartedPage: tabbed local `.docx` drop zone + Google-Docs URL
+    fetch via `/api/documents/fetch`). The resolved file is uploaded to Storage (same path scheme) →
+    `POST /api/processing/recover-file` stamps the path, sets `pending`, and re-triggers the pipeline.
+    New status `missing_file` wired through `status.ts`,
+    `badge.tsx`, dashboard active-count, and all three locales. (Root-cause fix — upload before payment
+    + persist the path in `sessionStorage` — still deferred.)
 - [x] File sliced to selected laudas before upload
   - DOCX only (PDF removed). `sliceDocxByLaudas(file, Set<blockIdx>)` in `web/src/lib/docx-slice.ts` — removes unselected body blocks from the document XML, re-zips. Block indices come from `laudaBlockSet(laudas, selectedIndices)` in `web/src/lib/laudas.ts`. Full-doc uploads skip slicing (all laudas selected).
 - [x] Always display cents in price values

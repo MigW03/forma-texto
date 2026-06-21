@@ -93,7 +93,7 @@ export default function DashboardPage() {
   }, [user])
 
   const activeCount = projects.filter(
-    (p) => p.status === 'pending' || p.status === 'processing' || p.status === 'needs_input',
+    (p) => p.status === 'pending' || p.status === 'processing' || p.status === 'needs_input' || p.status === 'missing_file',
   ).length
 
   return (

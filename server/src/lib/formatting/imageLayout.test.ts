@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatImages, IMAGE_WIDTH_FRACTION } from './imageLayout'
+import { formatImages } from './imageLayout'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -31,19 +31,19 @@ const cxValues = (xml: string) =>
   [...xml.matchAll(/cx="(\d+)"/g)].map(m => parseInt(m[1], 10))
 
 // APA margins: 1440 left + 1440 right. Content = 11906 - 2880 = 9026 twips.
-// Target cx = round(9026 * 635 * 0.7) = 4011057.
-const EXPECTED_TARGET = Math.round((11906 - 1440 - 1440) * 635 * IMAGE_WIDTH_FRACTION)
+// Content width cap (100%) = 9026 * 635 = 5731510 EMU.
+const CONTENT_WIDTH_EMU = (11906 - 1440 - 1440) * 635
 
 describe('formatImages', () => {
-  it('scales an oversized inline image to the target content width', () => {
-    const xml = wrap(inlineImage(8000000, 6000000))
+  it('shrinks an oversized inline image to the content width', () => {
+    const xml = wrap(inlineImage(8000000, 6000000)) // 8000000 > cap
     const out = formatImages(xml, 'apa')
     const widths = cxValues(out)
-    // Both wp:extent and a:ext cx should be the target width
-    expect(widths.every(w => w === EXPECTED_TARGET)).toBe(true)
+    // Both wp:extent and a:ext cx should be the content-width cap
+    expect(widths.every(w => w === CONTENT_WIDTH_EMU)).toBe(true)
   })
 
-  it('preserves aspect ratio when scaling', () => {
+  it('preserves aspect ratio when shrinking', () => {
     const cx = 8000000
     const cy = 6000000 // 4:3
     const xml = wrap(inlineImage(cx, cy))
@@ -53,13 +53,20 @@ describe('formatImages', () => {
     const newCy = parseInt(extent[2], 10)
     const ratio = newCy / newCx
     expect(ratio).toBeCloseTo(cy / cx, 3)
-    expect(newCx).toBe(EXPECTED_TARGET)
+    expect(newCx).toBe(CONTENT_WIDTH_EMU)
   })
 
-  it('scales up a small inline image to the target width', () => {
-    const xml = wrap(inlineImage(500000, 500000))
+  it('preserves a small inline image (never enlarges it)', () => {
+    const xml = wrap(inlineImage(500000, 500000)) // well under the cap
     const out = formatImages(xml, 'apa')
-    expect(cxValues(out)[0]).toBe(EXPECTED_TARGET)
+    expect(cxValues(out)).toEqual([500000, 500000]) // size untouched
+  })
+
+  it('preserves an image that already fits the content width', () => {
+    const cx = CONTENT_WIDTH_EMU - 100000
+    const xml = wrap(inlineImage(cx, cx))
+    const out = formatImages(xml, 'apa')
+    expect(cxValues(out)[0]).toBe(cx) // not scaled down
   })
 
   it('centers the image paragraph', () => {

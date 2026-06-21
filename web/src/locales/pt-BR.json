@@ -137,6 +137,7 @@
       "pending": "Na fila",
       "processing": "Em andamento",
       "needs_input": "Aguardando sua resposta",
+      "missing_file": "Reenvie o arquivo",
       "complete": "Pronto para revisão"
     },
     "time": {
@@ -196,6 +197,14 @@
       "placeholder_figure_source": "Fonte: …",
       "placeholder_table_caption": "Ex: Tabela 1 — Resultados por região",
       "placeholder_table_source": "Fonte: …"
+    },
+    "recover": {
+      "title": "Reenvie seu arquivo",
+      "description": "Recebemos seu pagamento, mas o arquivo não chegou até nós (a página pode ter sido recarregada antes do envio terminar). Reenvie o mesmo documento .docx para iniciar o processamento. Você não será cobrado novamente.",
+      "button": "Escolher arquivo .docx",
+      "uploading": "Enviando…",
+      "invalidType": "Envie um arquivo .docx",
+      "error": "Não foi possível reenviar — tente novamente"
     },
     "fileName": "Arquivo",
     "service": "Serviço",

@@ -6,6 +6,7 @@ describe('normalizeStatus', () => {
     expect(normalizeStatus('pending')).toBe('pending')
     expect(normalizeStatus('processing')).toBe('processing')
     expect(normalizeStatus('needs_input')).toBe('needs_input')
+    expect(normalizeStatus('missing_file')).toBe('missing_file')
     expect(normalizeStatus('complete')).toBe('complete')
   })
 
@@ -24,6 +25,7 @@ describe('STATUS_BADGE_VARIANT', () => {
       pending: 'default',
       processing: 'processing',
       needs_input: 'needs_input',
+      missing_file: 'missing_file',
       complete: 'complete',
     })
   })

@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { sendProjectReadyEmail } from './notify'
+import { sendProjectReadyEmail, sendReuploadNeededEmail } from './notify'
 import { docxToPdf } from './docxToPdf'
 import {
   unzipDocx,
@@ -163,8 +163,20 @@ export async function processFormatting(projectId: string): Promise<void> {
       console.warn(`[processFormatting] ${projectId} has no 'formatting'/'proofreading' service — skipping`)
       return
     }
+    // Missing-file recovery: a paid order can land with no file (the upload lives in
+    // volatile browser memory and a payment-redirect reload / refresh can wipe it before
+    // the post-payment upload runs). Instead of silently aborting, mark the project
+    // `missing_file` and email the user to re-upload (no re-charge — see recover-file route).
     if (!project.original_file_path) {
-      console.error(`[processFormatting] ${projectId} has no original_file_path`)
+      console.warn(`[processFormatting] ${projectId} has no original_file_path — flagging missing_file`)
+      if (project.status !== 'missing_file') {
+        await supabase.from('projects').update({ status: 'missing_file' }).eq('id', projectId)
+        try {
+          await sendReuploadNeededEmail(projectId)
+        } catch (err) {
+          console.error(`[processFormatting] reupload email failed for ${projectId} (non-fatal):`, err)
+        }
+      }
       return
     }
 
@@ -274,18 +286,19 @@ export async function processFormatting(projectId: string): Promise<void> {
       }
 
       // Final deterministic touches, after the AI passes so they see the final heading
-      // styles: (1) normalize inline image size/centering; (2) image captions;
-      // (3) cancel the page break before the FIRST H1. The three image passes stop at
-      // the appendix/annex — its images are reproduced documents we neither rescale nor
-      // caption — while the heading-only page-break pass runs over the whole document.
-      const imageFreezeAt = appendixStart ?? Infinity
-      workingDocXml = formatImages(workingDocXml, guideline, imageFreezeAt)
-      workingDocXml = formatCaptions(workingDocXml, imageFreezeAt)
+      // styles: (1) constrain inline image size + center; (2) image captions;
+      // (3) cancel the page break before the FIRST H1. Image sizing runs over the WHOLE
+      // document — an oversized image overflows the page even in the appendix/annex, so it
+      // must be capped there too (it only shrinks overflow, never forces a size). Caption /
+      // source insertion still stops at the appendix (we don't caption reproduced documents).
+      const captionFreezeAt = appendixStart ?? Infinity
+      workingDocXml = formatImages(workingDocXml, guideline)
+      workingDocXml = formatCaptions(workingDocXml, captionFreezeAt)
       workingDocXml = suppressFirstHeadingPageBreak(workingDocXml)
       // Drop the author's manual page break before chapter titles — the Heading1 style
       // already breaks, and the double break renders a blank page in the PDF (LibreOffice).
       workingDocXml = removeRedundantChapterPageBreaks(workingDocXml)
-      const { xml: docWithPlaceholders, pending: detected } = detectAndInsertPlaceholders(workingDocXml, imageFreezeAt)
+      const { xml: docWithPlaceholders, pending: detected } = detectAndInsertPlaceholders(workingDocXml, captionFreezeAt)
       workingDocXml = docWithPlaceholders
       pending = detected
     }

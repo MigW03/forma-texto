@@ -137,6 +137,7 @@
       "pending": "In queue",
       "processing": "Processing",
       "needs_input": "Needs your input",
+      "missing_file": "Re-upload needed",
       "complete": "Ready for review"
     },
     "time": {
@@ -215,6 +216,14 @@
       "placeholder_figure_source": "Source: …",
       "placeholder_table_caption": "e.g. Table 1 — Survey results by region",
       "placeholder_table_source": "Source: …"
+    },
+    "recover": {
+      "title": "Re-upload your file",
+      "description": "We received your payment, but your file never reached us (the page may have reloaded before the upload finished). Re-upload the same .docx document to start processing. You won't be charged again.",
+      "button": "Choose .docx file",
+      "uploading": "Uploading…",
+      "invalidType": "Please upload a .docx file",
+      "error": "Could not re-upload — please try again"
     },
     "references": {
       "title": "References",

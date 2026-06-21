@@ -6,7 +6,7 @@
 > bottom, and adjust **Open work** as things land. Keep it short and current —
 > deep reference lives in the docs linked below, not here.
 
-**Last updated:** 2026-06-21 (later 3)
+**Last updated:** 2026-06-21 (later 6)
 
 ---
 
@@ -49,9 +49,12 @@ Deeper docs (keep these as the real source of truth):
 - **Step D** (AI heading reclassification) — built, tested, and confirmed working live.
 - **Step E** (re-zip / upload / stamp / email) — built.
 - **Image sizing** (deterministic) — built, unit-tested. `imageLayout.ts` `formatImages`
-  scales every `<wp:inline>` image to 70% of the page content width (aspect preserved) and
-  centers its paragraph; floating `<wp:anchor>` images are skipped. Runs first in the final
-  deterministic touches (before captions). **No image in the test fixture yet** — live check pending.
+  **preserves each `<wp:inline>` image's author-chosen width** (guidelines specify no image size; authors
+  size figures on purpose) and only **shrinks an image that overflows the page content width** — it never
+  enlarges. Centers the image paragraph; floating `<wp:anchor>` images are skipped. Runs over the WHOLE
+  document, including the appendix/annex (an oversized image leaks the page there too — the cap is the
+  only thing that prevents it; confirmed live 2026-06-21). Caption/source insertion still skips the
+  appendix. (Earlier "force 70%" behaviour and "skip appendix resize" were both replaced by this.)
 - **Image captions** (deterministic) — built, unit-tested. Around each image
   (`<w:drawing>`/`<w:pict>`/`<w:object>`) the pass styles the paragraph **before** as
   `Caption` only when it opens with a figure label (`Figura 1 —`, `Imagem 2 -`, `Gráfico 3:`)
@@ -184,12 +187,12 @@ Deeper docs (keep these as the real source of truth):
       container (`apt-get install libreoffice-writer fonts-liberation`) or a Gotenberg sidecar
       (HTTP-wrapped LibreOffice — would swap `docxToPdf.ts`'s shell-out for a `GOTENBERG_URL` call).
       No host chosen yet. The export is non-fatal, so prod runs fine without it until decided.
-- [ ] **Missing-file recovery flow** (in PLAN.md). A payment can succeed but the project row get
-      `original_file_path: null` — the upload lives in volatile module memory (`file-store.ts`) and a
-      payment-redirect reload (PIX/3DS) or a manual refresh wipes it before `handleSuccess` runs. The
-      pipeline then aborts at its guard. Build: detect this case, email the user to re-upload (no
-      re-charge — our fault), accept the re-upload, stamp the path, re-trigger. Root-cause fix
-      (upload before payment + persist the path string in `sessionStorage`) deferred.
+- [x] ~~**Missing-file recovery flow**~~ **Built (2026-06-21 later 5).** The pipeline's null-path
+      guard now stamps `status: 'missing_file'` + emails the user to re-upload (no re-charge);
+      `ProjectDetailPage` shows a re-upload panel → `POST /api/processing/recover-file` stamps the path,
+      sets `pending`, and re-triggers. See session log. **Live test pending** (use the
+      `SIMULATE_MISSING_FILE` toggle in `CheckoutPage.tsx` — must be reverted before commit). Root-cause
+      fix (upload before payment + persist the path string in `sessionStorage`) still deferred.
 - [x] ~~**Bug — dashboard shows only one service badge for format+proofread projects.**~~ **Fixed
       (2026-06-21 later 3).** `mapDbProject` (`DashboardPage.tsx`) kept only `row.services[0]`; now it
       carries the full `services[]` array and the row renders one `ServiceBadge` per service in a
@@ -204,6 +207,65 @@ Deeper docs (keep these as the real source of truth):
 ---
 
 ## Session log
+
+### 2026-06-21 (later 6) — Image sizing: preserve author width, shrink only on overflow
+
+Reported: an appendix image leaked off the right of the page in the processed-file preview. Root cause
+was **the file itself** (the image is wider than the content area, so it overflows the page in Word/PDF
+too — the preview just showed it faithfully; the `.docx-wrapper img { max-width }` clamp added earlier
+is kept as defence-in-depth but docx-preview's `experimental` image rendering was escaping it). Two
+prior decisions compounded it: `formatImages` skipped the appendix entirely, and elsewhere it *forced*
+70%.
+
+New `formatImages` policy (`imageLayout.ts`): **preserve each inline image's author-chosen width**
+(guidelines have no image size; authors size figures deliberately) and **shrink only when it overflows
+the page content width** — never enlarge. Removed `IMAGE_WIDTH_FRACTION` (and its barrel export). Runs
+over the WHOLE document now (incl. appendix) — `processFormatting` calls `formatImages(doc, guideline)`
+with no cutoff; caption/source insertion still stops at the appendix (`captionFreezeAt`). Centering of
+the image paragraph is unchanged.
+
+Verified with a script: a 9 000 000-EMU image in the body AND in the appendix both cap to the content
+width (~5.76M EMU), while an 800 000-EMU image is left untouched. Updated `imageLayout.test.ts`
+(shrink-oversized / preserve-small / preserve-fitting). Server 241 tests green, web build clean.
+Follow-up: section-aware cap (the width still comes from the *first* `<w:pgSz>`, so a landscape page's
+image is capped to the portrait width).
+
+### 2026-06-21 (later 5) — Missing-file recovery flow
+
+A paid order can land with `original_file_path: null` (the upload lives in volatile browser memory; a
+payment-redirect reload / refresh can wipe it before `handleSuccess` uploads). Previously the pipeline
+silently aborted at its null-path guard, leaving the project stuck at `pending` with no user signal.
+
+- **New status `missing_file`** — `status.ts` (union, `normalizeStatus`, `STATUS_BADGE_VARIANT`),
+  `badge.tsx` (red variant), dashboard active-count, all 3 locales (`dashboard.status.missing_file`,
+  `project.recover.*`). DB `status` is free `text` (no enum/constraint) — no migration needed.
+- **Detection** — `processFormatting`'s null-path guard now stamps `status: 'missing_file'` and calls
+  `sendReuploadNeededEmail` (non-fatal, only when not already `missing_file`).
+- **Email** — `sendReuploadNeededEmail` in `notify.ts` + `emails/reuploadNeeded.ts` (mirrors
+  `projectReady`); copy makes clear there is **no re-charge**.
+- **Recover endpoint** — `POST /api/processing/recover-file { projectId, path, fileName }` in
+  `processing.ts`: owner-auth, refuses if the project already has a file, validates the path is under
+  the project's own folder, stamps `original_file_path` + `original_file_name`, sets `pending`, and
+  re-triggers `processFormatting`.
+- **Re-upload UI** — for `missing_file` projects, `ProjectDetailPage` replaces the centre file viewer
+  with a `RecoverUpload` container that mirrors GetStartedPage: a tab switcher between a local `.docx`
+  drop zone and a Google-Docs **URL** fetch (`/api/documents/fetch`). Either path resolves to a File
+  handed to `handleRecoverUpload`, which **re-slices the file to the paid laudas** (`selected_pages`,
+  via `computeLaudas`/`laudaBlockSet`/`sliceDocxByLaudas` — the server never slices, so a full
+  re-upload would otherwise process every lauda) → uploads to Storage client-side (same `.docx`→`.zip`
+  scheme as checkout) → calls recover-file → reloads. `recovering`/`recoverError` state.
+- **Testing scaffold** — `CheckoutPage.tsx` has a `SIMULATE_MISSING_FILE` toggle (currently **true**)
+  that skips the post-payment upload so a project is created with a null path. **Revert before commit.**
+- Web build + 35 tests green; server typecheck + 240 tests green. **Not yet live-verified** end to end.
+
+### 2026-06-21 (later 4) — Back button no longer returns to the paid checkout page
+
+After a successful payment, `SuccessScreen` (rendered on `/checkout`) auto-redirected to the dashboard
+with a plain `navigate(ROUTES.dashboard)` — a history *push*, so pressing Back from the dashboard
+returned the user to the already-completed payment page. Changed it to
+`navigate(ROUTES.dashboard, { replace: true })` so the paid `/checkout` entry is dropped from history;
+Back from the dashboard now goes to the page before checkout, never the payment screen. Build clean.
+**Not browser-verified** (needs a full Stripe checkout run). Uncommitted.
 
 ### 2026-06-21 (later 3) — Dashboard service badges + oversized preview images
 
@@ -220,11 +282,9 @@ Deeper docs (keep these as the real source of truth):
   browser-verified** — both previews are auth-gated and need an image-bearing `.docx` carried through
   the upload flow. (Separate, deeper item still open: a real fit-to-width zoom on the lauda page —
   PLAN.md "Re-add document zoom controls to the lauda selection page".)
-- **Server image sizing note (not changed):** `formatImages` still forces every image to 70% of the
-  *first* page's content width — discarding the author's per-image width and under-sizing landscape-page
-  images. The author width is already in the XML (`currentCx` in `imageLayout.ts`). Proposed change
-  (preserve author width, shrink-to-fit only on overflow, section-aware width) discussed but **not yet
-  implemented**.
+- **Server image sizing** — see "later 6" below; the preserve-author-width + shrink-on-overflow policy
+  is now implemented. (Section-aware width for landscape pages is still a follow-up: the cap uses the
+  *first* `<w:pgSz>`.)
 
 ### 2026-06-21 (later 2) — PDF export timing fix + chapter blank-page investigation
 

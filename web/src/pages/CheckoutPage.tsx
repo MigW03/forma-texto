@@ -30,7 +30,9 @@ const SESSION_KEY = 'forma-texto-checkout'
 function SuccessScreen({ free = false }: { free?: boolean }) {
   const navigate = useNavigate()
   useEffect(() => {
-    const t = setTimeout(() => navigate(ROUTES.dashboard), 3000)
+    // `replace` so the paid /checkout page is dropped from history — pressing Back from
+    // the dashboard must not return the user to the (already-completed) payment page.
+    const t = setTimeout(() => navigate(ROUTES.dashboard, { replace: true }), 3000)
     return () => clearTimeout(t)
   }, [navigate])
 

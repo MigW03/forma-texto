@@ -4,25 +4,23 @@ import { getBlocks, isParagraph, replaceBlocks } from './blocks'
 /**
  * Deterministic image-layout pass.
  *
- * Word stores an embedded picture at whatever absolute size it was inserted (the
- * "absolute pixel count" from the source doc), so figures come in at arbitrary,
- * often oversized dimensions. This pass normalises every INLINE image to a fixed
- * fraction of the page's content width (preserving aspect ratio) and centers the
- * paragraph that holds it.
+ * Authors size images deliberately (a small logo, a pair of side-by-side figures, a
+ * full-width chart), and the guidelines specify no image size — so this pass PRESERVES
+ * each image's author-chosen width. The one thing it enforces: an INLINE image must not
+ * be wider than the page content area, or it overflows the right margin (and leaks off
+ * the page in the viewer / PDF). So an image is shrunk to fit ONLY when it overflows;
+ * it is never enlarged. The image's paragraph is centered.
  *
  * Only `<wp:inline>` drawings are touched — anchored/floating images (`<wp:anchor>`)
  * carry their own positioning and text-wrap, so resizing or centering them could
  * break the layout. Tables and OLE objects are left alone.
  *
  * Sizes live in EMU (1 inch = 914400 EMU = 1440 twips → 1 twip = 635 EMU). We read
- * the primary `<wp:extent>` to learn the current display size, compute one scale
- * factor to hit the target width, then apply it to every `cx`/`cy` pair in the
+ * the primary `<wp:extent>` for the current display size; when it exceeds the content
+ * width we compute one shrink factor and apply it to every `cx`/`cy` pair in the
  * drawing (`wp:extent` and the inner `a:ext`). `<wp:effectExtent>` uses l/t/r/b and
  * `<a:off>` uses x/y, so neither is affected.
  */
-
-/** Target image width as a fraction of the page content width. */
-export const IMAGE_WIDTH_FRACTION = 0.7
 
 /** EMU per twip (1440 twips/in, 914400 EMU/in). */
 const EMU_PER_TWIP = 635
@@ -77,11 +75,11 @@ export function formatImages(documentXml: string, guideline: Guideline, stopAt =
   const { left, right } = getGuideline(guideline).margins
   const contentTwips = pageWidthTwips(documentXml) - left - right
   if (contentTwips <= 0) return documentXml
-  const targetWidthEmu = Math.round(contentTwips * EMU_PER_TWIP * IMAGE_WIDTH_FRACTION)
+  const maxWidthEmu = contentTwips * EMU_PER_TWIP // 100% of content width — the overflow cap
 
   const byIndex = new Map<number, string>()
   blocks.forEach((b, i) => {
-    if (i >= stopAt) return // appendix/annex frozen — leave its images at source size
+    if (i >= stopAt) return
     if (!isParagraph(b) || !b.includes('<wp:inline')) return
 
     let changed = false
@@ -91,9 +89,10 @@ export function formatImages(documentXml: string, guideline: Guideline, stopAt =
       if (!ext) return drawing
       const currentCx = parseInt(ext[1], 10)
       if (currentCx <= 0) return drawing
-      const scale = targetWidthEmu / currentCx
-      changed = true
-      return scaleExtents(drawing, scale)
+      changed = true // mark so the paragraph is centered, even if the size is preserved
+      // Preserve the author's size; shrink ONLY when it would overflow the content
+      // width. Never enlarge — an intentionally small figure stays small.
+      return currentCx > maxWidthEmu ? scaleExtents(drawing, maxWidthEmu / currentCx) : drawing
     })
 
     if (changed) byIndex.set(i, centerParagraph(out))

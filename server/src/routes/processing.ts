@@ -164,4 +164,66 @@ router.post('/finalize-inputs', async (req: Request, res: Response) => {
   res.json({ ok: true })
 })
 
+// POST /api/processing/recover-file  { projectId, path, fileName? }
+// Missing-file recovery: a project flagged `missing_file` (paid, but its upload never
+// arrived) gets a re-uploaded file. The client uploads the bytes to Storage itself (same
+// path scheme as checkout, under its own RLS), then calls this to stamp the path and
+// re-trigger the pipeline. No new order is created — the user is not re-charged.
+router.post('/recover-file', async (req: Request, res: Response) => {
+  const { projectId, path, fileName } = req.body as {
+    projectId?: string
+    path?: string
+    fileName?: string
+  }
+
+  if (!projectId || !path) {
+    res.status(400).json({ error: 'projectId and path required' })
+    return
+  }
+
+  if (!(await authorize(req, projectId))) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return
+  }
+
+  const { data: project, error: fetchErr } = await supabase
+    .from('projects')
+    .select('id, user_id, status, original_file_path')
+    .eq('id', projectId)
+    .single()
+  if (fetchErr || !project) {
+    res.status(404).json({ error: 'project not found' })
+    return
+  }
+
+  // Only recover a genuinely missing file — never overwrite a project that already has one.
+  if (project.original_file_path) {
+    res.status(409).json({ error: 'project already has a file' })
+    return
+  }
+
+  // The uploaded object must live under this project's own folder (the client uploads to
+  // `${userId}/${projectId}/original/...`). Reject anything pointing elsewhere.
+  if (!path.startsWith(`${project.user_id}/${projectId}/`)) {
+    res.status(400).json({ error: 'path does not belong to this project' })
+    return
+  }
+
+  const update: { original_file_path: string; status: string; original_file_name?: string } = {
+    original_file_path: path,
+    status: 'pending',
+  }
+  if (fileName) update.original_file_name = fileName
+
+  const { error: updErr } = await supabase.from('projects').update(update).eq('id', projectId)
+  if (updErr) {
+    res.status(500).json({ error: `status update failed: ${updErr.message}` })
+    return
+  }
+
+  // Re-trigger the pipeline (fire-and-forget, same as /start).
+  void processFormatting(projectId)
+  res.json({ ok: true })
+})
+
 export default router
