@@ -9,6 +9,7 @@ import {
   formatCaptions,
   formatImages,
   suppressFirstHeadingPageBreak,
+  removeRedundantChapterPageBreaks,
   normalizeNumberingXml,
   locateReferences,
   autoLocateReferences,
@@ -36,16 +37,6 @@ import {
 
 /** Tier label for a heading role, e.g. 'h2' → 'H2', 'title' → 'TITLE'. */
 const tierLabel = (role: string) => role.toUpperCase()
-
-/**
- * Smallest valid (>= 0) block index among the given candidates, or -1 if none.
- * Used to combine the references heading and the appendix/annex start into a single
- * "stop classifying/proofreading past here" cutoff for Steps D and P.
- */
-const earliestCutoff = (...idxs: Array<number | null | undefined>): number => {
-  const valid = idxs.filter((n): n is number => typeof n === 'number' && n >= 0)
-  return valid.length ? Math.min(...valid) : -1
-}
 
 /**
  * Log each identified heading on its own line: tier + page + text. Page is the
@@ -106,6 +97,28 @@ const PDF_MIME = 'application/pdf'
 const since = (start: number) => {
   const ms = Date.now() - start
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`
+}
+
+/**
+ * Export a PDF beside the processed .docx (same path, `.pdf` extension) and upload it.
+ * Non-fatal by contract: a missing/broken LibreOffice is logged and swallowed here, so
+ * the .docx (the primary deliverable) always ships. Call this only when the document is
+ * FINAL — i.e. when stamping `complete`. A `needs_input` doc must NOT get a PDF yet: the
+ * red caption/source placeholders would be baked into it; the PDF is generated from the
+ * user-completed document at finalize time instead.
+ */
+export async function exportPdfBeside(docxBuf: Buffer, processedPath: string, projectId: string): Promise<void> {
+  try {
+    const pdfBuf = await docxToPdf(docxBuf)
+    const pdfPath = processedPath.replace(/\.docx$/i, '.pdf')
+    const { error } = await supabase.storage
+      .from(BUCKET)
+      .upload(pdfPath, pdfBuf, { contentType: PDF_MIME, upsert: true })
+    if (error) throw new Error(error.message)
+    console.log(`[exportPdfBeside] ${projectId} -> ${pdfPath}`)
+  } catch (err) {
+    console.error(`[exportPdfBeside] pdf export failed for ${projectId} (non-fatal):`, err)
+  }
 }
 
 /** Make a storage-safe filename: strip accents, collapse whitespace, force .docx. */
@@ -194,15 +207,18 @@ export async function processFormatting(projectId: string): Promise<void> {
         const numXml = Buffer.from(files[NUMBERING_PATH]).toString('utf-8')
         files[NUMBERING_PATH] = Buffer.from(normalizeNumberingXml(numXml), 'utf-8')
       }
-      // Locate the appendix/annex section (if any). It is frozen — never proofread or
-      // reformatted — but kept in the file. Computed before Step A so the strip-overrides
-      // pass already spares it; the index stays valid through Steps B/C/D (in-place splices).
+      // Locate the appendix/annex section (if any). It IS formatted and proofread now
+      // (billed like the rest), so its headings get the correct hierarchy and its text is
+      // corrected. The ONLY thing skipped there is image handling — an annex reproduces
+      // third-party documents (forms, maps) whose images carry no caption/source of ours
+      // and must not be rescaled. So `appendixStart` gates only the three image passes
+      // below; every text/heading pass treats the section like the rest of the document.
       const appendixStart = locateAppendixStart(workingDocXml)
       if (appendixStart !== null) {
-        console.log(`[processFormatting] ${projectId} appendix/annex detected at block ${appendixStart} — section frozen (not formatted)`)
+        console.log(`[processFormatting] ${projectId} appendix/annex detected at block ${appendixStart} — formatted/proofread, but image passes (resize/caption/source) skipped`)
       }
 
-      const a = applyStepA({ documentXml: workingDocXml, stylesXml: workingStylesXml, guideline, appendixStart }) // Step A
+      const a = applyStepA({ documentXml: workingDocXml, stylesXml: workingStylesXml, guideline }) // Step A
       workingStylesXml = a.stylesXml
       workingDocXml = formatReferences(a.documentXml, guideline, refInput) // Step B: references
       region = locateReferences(workingDocXml, refInput)
@@ -246,7 +262,7 @@ export async function processFormatting(projectId: string): Promise<void> {
           const dStart = Date.now()
           console.log(`[processFormatting] ${projectId} Step D: calling model (${aiCfg.headingModel})…`)
           const result = await stepD(workingDocXml, guideline, createHeadingDecider(aiCfg), {
-            refStartIndex: earliestCutoff(region?.headingIdx, appendixStart),
+            refStartIndex: region?.headingIdx ?? -1, // appendix is classified now; only references are excluded
             maxChars: aiCfg.maxCharsPerChunk,
           })
           workingDocXml = result.documentXml
@@ -259,28 +275,29 @@ export async function processFormatting(projectId: string): Promise<void> {
 
       // Final deterministic touches, after the AI passes so they see the final heading
       // styles: (1) normalize inline image size/centering; (2) image captions;
-      // (3) cancel the page break before the FIRST H1.
-      const freezeAt = appendixStart ?? Infinity
-      workingDocXml = formatImages(workingDocXml, guideline, freezeAt)
-      workingDocXml = formatCaptions(workingDocXml, freezeAt)
+      // (3) cancel the page break before the FIRST H1. The three image passes stop at
+      // the appendix/annex — its images are reproduced documents we neither rescale nor
+      // caption — while the heading-only page-break pass runs over the whole document.
+      const imageFreezeAt = appendixStart ?? Infinity
+      workingDocXml = formatImages(workingDocXml, guideline, imageFreezeAt)
+      workingDocXml = formatCaptions(workingDocXml, imageFreezeAt)
       workingDocXml = suppressFirstHeadingPageBreak(workingDocXml)
-      const { xml: docWithPlaceholders, pending: detected } = detectAndInsertPlaceholders(workingDocXml, freezeAt)
+      // Drop the author's manual page break before chapter titles — the Heading1 style
+      // already breaks, and the double break renders a blank page in the PDF (LibreOffice).
+      workingDocXml = removeRedundantChapterPageBreaks(workingDocXml)
+      const { xml: docWithPlaceholders, pending: detected } = detectAndInsertPlaceholders(workingDocXml, imageFreezeAt)
       workingDocXml = docWithPlaceholders
       pending = detected
     }
 
-    // Appendix/annex cutoff for the proofreading passes — recomputed here because the
-    // formatting block may have inserted placeholder blocks, shifting indices. The frozen
-    // section is excluded from both Step Punct and Step P (it is never proofread).
-    const proofreadFreezeAt = doProofreading ? (locateAppendixStart(workingDocXml) ?? Infinity) : Infinity
-
     // Proofreading. Step Punct (deterministic) always runs first when proofreading is
     // requested — it normalises spacing/punctuation so the AI sees clean text and can
     // focus on grammar. It belongs to the proofreading service, so a format-only doc
-    // keeps the author's punctuation untouched. Step P (AI) follows when enabled.
+    // keeps the author's punctuation untouched. Step P (AI) follows when enabled. Both
+    // proofread the appendix/annex too — only the references region is excluded.
     if (doProofreading) {
       const punctStart = Date.now()
-      const { xml: punctXml, stats } = applyPunctNormWithStats(workingDocXml, proofreadFreezeAt) // Step Punct
+      const { xml: punctXml, stats } = applyPunctNormWithStats(workingDocXml) // Step Punct
       workingDocXml = punctXml
       if (isNoopPunct(stats)) {
         console.log(`[processFormatting] ${projectId} Step Punct: no changes (${since(punctStart)})`)
@@ -302,7 +319,7 @@ export async function processFormatting(projectId: string): Promise<void> {
     if (doProofreading && aiCfg.proofreadingEnabled) {
       try {
         const refHeading = (region ?? autoLocateReferences(workingDocXml))?.headingIdx
-        const refStart = earliestCutoff(refHeading, Number.isFinite(proofreadFreezeAt) ? proofreadFreezeAt : null)
+        const refStart = refHeading ?? -1 // appendix is proofread now; only references are excluded
         const pStart = Date.now()
         const preDocXml = workingDocXml
         console.log(`[processFormatting] ${projectId} Step P: calling model (${aiCfg.proofreadModel})…`)
@@ -331,24 +348,11 @@ export async function processFormatting(projectId: string): Promise<void> {
       .upload(processedPath, docxBuf, { contentType: DOCX_MIME, upsert: true, cacheControl: '3600' })
     if (upError) throw new Error(`upload failed: ${upError.message}`)
 
-    // 6b. PDF export alongside the .docx (non-fatal — the .docx is the primary
-    // deliverable; a missing/broken LibreOffice must not fail the whole job).
-    // Stored at the same path with a .pdf extension; the frontend derives it.
-    try {
-      const pdfBuf = await docxToPdf(docxBuf)
-      const pdfPath = processedPath.replace(/\.docx$/i, '.pdf')
-      const { error: pdfUpError } = await supabase.storage
-        .from(BUCKET)
-        .upload(pdfPath, pdfBuf, { contentType: PDF_MIME, upsert: true })
-      if (pdfUpError) throw new Error(pdfUpError.message)
-      console.log(`[processFormatting] pdf export: ${projectId} -> ${pdfPath}`)
-    } catch (err) {
-      console.error(`[processFormatting] pdf export failed for ${projectId} (non-fatal):`, err)
-    }
-
     // 7. Stamp status. If the pipeline detected missing captions/sources, stamp
-    // needs_input and store the pending list so the user can fill them. Otherwise
-    // stamp complete immediately and send the ready email.
+    // needs_input and store the pending list so the user can fill them — no PDF yet
+    // (it would bake in the red placeholders; the finalize route exports it once the
+    // user completes the doc). Otherwise the doc is final: export the PDF beside the
+    // .docx, stamp complete, and send the ready email.
     if (pending.length > 0) {
       const { error: updError } = await supabase
         .from('projects')
@@ -362,6 +366,10 @@ export async function processFormatting(projectId: string): Promise<void> {
       if (updError) throw new Error(`status update failed: ${updError.message}`)
       console.log(`[processFormatting] ${projectId} → needs_input (${pending.length} placeholder(s))`)
     } else {
+      // Final document — export the PDF beside the .docx before stamping complete, so the
+      // client sees a ready PDF the moment it signs the URL on the complete transition.
+      await exportPdfBeside(docxBuf, processedPath, projectId)
+
       const { error: updError } = await supabase
         .from('projects')
         .update({

@@ -23,11 +23,14 @@ interface Project {
   id: string
   title: string | null
   fileName: string
-  service: ServiceKey
+  services: ServiceKey[]
   guideline?: GuidelineId
   status: ProjectStatus
   submittedAt: TimeAgo
 }
+
+// Canonical badge order so a format+proofread project always reads the same way.
+const SERVICE_ORDER: ServiceKey[] = ['formatting', 'proofreading']
 
 interface DbProject {
   id: string
@@ -44,7 +47,7 @@ function mapDbProject(row: DbProject): Project {
     id: row.id,
     title: row.title ?? null,
     fileName: row.original_file_name,
-    service: row.services[0] ?? 'formatting',
+    services: row.services?.length ? row.services : ['formatting'],
     guideline: row.guideline ?? undefined,
     status: normalizeStatus(row.status),
     submittedAt: toTimeAgo(row.created_at),
@@ -155,8 +158,15 @@ function ProjectRow({ project }: { project: Project }) {
         <p className="text-xs text-muted mt-0.5">{formatTime(t, project.submittedAt)}</p>
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
-        <ServiceBadge service={project.service} guideline={project.guideline} />
+      <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+        {SERVICE_ORDER.filter(s => project.services.includes(s)).map(service => (
+          <ServiceBadge
+            key={service}
+            service={service}
+            // The academic guideline only qualifies the formatting service.
+            guideline={service === 'formatting' ? project.guideline : undefined}
+          />
+        ))}
         <Badge variant={STATUS_BADGE_VARIANT[project.status]}>
           {t(`dashboard.status.${project.status}`)}
         </Badge>

@@ -85,6 +85,12 @@
   - `supabase.from('projects').select(...).eq('user_id', user.id)` ordered by `created_at desc`
 - [x] Service + guideline badge per project
   - `ServiceBadge` component, reads `project.services[0]` and `project.guideline`
+- [x] **Bug — only one service badge shows when a project has both formatting + proofreading.**
+  Fixed: `mapDbProject` (`DashboardPage.tsx`) now keeps the full `services[]` array on the mapped
+  `Project` (was collapsing to `row.services[0]`). The row renders one `ServiceBadge` per service in
+  a canonical `SERVICE_ORDER` (formatting → proofreading), attaching the academic guideline only to
+  the formatting badge. The badge group is `shrink-0 flex-wrap justify-end`, so both badges stay
+  visible at every screen size (the title truncates / badges wrap instead of one being hidden).
 - [x] Time-ago display (just now / X hours / X days)
   - `toTimeAgo()` utility in `DashboardPage.tsx`, translated via `i18next`
 - [x] Empty state with CTA

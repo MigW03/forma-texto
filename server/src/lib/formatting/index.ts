@@ -6,7 +6,7 @@ export { formatReferences, locateReferences, autoLocateReferences, pageForBlock 
 export { locateAppendixStart, looksLikeAppendixHeading } from './postTextual'
 export { formatCaptions } from './captions'
 export { formatImages, IMAGE_WIDTH_FRACTION } from './imageLayout'
-export { suppressFirstHeadingPageBreak } from './pageBreaks'
+export { suppressFirstHeadingPageBreak, removeRedundantChapterPageBreaks } from './pageBreaks'
 export { normalizeNumberingXml } from './normalizeNumbering'
 export type { ReferencePagesInput, ReferenceRegion } from './references'
 export { getBlocks, blockText } from './blocks'

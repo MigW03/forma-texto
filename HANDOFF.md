@@ -6,7 +6,7 @@
 > bottom, and adjust **Open work** as things land. Keep it short and current —
 > deep reference lives in the docs linked below, not here.
 
-**Last updated:** 2026-06-21
+**Last updated:** 2026-06-21 (later 2)
 
 ---
 
@@ -32,7 +32,7 @@ Deeper docs (keep these as the real source of truth):
 
 ## Current status
 
-- **Branch:** `feature/docx-page-detection` — lauda-based billing migration + pipeline improvements. The deterministic-text / interactive-input / appendix-exclusion work is committed (`43ced91`); the 2026-06-21 appendix-casing + Step P reasoning-effort changes are **uncommitted in the working tree** (see session log).
+- **Branch:** `feature/docx-page-detection` — lauda-based billing migration + pipeline improvements. The deterministic-text / interactive-input / appendix-exclusion work is committed (`43ced91`); the 2026-06-21 appendix-casing + Step P reasoning-effort changes **and** the later "appendix is now formatted/proofread/billed (only image handling skipped)" change are **uncommitted in the working tree** (see session log).
 - **Build:** web production build **verified green (2026-06-17)** (`npm run build` in `web/`).
 - **Tests:** server **234** passing (3 AI evals skipped); web **38** passing.
 - **Working:** auth, onboarding flow, checkout (Stripe), dashboard, project detail/viewer,
@@ -171,12 +171,13 @@ Deeper docs (keep these as the real source of truth):
       (`referencesValid = !showReferences || …`), and `formatReferences` is sent as `undefined` unless
       formatting is selected. Step P still auto-detects + skips references server-side regardless.
       tsc clean; not browser-verified (will be covered by the next full-flow run).
-- [ ] **PDF export — install LibreOffice + live-confirm.** DOCX→PDF export is built
-      (`server/src/lib/docxToPdf.ts`, wired into `processFormatting` step 6b, "Baixar PDF Final"
-      button in `ProjectDetailPage`) but **untested end-to-end — LibreOffice isn't on the dev
-      machine.** Install it (`brew install --cask libreoffice`) and set
-      `SOFFICE_PATH=/Applications/LibreOffice.app/Contents/MacOS/soffice` in `server/.env`, restart,
-      reprocess a doc → PDF button should appear. Verify ABNT margins/pagination survive (fonts:
+- [ ] **PDF export — LibreOffice installed, conversion confirmed; full flow live-check pending.**
+      DOCX→PDF export is built (`server/src/lib/docxToPdf.ts`, wired into `processFormatting` step 6b,
+      "Baixar PDF Final" button in `ProjectDetailPage`). **2026-06-21 (later):** LibreOffice installed,
+      `SOFFICE_PATH=/Applications/LibreOffice.app/Contents/MacOS/soffice` set in `server/.env`, and
+      `docxToPdf()` confirmed locally — converts the test fixture to a valid 37 KB PDF through its real
+      code path. **Still pending:** restart the server (so it picks up the new `.env`), reprocess a real
+      doc, and confirm the "Baixar PDF Final" button appears + ABNT margins/pagination survive (fonts:
       install Arial/Times or rely on Liberation metric-compatibles).
 - [ ] **Production hosting for the PDF export.** LibreOffice is a system binary, not npm — it must
       exist wherever the server runs. **Not viable on serverless (Vercel/Lambda).** Use a Docker
@@ -189,6 +190,13 @@ Deeper docs (keep these as the real source of truth):
       pipeline then aborts at its guard. Build: detect this case, email the user to re-upload (no
       re-charge — our fault), accept the re-upload, stamp the path, re-trigger. Root-cause fix
       (upload before payment + persist the path string in `sessionStorage`) deferred.
+- [x] ~~**Bug — dashboard shows only one service badge for format+proofread projects.**~~ **Fixed
+      (2026-06-21 later 3).** `mapDbProject` (`DashboardPage.tsx`) kept only `row.services[0]`; now it
+      carries the full `services[]` array and the row renders one `ServiceBadge` per service in a
+      canonical order (formatting → proofreading), with the guideline shown only on the formatting
+      badge. Badge group is `shrink-0 flex-wrap justify-end` so both stay visible at every width.
+      Build + 35 web tests green; **not browser-verified** — needs an authed user with a both-services
+      project (can't seed without the full checkout flow).
 - [ ] File auto-deletion cron (`projects.delete_files_at` is set but nothing acts on it).
 - [ ] Optional: add tests for the DOCX slicer (`docx-slice.ts`); extend test fixture with an image
       to confirm `formatCaptions` end-to-end on a real `.docx`.
@@ -196,6 +204,55 @@ Deeper docs (keep these as the real source of truth):
 ---
 
 ## Session log
+
+### 2026-06-21 (later 2) — PDF export timing fix + chapter blank-page investigation
+
+- **PDF export now waits for interactive inputs.** `processFormatting` used to export the PDF
+  unconditionally at step 6b — including for `needs_input` docs, so the PDF baked in the red
+  caption/source placeholders, and the `finalize-inputs` route (which re-uploads the corrected
+  `.docx`) never regenerated it. Extracted a shared `exportPdfBeside(docxBuf, processedPath,
+  projectId)` helper (exported from `processFormatting.ts`, non-fatal). It now runs only on the
+  `complete` path in `processFormatting`, and again in the `finalize-inputs` route after the user's
+  fills are applied — so the PDF always reflects the final document. **LibreOffice confirmed working
+  locally** (`SOFFICE_PATH` set; `docxToPdf` produces a valid PDF).
+- **Chapter "blank page" — INVESTIGATED, NOT yet fixed (need the real doc).** Hypothesis was a
+  redundant author page break before a chapter title doubling with the `Heading1` style's
+  `pageBreakBefore`. Built a LibreOffice reproduction harness (build doc → convert → count PDF pages):
+  **none of 7 break shapes reproduced a blank page** — LibreOffice *collapses* a manual break adjacent
+  to a `pageBreakBefore` heading, so the simple double-break theory is wrong. Added
+  `removeRedundantChapterPageBreaks` (in `pageBreaks.ts`, wired after `suppressFirstHeadingPageBreak`,
+  +6 tests) as legitimate **hygiene** — strips a standalone/trailing manual break before any chapter
+  heading that already breaks via the style — but it did **not** change the page count in any repro, so
+  it is **not** confirmed as the blank-page fix. The real cause is most likely **content-length
+  dependent** (a chapter ending near the page bottom + trailing empty paragraphs + the forced break),
+  which synthetic one-line content can't reproduce. **Next:** get a real processed `.docx` that shows
+  the blank page and inspect the block structure around the boundary.
+- Server **240** passing (3 evals skipped); `tsc` clean.
+
+### 2026-06-21 (later) — Appendix is now formatted, proofread & billed (only image handling skipped)
+
+Reversed the "freeze the appendix/annex entirely" rule. The post-textual section
+(Apêndice / Anexo) is now treated like the rest of the document — it gets heading
+hierarchy (Step A styles + Step D), text correction (Step Punct + Step P), and is
+**billed as ordinary laudas**. The **only** thing skipped inside it is image handling.
+
+- **Server** (`processFormatting.ts`): dropped the appendix cutoff from Step A
+  (`applyStepA` no longer receives `appendixStart`), Step D (`refStartIndex` = references
+  heading only), Step Punct, and Step P. Removed the now-unused `proofreadFreezeAt` and the
+  `earliestCutoff` helper. The appendix cutoff (`appendixStart`/`imageFreezeAt`) now gates
+  **only** the three image passes — `formatImages` (resize), `formatCaptions`, and
+  `detectAndInsertPlaceholders` — so appendix images are neither rescaled nor given
+  caption/source. The references locator still stops at the appendix (unchanged), so it is
+  never mistaken for a citation list.
+- **Billing/web** (`laudas.ts`): removed the appendix machinery entirely
+  (`findAppendixBlock`, `looksLikeAppendixHeading`, the regex). `computeLaudas` counts the
+  whole document; `laudaBlockSet` lost its `allBlocks`/force-keep param — the appendix is
+  kept only when its laudas are selected, like any other content. `CheckoutPage.tsx` updated
+  to the 2-arg `laudaBlockSet`. `laudas.test.ts` rewritten to the new behavior.
+- `postTextual.ts` `locateAppendixStart`/`looksLikeAppendixHeading` are unchanged (still
+  used for the image-pass cutoff + references bound); only the module docstring updated.
+- Tests: server **234** passing (3 evals skipped), web **35** passing; `tsc`/builds clean
+  both sides. (Web dropped 38→35: removed the 3 obsolete appendix-billing tests.)
 
 ### 2026-06-21 — Appendix detection (any casing) + Step P reasoning cap
 

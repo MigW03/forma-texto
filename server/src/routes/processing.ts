@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express'
 import { supabase } from '../lib/supabase'
-import { processFormatting } from '../lib/processFormatting'
+import { processFormatting, exportPdfBeside } from '../lib/processFormatting'
 import { unzipDocx, zipDocx, finalizeInputs, type PendingInput } from '../lib/formatting'
 import { sendProjectReadyEmail } from '../lib/notify'
 
@@ -140,6 +140,11 @@ router.post('/finalize-inputs', async (req: Request, res: Response) => {
     res.status(500).json({ error: `upload failed: ${upErr.message}` })
     return
   }
+
+  // The doc is now final (placeholders resolved) — export the PDF beside it. Deferred to
+  // here (not done in processFormatting for needs_input docs) so the PDF reflects the
+  // user's filled captions/sources, never the red placeholders. Non-fatal.
+  await exportPdfBeside(docxBuf, project.processed_file_path, projectId)
 
   const { error: updErr } = await supabase
     .from('projects')

@@ -294,8 +294,7 @@ export default function CheckoutPage() {
         try {
           const blocks = await getDocxBlocks(rawFile)
           const xmlLaudas = computeLaudas(blocks)
-          // Pass blocks so the appendix/annex section is kept even when slicing to a subset.
-          const keep = laudaBlockSet(xmlLaudas, selectedLaudas, blocks)
+          const keep = laudaBlockSet(xmlLaudas, selectedLaudas)
           fileToUpload = await sliceDocxByLaudas(rawFile, keep)
         } catch (err) {
           console.error('Lauda slicing failed, uploading full file:', err)

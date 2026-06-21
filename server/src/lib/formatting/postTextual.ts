@@ -2,14 +2,16 @@ import { getBlocks, isParagraph, blockText } from './blocks'
 
 /**
  * Post-textual section detection — ABNT "Apêndice" (appendix) and "Anexo" (annex /
- * attachments). These sections must NOT be proofread or reformatted: an appendix
- * holds the author's own supporting material and an annex reproduces third-party
- * documents (forms, maps, legislation) whose layout must survive byte-for-byte.
+ * attachments). These sections ARE formatted and proofread like the rest of the
+ * document (headings get the correct hierarchy, the text is corrected) and are
+ * billed as ordinary laudas. The ONE thing the pipeline skips inside them is image
+ * handling: an annex reproduces third-party documents (forms, maps, legislation)
+ * whose images carry no caption/source of ours and must not be rescaled.
  *
  * `locateAppendixStart` returns the absolute block index of the FIRST such heading.
- * Everything from that index onward is frozen by the pipeline — every pass receives
- * it as a cutoff — but the blocks are never removed, so the section still ships in
- * the downloaded file.
+ * The image passes (resize / caption / source placeholders) stop at that index; the
+ * references locator also stops there so an appendix is never mistaken for a citation
+ * list. Every other pass treats the section like the rest of the document.
  */
 
 /**
