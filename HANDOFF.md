@@ -6,7 +6,7 @@
 > bottom, and adjust **Open work** as things land. Keep it short and current —
 > deep reference lives in the docs linked below, not here.
 
-**Last updated:** 2026-06-21 (later 2)
+**Last updated:** 2026-06-21 (later 3)
 
 ---
 
@@ -204,6 +204,27 @@ Deeper docs (keep these as the real source of truth):
 ---
 
 ## Session log
+
+### 2026-06-21 (later 3) — Dashboard service badges + oversized preview images
+
+- **Dashboard badges** (committed in `4556ec0`): a format+proofread project showed only one badge
+  because `mapDbProject` kept `row.services[0]`. Now carries the full `services[]` and renders one
+  `ServiceBadge` per service (canonical order formatting → proofreading), guideline on the formatting
+  badge only; badge group `shrink-0 flex-wrap justify-end` so both stay visible at any width.
+- **Oversized preview images (uncommitted):** in the lauda-selection preview (`PageSelectionPage`) and
+  the processed-file viewer (`ProjectDetailPage`), docx-preview renders each `<img>` at its absolute
+  author size (`<wp:extent cx>` EMUs → px) with no `max-width` clamp. On a narrow/laptop column the
+  page reads small but a large author image stayed absolute → looked huge / overflowed the page. Fix:
+  added `.docx-wrapper img { max-width: 100% !important; height: auto !important; }` to both previews'
+  injected style blocks (`LAUDA_PREVIEW_STYLES`, `DOCX_PAGE_STYLES`). Build clean. **Not
+  browser-verified** — both previews are auth-gated and need an image-bearing `.docx` carried through
+  the upload flow. (Separate, deeper item still open: a real fit-to-width zoom on the lauda page —
+  PLAN.md "Re-add document zoom controls to the lauda selection page".)
+- **Server image sizing note (not changed):** `formatImages` still forces every image to 70% of the
+  *first* page's content width — discarding the author's per-image width and under-sizing landscape-page
+  images. The author width is already in the XML (`currentCx` in `imageLayout.ts`). Proposed change
+  (preserve author width, shrink-to-fit only on overflow, section-aware width) discussed but **not yet
+  implemented**.
 
 ### 2026-06-21 (later 2) — PDF export timing fix + chapter blank-page investigation
 

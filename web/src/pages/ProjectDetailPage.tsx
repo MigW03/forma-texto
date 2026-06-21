@@ -329,6 +329,9 @@ const DOCX_PAGE_STYLES = `
      counter-reset is a single non-merging property — setting it here too would
      clobber the list counters and make every list item render as "1". */
   .docx-body { counter-reset: docx-page; }
+  /* Clamp images to the page width so an absolutely-sized author image never
+     overflows the rendered page (looked oversized on narrow / laptop columns). */
+  .docx-wrapper img { max-width: 100% !important; height: auto !important; }
   .docx-wrapper {
     background: #E8E6DF !important;
     padding: 32px !important;

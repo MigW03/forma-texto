@@ -13,6 +13,9 @@ import { useGuidelines } from '../lib/guidelines'
 // dashed rule) and the "disabled" look applied to blocks of unselected laudas.
 const LAUDA_PREVIEW_STYLES = `
   .docx-wrapper { background: transparent !important; padding: 0 !important; }
+  /* Clamp images to the page width so an absolutely-sized author image never
+     overflows the rendered page (looked oversized on narrow / laptop columns). */
+  .docx-wrapper img { max-width: 100% !important; height: auto !important; }
   .docx-wrapper > section.docx {
     box-shadow: 0 1px 3px rgba(0,0,0,0.10), 0 1px 2px rgba(0,0,0,0.06) !important;
     border-radius: 8px !important;
