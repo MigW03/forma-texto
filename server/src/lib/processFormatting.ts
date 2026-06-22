@@ -274,7 +274,10 @@ export async function processFormatting(projectId: string): Promise<void> {
           const dStart = Date.now()
           console.log(`[processFormatting] ${projectId} Step D: calling model (${aiCfg.headingModel})…`)
           const result = await stepD(workingDocXml, guideline, createHeadingDecider(aiCfg), {
-            refStartIndex: region?.headingIdx ?? -1, // appendix is classified now; only references are excluded
+            // Exclude only the references region [refHeading, appendixStart); the appendix
+            // that follows references is re-included so its headings get classified.
+            refStartIndex: region?.headingIdx ?? -1,
+            appendixStartIndex: appendixStart ?? -1,
             maxChars: aiCfg.maxCharsPerChunk,
           })
           workingDocXml = result.documentXml

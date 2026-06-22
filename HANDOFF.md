@@ -6,7 +6,7 @@
 > bottom, and adjust **Open work** as things land. Keep it short and current —
 > deep reference lives in the docs linked below, not here.
 
-**Last updated:** 2026-06-21 (later 6)
+**Last updated:** 2026-06-21 (later 8)
 
 ---
 
@@ -190,9 +190,9 @@ Deeper docs (keep these as the real source of truth):
 - [x] ~~**Missing-file recovery flow**~~ **Built (2026-06-21 later 5).** The pipeline's null-path
       guard now stamps `status: 'missing_file'` + emails the user to re-upload (no re-charge);
       `ProjectDetailPage` shows a re-upload panel → `POST /api/processing/recover-file` stamps the path,
-      sets `pending`, and re-triggers. See session log. **Live test pending** (use the
-      `SIMULATE_MISSING_FILE` toggle in `CheckoutPage.tsx` — must be reverted before commit). Root-cause
-      fix (upload before payment + persist the path string in `sessionStorage`) still deferred.
+      sets `pending`, and re-triggers. See session log. **Live-verified end to end on a real flow
+      (2026-06-21).** Root-cause fix (upload before payment + persist the path string in
+      `sessionStorage`) still deferred.
 - [x] ~~**Bug — dashboard shows only one service badge for format+proofread projects.**~~ **Fixed
       (2026-06-21 later 3).** `mapDbProject` (`DashboardPage.tsx`) kept only `row.services[0]`; now it
       carries the full `services[]` array and the row renders one `ServiceBadge` per service in a
@@ -207,6 +207,44 @@ Deeper docs (keep these as the real source of truth):
 ---
 
 ## Session log
+
+### 2026-06-21 (later 8) — Step D now classifies the appendix (references is a range, not a cutoff)
+
+The appendix headings weren't being classified by Step D even after the appendix was "enabled".
+Root cause: `chunkHeadings` used a single `refStartIndex` **cutoff** (`i < refStartIndex`), and in ABNT
+order the document is body → References → Appendix — so the references heading sits *before* the
+appendix, and the cutoff discarded everything after references, including the appendix.
+
+Fix: `refStartIndex` now bounds only the **start** of the references region; new `appendixStartIndex`
+re-includes the appendix. `chunkHeadings` keeps a block when it is **before references OR at/after the
+appendix** (`beforeRefs || inAppendix`), so the references entries stay excluded but the appendix is
+classified. `processFormatting` passes `appendixStartIndex: appendixStart ?? -1`. +1 test; server 244
+passing, tsc clean.
+
+Caveat: this lets the model *see* the appendix headings, but it may still leave a line like
+`Apêndice 1 — Desenho técnico` as body if it reads like a caption (model judgment). A deterministic
+"promote appendix item titles to a subheading" pass is the fallback if that proves unreliable — relates
+to the `Apêndice N — …` paragraphs getting the body first-line indent.
+
+### 2026-06-21 (later 7) — Step C: fix `&lt;`/`&gt;` in URLs + strip URL angle brackets
+
+Reported: a reference URL came out as a literal `&lt;https://…&gt;`, and two otherwise-identical
+references (one with `<url>`, one bare) formatted differently.
+
+- **Root cause (escaping):** the Step C model sometimes returns a URL **pre-escaped** in its JSON
+  (`&lt;…&gt;`). `renderSegments` then ran `escapeXml`, which escaped the `&` again → `&amp;lt;` →
+  the document showed a literal `&lt;`. (`escapeXml` itself is correct single-escaping — `xmlText.ts`.)
+- **Fix:** new `normalizeReferenceText` in `stepC.ts`, applied in `renderSegments` before `escapeXml`:
+  (1) decodes the entities the model emits (`&lt; &gt; &quot; &#39; &amp;`), and (2) strips `< >` that
+  merely wrap a URL — ABNT NBR 6023:2018 dropped them, and it makes `<url>` and a bare `url` format
+  identically. Verified on the reported input: raw `<url>`, model-escaped `&lt;url&gt;`, and bare `url`
+  all normalize to the same bare URL. +2 tests; server 243 passing, tsc clean.
+- **Still open — surname casing (Bug B):** the same reference came out `dos, C.` vs `Dos, C.` — pure
+  Step C **model non-determinism** (it title-cased `DOS`→`Dos` but left `dos`). A reliable fix needs a
+  *deterministic* author-surname casing rule (e.g. UPPERCASE the surname), not the AI. Convention not
+  yet decided (the long-standing Step C casing question).
+- **Note:** Step P also escapes model text via `escapeXml` (`runs.ts`) — if the proofread model ever
+  pre-escapes entities, it would hit the same double-escape. Not observed yet; scoped this fix to Step C.
 
 ### 2026-06-21 (later 6) — Image sizing: preserve author width, shrink only on overflow
 
@@ -256,7 +294,8 @@ silently aborted at its null-path guard, leaving the project stuck at `pending` 
   scheme as checkout) → calls recover-file → reloads. `recovering`/`recoverError` state.
 - **Testing scaffold** — `CheckoutPage.tsx` has a `SIMULATE_MISSING_FILE` toggle (currently **true**)
   that skips the post-payment upload so a project is created with a null path. **Revert before commit.**
-- Web build + 35 tests green; server typecheck + 240 tests green. **Not yet live-verified** end to end.
+- Web build + 35 tests green; server typecheck + 240 tests green. **Live-verified end to end on a real
+  flow (2026-06-21)** — pay → `missing_file` → re-upload → processing resumed.
 
 ### 2026-06-21 (later 4) — Back button no longer returns to the paid checkout page
 

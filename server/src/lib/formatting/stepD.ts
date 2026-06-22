@@ -52,6 +52,13 @@ const ROLE_STYLE: Record<Exclude<HeadingRole, 'body'>, string> = {
 export interface ChunkOptions {
   /** Index of the references heading; candidates at/after it are excluded. -1 = no references. */
   refStartIndex?: number
+  /**
+   * Index of the first appendix/annex block. The references region is only
+   * `[refStartIndex, appendixStartIndex)` — the appendix comes AFTER references in ABNT
+   * order, so without this it would be swept up by the references cutoff and never
+   * classified. Candidates at/after this index are re-included. -1 = no appendix.
+   */
+  appendixStartIndex?: number
   /** Compact-text budget per chunk. Keep well under the model's context window. */
   maxChars?: number
 }
@@ -69,7 +76,7 @@ const looksLikeHeading = (d: BlockDescriptor) => /heading/i.test(d.style) || (d.
 export function chunkHeadings(
   documentXml: string,
   guideline: Guideline,
-  { refStartIndex = -1, maxChars = DEFAULT_MAX_CHARS }: ChunkOptions = {},
+  { refStartIndex = -1, appendixStartIndex = -1, maxChars = DEFAULT_MAX_CHARS }: ChunkOptions = {},
 ): HeadingChunk[] {
   const blocks = getBlocks(documentXml)
   const candidates = blocks
@@ -77,7 +84,14 @@ export function chunkHeadings(
     // List items are never headings: a numbered list item ("1. Lorem ipsum") is
     // indistinguishable from a numbered heading ("1. Introdução") by text alone,
     // and promoting one breaks the list's numbering. Exclude them up front.
-    .filter(({ b, i }) => isParagraph(b) && !isListItem(b) && blockText(b).length > 0 && (refStartIndex < 0 || i < refStartIndex))
+    // The references region is only [refStartIndex, appendixStartIndex): exclude it, but
+    // re-include the appendix/annex that follows references so its headings are classified.
+    .filter(({ b, i }) => {
+      if (!isParagraph(b) || isListItem(b) || blockText(b).length === 0) return false
+      const beforeRefs = refStartIndex < 0 || i < refStartIndex
+      const inAppendix = appendixStartIndex >= 0 && i >= appendixStartIndex
+      return beforeRefs || inAppendix
+    })
 
   // First non-empty paragraph on each page → a soft h1 cue the model can weigh.
   const pageOf = pageForBlock(documentXml)

@@ -67,6 +67,22 @@ describe('renderSegments', () => {
   it('renders italic emphasis', () => {
     expect(renderSegments([{ text: 'et al.', emphasis: 'italic' }])).toContain('<w:rPr><w:i/></w:rPr>')
   })
+
+  it('decodes model-emitted entities so they do not double-escape', () => {
+    // The model returned the URL pre-escaped; without decoding, escapeXml would turn
+    // "&lt;" into "&amp;lt;" and the document would show a literal "&lt;".
+    const xml = renderSegments([{ text: 'Disponível em: &lt;https://x.org/a&gt;.' }])
+    expect(xml).not.toContain('&amp;lt;')
+    expect(xml).not.toContain('&amp;gt;')
+  })
+
+  it('strips angle brackets wrapping a URL (ABNT 2018) so <url> and url match', () => {
+    const withBrackets = renderSegments([{ text: 'Disponível em: <https://x.org/a>.' }])
+    const without = renderSegments([{ text: 'Disponível em: https://x.org/a' }])
+    expect(withBrackets).toContain('Disponível em: https://x.org/a')
+    expect(withBrackets).not.toContain('&lt;')
+    expect(without).toContain('https://x.org/a')
+  })
 })
 
 describe('setParagraphRuns', () => {

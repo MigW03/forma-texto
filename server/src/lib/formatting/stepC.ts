@@ -79,12 +79,33 @@ const EMPHASIS_RPR: Record<NonNullable<ReferenceSegment['emphasis']>, string> = 
 }
 
 /**
+ * Normalize a reference segment's text before it becomes a run:
+ *  1. Decode HTML/XML entities the model sometimes pre-emits — it occasionally returns a
+ *     URL as `&lt;...&gt;`. Without decoding, `escapeXml` escapes the `&` again and the
+ *     document shows a literal `&lt;` / `&gt;`.
+ *  2. Strip the angle brackets some authors wrap a URL in. ABNT NBR 6023:2018 dropped them
+ *     ("Disponível em: URL."), and removing them makes `<url>` and a bare `url` format
+ *     identically — two otherwise-equal references no longer diverge.
+ */
+export function normalizeReferenceText(text: string): string {
+  const decoded = text
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0*39;|&apos;/gi, "'")
+    .replace(/&amp;/gi, '&') // last, so we don't re-decode an already-decoded entity
+  // Drop < > that merely wrap a URL (with any surrounding whitespace).
+  return decoded.replace(/<\s*(https?:\/\/[^>\s]+)\s*>/gi, '$1')
+}
+
+/**
  * Render segments into `<w:r>` runs. Empty-text segments are dropped. Returns ''
  * when nothing renders (the caller then leaves the entry untouched).
  * `xml:space="preserve"` keeps the spaces that separate citation fields.
  */
 export function renderSegments(segments: ReferenceSegment[]): string {
   return segments
+    .map(s => ({ ...s, text: normalizeReferenceText(s.text) }))
     .filter(s => s.text.length > 0)
     .map(s => {
       const rPr = s.emphasis ? EMPHASIS_RPR[s.emphasis] : ''

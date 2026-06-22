@@ -60,6 +60,20 @@ describe('chunkHeadings', () => {
     expect(chunkHeadings('<w:document><w:body><w:p/></w:body></w:document>', 'abnt')).toEqual([])
   })
 
+  it('excludes the references region but re-includes the appendix that follows it', () => {
+    // 0 body heading · 1 body · 2 REFERÊNCIAS · 3 ref entry · 4 APÊNDICE A · 5 appendix sub
+    const doc = `<w:document><w:body>` +
+      `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>1 INTRODUÇÃO</w:t></w:r></w:p>` +
+      `<w:p><w:r><w:t>corpo</w:t></w:r></w:p>` +
+      `<w:p><w:pPr><w:pStyle w:val="ReferencesHeading"/></w:pPr><w:r><w:t>REFERÊNCIAS</w:t></w:r></w:p>` +
+      `<w:p><w:r><w:t>Gil, Antônio Carlos. Como elaborar projetos.</w:t></w:r></w:p>` +
+      `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>APÊNDICE A</w:t></w:r></w:p>` +
+      `<w:p><w:r><w:t>Apêndice 1 — Desenho técnico</w:t></w:r></w:p>` +
+      `</w:body></w:document>`
+    const [chunk] = chunkHeadings(doc, 'abnt', { refStartIndex: 2, appendixStartIndex: 4 })
+    expect(chunk.blocks.map(b => b.i)).toEqual([0, 1, 4, 5]) // refs [2,3] excluded, appendix kept
+  })
+
   it('excludes list items so numbered list entries are never offered as heading candidates', () => {
     // A numbered list item "1. Lorem" looks like a numbered heading by text alone.
     const doc = `<w:document><w:body>` +
