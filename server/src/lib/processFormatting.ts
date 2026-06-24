@@ -8,6 +8,9 @@ import {
   formatReferences,
   formatCaptions,
   formatImages,
+  normalizeFontPackaging,
+  setRunFonts,
+  setHeadingRunProps,
   suppressFirstHeadingPageBreak,
   removeRedundantChapterPageBreaks,
   normalizeNumberingXml,
@@ -15,6 +18,7 @@ import {
   autoLocateReferences,
   locateAppendixStart,
   resolveGuideline,
+  getGuideline,
   stepC,
   stepD,
   stepProofread,
@@ -207,6 +211,10 @@ export async function processFormatting(projectId: string): Promise<void> {
     let workingDocXml = documentXml
     let workingStylesXml = stylesXml
     let pending: PendingInput[] = []
+    // The one font family Step A resolved (formatting only). Used at the very end to stamp
+    // an explicit font on every run so Google Docs — which ignores inherited style fonts on
+    // its remapped built-in styles — renders the right family everywhere.
+    let resolvedFont: string | null = null
     // The located references region — shared by Steps C/D and used by Step P to skip
     // references. Stays null in proofreading-only mode (Step P auto-detects instead).
     let region: ReferenceRegion | null = null
@@ -232,6 +240,10 @@ export async function processFormatting(projectId: string): Promise<void> {
 
       const a = applyStepA({ documentXml: workingDocXml, stylesXml: workingStylesXml, guideline }) // Step A
       workingStylesXml = a.stylesXml
+      resolvedFont = a.font
+      // Normalize the font packaging (theme major/minor + drop orphaned embedded fonts) to
+      // the family Step A resolved — styles alone don't control what Google Docs renders.
+      normalizeFontPackaging(files, a.font)
       workingDocXml = formatReferences(a.documentXml, guideline, refInput) // Step B: references
       region = locateReferences(workingDocXml, refInput)
 
@@ -349,6 +361,19 @@ export async function processFormatting(projectId: string): Promise<void> {
       } catch (err) {
         console.error(`[processFormatting] Step P failed for ${projectId} (non-fatal, keeping prior result):`, err)
       }
+    }
+
+    // Stamp the resolved family on every run as the LAST document transform (after Steps
+    // C/D/P, which add their own runs) so Google Docs renders the right font everywhere —
+    // it ignores inherited style fonts on its remapped built-in styles. Formatting only;
+    // a proofreading-only doc keeps the author's fonts.
+    if (resolvedFont) {
+      workingDocXml = setRunFonts(workingDocXml, resolvedFont)
+      // Same Google Docs quirk for heading size/bold/caps: it discards the inherited
+      // Heading1/2/3 style rPr (headings import smaller + lose uppercase). Stamp the
+      // per-level look directly on heading runs. Must follow setRunFonts (keeps rPr
+      // order valid). Formatting only.
+      workingDocXml = setHeadingRunProps(workingDocXml, getGuideline(guideline))
     }
 
     const out = { documentXml: workingDocXml, stylesXml: workingStylesXml }

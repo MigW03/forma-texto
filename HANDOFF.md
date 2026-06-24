@@ -6,7 +6,7 @@
 > bottom, and adjust **Open work** as things land. Keep it short and current —
 > deep reference lives in the docs linked below, not here.
 
-**Last updated:** 2026-06-21 (later 8)
+**Last updated:** 2026-06-23
 
 ---
 
@@ -174,14 +174,11 @@ Deeper docs (keep these as the real source of truth):
       (`referencesValid = !showReferences || …`), and `formatReferences` is sent as `undefined` unless
       formatting is selected. Step P still auto-detects + skips references server-side regardless.
       tsc clean; not browser-verified (will be covered by the next full-flow run).
-- [ ] **PDF export — LibreOffice installed, conversion confirmed; full flow live-check pending.**
-      DOCX→PDF export is built (`server/src/lib/docxToPdf.ts`, wired into `processFormatting` step 6b,
-      "Baixar PDF Final" button in `ProjectDetailPage`). **2026-06-21 (later):** LibreOffice installed,
-      `SOFFICE_PATH=/Applications/LibreOffice.app/Contents/MacOS/soffice` set in `server/.env`, and
-      `docxToPdf()` confirmed locally — converts the test fixture to a valid 37 KB PDF through its real
-      code path. **Still pending:** restart the server (so it picks up the new `.env`), reprocess a real
-      doc, and confirm the "Baixar PDF Final" button appears + ABNT margins/pagination survive (fonts:
-      install Arial/Times or rely on Liberation metric-compatibles).
+- [x] ~~**PDF export — full flow live-check.**~~ **Confirmed live, working very well.**
+      DOCX→PDF export (`server/src/lib/docxToPdf.ts`, `processFormatting` step 6b, "Baixar PDF Final"
+      button in `ProjectDetailPage`) verified end to end: LibreOffice installed
+      (`SOFFICE_PATH=/Applications/LibreOffice.app/Contents/MacOS/soffice` in `server/.env`), real doc
+      reprocessed, button appears, ABNT margins/pagination/fonts survive. (Prod hosting still open below.)
 - [ ] **Production hosting for the PDF export.** LibreOffice is a system binary, not npm — it must
       exist wherever the server runs. **Not viable on serverless (Vercel/Lambda).** Use a Docker
       container (`apt-get install libreoffice-writer fonts-liberation`) or a Gotenberg sidecar
@@ -200,13 +197,119 @@ Deeper docs (keep these as the real source of truth):
       badge. Badge group is `shrink-0 flex-wrap justify-end` so both stay visible at every width.
       Build + 35 web tests green; **not browser-verified** — needs an authed user with a both-services
       project (can't seed without the full checkout flow).
-- [ ] File auto-deletion cron (`projects.delete_files_at` is set but nothing acts on it).
+- [x] ~~File auto-deletion cron~~ **Built (2026-06-23).** `cleanupExpiredFiles.ts` +
+      `POST /api/maintenance/cleanup-expired`, scheduled by Supabase pg_cron (`server/sql/cleanup_cron.sql`).
+      See session log. **Deploy:** run the SQL once + set the two Vault secrets. **Endpoint
+      live-verified 2026-06-23** (isolated fixture: 3 objects deleted, row stamped, idempotent, 401 on
+      bad secret). pg_cron trigger itself unverified until a server URL exists.
 - [ ] Optional: add tests for the DOCX slicer (`docx-slice.ts`); extend test fixture with an image
       to confirm `formatCaptions` end-to-end on a real `.docx`.
 
 ---
 
 ## Session log
+
+### 2026-06-23 (later) — Stamp explicit heading size/bold/caps (Google Docs renders headings wrong)
+
+Reported: the processed `.docx` looks right in the app preview (and Word/LibreOffice), but on upload to
+**Google Docs** headings render **smaller** and lose their **uppercase** — even though GDocs' own
+properties panel shows the right font/size. Same root cause as the font quirk (later 9/10): GDocs remaps
+Word's built-in `Heading1/2/3` styles to its own and **discards the inherited style rPr**, so the
+style-level `<w:sz>` / `<w:caps>` / `<w:b>` Step A wrote are dropped. `setRunFonts` already fixed the
+*family* by stamping it on each run; size/bold/caps were still style-only.
+
+Fix mirrors `setRunFonts`: new `setHeadingRunProps.ts` → `setHeadingRunProps(documentXml, spec)` stamps
+the look (`<w:sz>/<w:szCs>`, `<w:b>/<w:bCs>` if bold, `<w:caps>` if upper) **directly on every run inside
+a `Title` or `Heading1/2/3` paragraph**, stripping any stale bold/caps/size first so the spec values win
+(e.g. an H3 the source bolded is normalized). Title → bold + caps + **body** size (ABNT título); headings
+→ per-level look + heading size. Runs **right after `setRunFonts`** (so the props land just after the
+`<w:rFonts>` it adds → CT_RPr order stays valid: rStyle, rFonts, b, bCs, caps, sz, szCs). Formatting-only.
+Kept **non-destructive** (`<w:caps>` display, text untouched) to match Step A. The custom `ReferencesHeading`
++ `Caption` styles are NOT stamped — GDocs honors custom styles, only built-ins (`Title`/`Heading*`/`Normal`)
+get remapped. +10 tests; server **271** passing, tsc clean.
+
+**Heading 1 confirmed correct in Google Docs (2026-06-23 later).** Title was still wrong on the first
+pass because the stamp only covered `Heading1/2/3` — extended it to `Title` (same built-in remap). Re-test
+the Title in GDocs after reprocessing.
+
+**Casing caveat still stands:** `<w:caps>` is the uncertain part — GDocs has spotty support for the caps
+*toggle* even as direct formatting (H1 came out right, so it's holding so far). **If any casing is still
+wrong, the fallback is to literally uppercase the `<w:t>` text** for upper-case styles (bulletproof across
+renderers; handle XML entities when uppercasing). Not done yet — non-destructive caps first.
+
+### 2026-06-23 — File auto-deletion cron
+
+`projects.delete_files_at` was stamped at checkout (30 days out) but nothing acted on it. Built the
+sweep server-side.
+
+- **Core** — `server/src/lib/cleanupExpiredFiles.ts`. `cleanupExpiredFiles(client?, now?)` queries
+  `projects` where `delete_files_at < now()` AND `files_deleted_at is null`, and for each removes
+  `original_file_path`, `processed_file_path`, and the derived `.pdf` (processed path, `.docx`→`.pdf`)
+  from the `projects` storage bucket, then stamps `files_deleted_at`. The row itself is **kept** (order
+  history / dashboard); only the binaries go. Non-fatal per project — a storage `remove` failure is
+  recorded in `errors` and the row is **left unstamped** so the next run retries it. `client` is
+  injectable (structural `CleanupClient` interface) and lazy-loads the real `supabase` only when no fake
+  is passed, so the unit test never imports `supabase.ts` (which throws without env). Returns
+  `{ scanned, filesRemoved, projectsCleaned, errors }`.
+- **Endpoint** — `POST /api/maintenance/cleanup-expired` (`routes/maintenance.ts`), `x-webhook-secret`
+  guarded, idempotent. For an external scheduler (pg_cron http / n8n / cron).
+- **Scheduler — Supabase pg_cron** (`server/sql/cleanup_cron.sql`). A daily `pg_net.http_post` hits the
+  endpoint with the `x-webhook-secret`, both URL + secret read from **Supabase Vault** (not hardcoded in
+  the job). Chosen over (a) a Deno Edge Function — the server already can't be serverless (LibreOffice
+  PDF export), so decoupling from it buys little and would duplicate the logic in a second runtime + lose
+  the vitest tests; and (b) an in-process `setInterval` — dies/resets on every deploy, no guaranteed
+  fire. pg_cron keeps the one tested TS implementation and gets a real scheduler. **Deploy step (manual,
+  once per env):** run `cleanup_cron.sql` in the Supabase SQL editor and create the two Vault secrets
+  (`cleanup_endpoint_url`, `cleanup_webhook_secret`).
+- 8 unit tests (`cleanupExpiredFiles.test.ts`); server **261** passing (3 evals skipped), tsc clean.
+- **Endpoint live-verified end to end (2026-06-23).** Pre-check first confirmed 0 real projects were due
+  (so the all-projects scan wouldn't touch real data), then an isolated fixture (`__cleanup_test__/…`
+  storage objects + a throwaway project row dated yesterday) was created via service role. `POST
+  /api/maintenance/cleanup-expired` returned `scanned:1, filesRemoved:3, projectsCleaned:1, errors:[]`;
+  verified all 3 storage objects gone + `files_deleted_at` stamped; 2nd run scanned 0 (idempotent); bad
+  secret → 401. Fixture + temp scripts torn down. **Still unverified:** the pg_cron→endpoint trigger
+  itself (needs a deployed server URL + the Vault secrets). Note: the separate "deletion-warning email 7
+  days before expiry" (PLAN Notifications) is still a distinct open item.
+
+### 2026-06-21 (later 10) — Stamp explicit run fonts (Google Docs renders the wrong font)
+
+Follow-up to later 9: even with theme + embeds fixed, Google Docs **still** rendered the wrong font for
+body + headings, while the References heading was correct. Inspected the reprocessed file: it's provably
+correct — LibreOffice renders **only Arial**; theme/docDefaults/Normal all Arial; runs carry no font.
+Root cause is a **Google Docs import quirk**: it remaps Word's built-in styles (`Normal`, `Title`,
+`Heading1/2/3`) to its own and substitutes its theme font, ignoring the *inherited* style font — but it
+honors **direct run formatting** and **custom styles** (which is why `ReferencesHeading`, a custom style,
+came out right).
+
+Fix (chosen over renaming styles, which wouldn't fix the body and would break Word's outline/TOC): new
+`setRunFonts.ts` → `setRunFonts(documentXml, fam)` writes an explicit `<w:rFonts ascii/hAnsi/cs=fam>` onto
+**every run** (first rPr child, after any `<w:rStyle>`; replaces any existing). Runs **last** in
+`processFormatting` (after Steps C/D/P, which add their own runs), formatting-only, using the family Step A
+resolved (`resolvedFont`). Verified on the real file: all 51 runs stamped Arial, no corruption, LibreOffice
+still pure Arial. +6 tests; server 253 passing, tsc clean. **Reprocess → re-upload to Google Docs to
+confirm** (body + headings should now be Arial). Trade-off accepted: every run carries an rFonts (minor
+size bump) — but it's the only thing Google Docs reliably obeys.
+
+### 2026-06-21 (later 9) — Font packaging: rewrite theme + drop embedded fonts (Google Docs fix)
+
+Reported: the processed `.docx` rendered a very different font in Google Docs even though the toolbar
+showed the right family. Inspected a real processed file: `styles.xml`/`document.xml` were correctly
+**Arial** everywhere, but two leftovers from the source (authored in Montserrat) survived — Step A only
+touches styles/runs, not the packaging:
+- `word/theme/theme1.xml` still had `majorFont=Cambria` / `minorFont=Calibri`. Google Docs resolves
+  default + heading text against the **theme**, so it drew Cambria (serif) headings / Calibri body while
+  the toolbar still said Arial.
+- `word/fonts/*.ttf` (Montserrat) + `fontTable.xml` `<w:embed*>` refs + `embedTrueTypeFonts=1` remained,
+  though nothing referenced Montserrat anymore.
+
+Fix: new `fontPackaging.ts` — `rewriteThemeFonts(themeXml, fam)` repoints each theme's major/minor
+`<a:latin>` to the resolved family (script-specific `<a:font>` fallbacks left alone), and
+`normalizeFontPackaging(files, fam)` also strips the embed refs from `fontTable.xml`, deletes the
+`word/fonts/*` binaries + `word/_rels/fontTable.xml.rels`, and removes the embed flags from
+`settings.xml`. `applyStepA` now returns the resolved `font`; `processFormatting` calls
+`normalizeFontPackaging(files, a.font)` right after Step A (formatting branch only — proofreading-only
+docs keep the author's fonts). Verified on the reported file: theme major+minor → Arial, embeds gone,
+binaries/rels deleted, flag off. +6 tests; server 247 passing, tsc clean. **Reprocess to apply.**
 
 ### 2026-06-21 (later 8) — Step D now classifies the appendix (references is a range, not a cutoff)
 
@@ -558,7 +661,7 @@ Build: server 173/176 (3 evals skipped), web build green, tsc clean both sides.
 - **Double-submit guard** — `finalizingRef` (a `useRef`) blocks a second `handleFinalize` invocation synchronously, before React has had a chance to re-render the button as disabled.
 - **Stuck saving state** — Supabase Realtime fires (via WebSocket) before the HTTP response returns, so `finalizing` was staying `true` while the fetch was still in-flight. The Realtime handler now clears `finalizingRef.current` and calls `setFinalizing(false)` immediately when it sees `status = 'complete'`, so the panel unsticks as soon as the server confirms the write.
 
-**Still pending:** live end-to-end verify — reprocess a `.docx` with an image/table missing a caption or source to confirm the `needs_input` → fill → `complete` flow works end-to-end.
+**Confirmed live — working properly:** the `needs_input` → fill → `complete` flow verified end to end on a real `.docx` (image/table missing a caption or source → user fills → stamps `complete`).
 
 
 

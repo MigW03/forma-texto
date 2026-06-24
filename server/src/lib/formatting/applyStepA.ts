@@ -16,6 +16,9 @@ export interface StepAInput {
 export interface StepAOutput {
   documentXml: string
   stylesXml: string
+  /** The single font family resolved for the whole document (used to normalize the
+   *  theme + drop now-orphaned embedded fonts in the packaging step). */
+  font: string
 }
 
 /**
@@ -32,5 +35,5 @@ export function applyStepA({ documentXml, stylesXml, guideline, appendixStart }:
   const newStyles = rewriteStyles(stylesXml, guideline, font)
   let doc = stripDirectOverrides(documentXml, appendixStart ?? Infinity)
   doc = rewriteMargins(doc, guideline)
-  return { documentXml: doc, stylesXml: newStyles }
+  return { documentXml: doc, stylesXml: newStyles, font }
 }
