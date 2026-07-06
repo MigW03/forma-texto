@@ -220,6 +220,25 @@
   - Tests: server `postTextual.test.ts` + cutoff assertions; web `laudas.test.ts`. Server 232 passing, web 38 passing, both builds clean.
   - **Deferred (preview UI):** `PageSelectionPage` shows the appendix in the preview but draws no "Lauda N" divider over it (it is not a lauda). A future polish could visually mark it as a non-billable "frozen" section so the user understands why it isn't counted. **Limitation:** detection keys on the heading text only, so an appendix whose title is split across runs or that does not begin with the literal word `Apêndice`/`Anexo` (e.g. an autonumbered field) is not detected.
 
+- [x] Heading numbering (ABNT NBR 6024)
+  - `server/src/lib/formatting/headingNumbering.ts` `applyHeadingNumbering(documentXml, opts)` renumbers
+    every `Heading1/2/3` paragraph sequentially (`1`, `1.1`, `1.1.1`, …) in document order, **always** —
+    not just when an inconsistency is detected — replacing any existing numeric prefix so a document
+    where the author numbered some headings and not others (the reported bug) ends up uniform. Runs
+    after Step D (sees every promoted heading) and before the sumário rebuild (TOC entries carry the
+    same numbers). Excludes pré-textual front matter (`bodyStartIndex`) and the appendix/annex region
+    (`stopIndex`) — `APÊNDICE A`/`ANEXO B` are letter-labeled per ABNT, not part of the chapter sequence,
+    even if Step D happened to style one `Heading1`. Text is rewritten via the same run-preserving splice
+    Step P uses (`spliceCorrectedText`/`canSpliceParagraph` from `runs.ts`), so bold/other run formatting
+    on a heading survives; a heading unsafe to splice (hyperlink/field/footnote) keeps its text but still
+    occupies a slot in the sequence, so later numbers stay correct. An `h2`/`h3` with no preceding `h1`
+    is treated as belonging to an implicit first chapter (`1.1`, not `0.1`). 10 unit tests. Verified live
+    against the real LibreOffice PDF export: a deliberately inconsistent doc (one heading pre-numbered,
+    siblings bare, one wrongly numbered) renders with a clean `1 / 1.1 / 2 / 2.1 / 3` sequence and the
+    appendix heading untouched. **Known limitation:** only recognizes the Arabic-numeral prefix
+    (`1`, `1.1`, optional trailing dot) — a heading using a different scheme (`Capítulo 1`, roman
+    numerals) gets the number prepended rather than replacing the old label.
+
 - [x] Sumário (ABNT table of contents) generation
   - Built differently than originally planned: instead of a native Word TOC field, `server/src/lib/formatting/sumario.ts` `buildSumario(documentXml, pretextual)` deterministically rebuilds the sumário section from the Heading1–3 paragraphs Step D produces — preserves the "SUMÁRIO" label, replaces its content blocks with one TOC entry per body heading (H1 bold/flush-left, H2/H3 indented 709/1418 twips), deleting or appending blocks as the entry count differs from the old content. Runs after Step D in `processFormatting.ts`; `appendixStart` is recomputed afterward since the block count can change. **Rendering fixes (2026-07-06):** the page-number tab stop was hardcoded at 9072 twips — 1 twip PAST the A4/ABNT text width (9071) — so docx-preview pushed the tab and its dot leader off the right edge and wrapped entries onto a second line. `sumarioTabPos` now derives the position from the document's own `sectPr` (content width minus a 10-twip inset, fallback 9061), and the dot leader was removed entirely (plain right tab): docx-preview rendered the dots as dash-like marks spilling past the margin, and the user asked for them gone.
   - **Real page numbers (2026-07-06):** built as the pipeline's LAST content transform. `lib/paginateSumario.ts` renders the otherwise-final document through the real PDF export path (LibreOffice headless, same converter as "Baixar PDF"), extracts per-page text via `pdf-parse` (`lib/pdfPageTexts.ts`), and `formatting/sumarioPagination.ts` maps each entry title to the physical page it landed on — skipping the sumário's own page(s) (label page + contiguous TOC-looking pages by entry-coverage ratio), searching monotonically in document order, advancing past a repeated title's previous occurrence, and leaving a not-found entry blank rather than guessing. Numbers are stamped as a run after the entry's tab (idempotent — a re-run replaces, never stacks). Wired in `processFormatting` for docs that complete directly, and in the `finalize-inputs` route for `needs_input` docs (paginated only once the user's fills produce the final document, so placeholder-shifted pages are never baked in). Non-fatal by contract: no LibreOffice → numbers stay blank, job still completes. Numbers are the physical PDF page numbers on purpose — the document carries no printed header numbers yet, so the sumário matches what the reader sees in the PDF viewer; the ABNT folha-counting convention should land together with the future header page-numbering pass. Verified live: synthetic thesis through the full pipeline → 4/4 entries numbered correctly (checked against the rendered PDF pages).

@@ -42,6 +42,7 @@ import {
   detectAndInsertPlaceholders,
   buildSumario,
   demoteImplausibleHeadings,
+  applyHeadingNumbering,
   type HeadingDecision,
   type ReferenceDecision,
   type ProofreadDecision,
@@ -342,6 +343,17 @@ export async function processFormatting(projectId: string): Promise<void> {
           console.error(`[processFormatting] Step D failed for ${projectId} (non-fatal, keeping deterministic result):`, err)
         }
       }
+
+      // Heading numbering (ABNT NBR 6024): renumber every Heading1/2/3 paragraph
+      // sequentially (1, 1.1, 1.1.1, …), regardless of what — or whether — the author
+      // typed a number. Runs after Step D so it sees every promoted heading, and
+      // before the sumário rebuild so TOC entries carry the same numbers. The
+      // appendix/annex (letter-labeled, e.g. "APÊNDICE A") is excluded even if Step D
+      // happened to style one Heading1 — it is not part of the chapter sequence.
+      workingDocXml = applyHeadingNumbering(workingDocXml, {
+        bodyStartIndex: pretextual.bodyStart,
+        stopIndex: appendixStart ?? undefined,
+      })
 
       // Sumário: rebuild the table of contents from Heading1–3 paragraphs in the body.
       // Runs after Step D so it sees all classified headings. Page numbers are left blank

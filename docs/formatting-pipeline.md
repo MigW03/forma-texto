@@ -161,7 +161,8 @@ the latency analysis behind this.
 
 | File | Role |
 |---|---|
-| `processFormatting.ts` | Orchestrator: download → A → B → C → D → sumário → images/captions → (P) → cover distribution → sumário pagination → re-zip → upload → stamp |
+| `processFormatting.ts` | Orchestrator: download → A → B → C → D → heading numbering → sumário → images/captions → (P) → cover distribution → sumário pagination → re-zip → upload → stamp |
+| `headingNumbering.ts` | Renumbers every Heading1/2/3 sequentially (NBR 6024), always — not just on detected inconsistency; excludes the appendix/annex |
 | `sumario.ts` | Sumário rebuild from Heading1–3 (entries with a right tab, no leader; tab pos from the doc's own sectPr) |
 | `sumarioPagination.ts` | Pure entry↔page matching for the sumário page numbers (TOC-page skip, monotonic search) |
 | `../paginateSumario.ts` | LAST pipeline step: render via LibreOffice → per-page text (`pdf-parse`) → stamp sumário page numbers (non-fatal) |

@@ -37,6 +37,8 @@ export { applyPunctNorm, applyPunctNormWithStats, isNoopPunct } from './applyPun
 export type { PunctStats } from './applyPunctNorm'
 export { detectAndInsertPlaceholders, finalizeInputs } from './missingInputs'
 export type { MissingInputKind, PendingInput } from './missingInputs'
+export { applyHeadingNumbering } from './headingNumbering'
+export type { HeadingNumberingOptions } from './headingNumbering'
 export { buildSumario, sumarioTabPos } from './sumario'
 export { findSumarioEntries, assignEntryPages, applySumarioPageNumbers } from './sumarioPagination'
 export type { SumarioEntryRef, SumarioPaginationResult } from './sumarioPagination'

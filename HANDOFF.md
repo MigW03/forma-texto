@@ -34,7 +34,7 @@ Deeper docs (keep these as the real source of truth):
 
 - **Branch:** `fable-fixes` — cover foot-pinning, AI-pass resilience, sumário rendering + real page numbers (this session). `main` has all earlier pré-textual work merged.
 - **Build:** web production build **verified green (2026-06-17)** (`npm run build` in `web/`).
-- **Tests:** server **379** passing (3 AI evals skipped); web **38** passing.
+- **Tests:** server **389** passing (3 AI evals skipped); web **38** passing.
 - **Working:** auth, onboarding flow, checkout (Stripe), dashboard, project detail/viewer,
   the DOCX formatting pipeline Steps A/B/C/D (both AI passes: reference reformatting + headings),
   pré-textual detection + formatting + sumário generation **with real page numbers**, and the server-side proofreading pass (Step P).
@@ -248,6 +248,31 @@ Deeper docs (keep these as the real source of truth):
 ---
 
 ## Session log
+
+### 2026-07-06 (later 2) — fable-fixes: heading numbering (ABNT NBR 6024)
+
+User-reported: after heading classification, headings should follow one consistent numbering pattern —
+if any heading is numbered, all of them (at every level) should be, even ones the author never numbered.
+
+New `formatting/headingNumbering.ts` `applyHeadingNumbering` renumbers every `Heading1/2/3` paragraph
+sequentially (`1`, `1.1`, `1.1.1`, …) in document order, unconditionally — not gated on detecting an
+inconsistency — so the output always matches ABNT NBR 6024 regardless of what the author typed. Runs in
+`processFormatting.ts` right after Step D (needs the final promoted-heading set) and before the sumário
+rebuild (so TOC entries carry the same numbers), scoped to `[pretextual.bodyStart, appendixStart)` — the
+appendix/annex (`APÊNDICE A`, letter-labeled) is deliberately excluded even if Step D styled it
+`Heading1`. Text is rewritten through the same run-preserving splice Step P already uses
+(`spliceCorrectedText`/`canSpliceParagraph`), so a heading's bold/other run formatting survives; a
+heading that's unsafe to splice keeps its text but still consumes a slot in the sequence so later numbers
+don't skew. An `h2`/`h3` appearing with no preceding `h1` is treated as the implicit first chapter
+(`1.1`, not `0.1`).
+
+**Verified live** against the real LibreOffice PDF export path: built a deliberately inconsistent doc
+(one heading pre-numbered, its siblings bare, one wrongly numbered, plus an appendix) through Step A →
+numbering → sumário → PDF export. Result: clean `1 / 1.1 / 2 / 2.1 / 3` sequence, appendix heading
+(`APÊNDICE A — Questionário`) left untouched, confirmed via `pdftotext` on the rendered PDF.
+
+10 new unit tests (`headingNumbering.test.ts`); server suite **389 green** (up from 379), tsc clean.
+PLAN.md updated.
 
 ### 2026-07-06 (later) — fable-fixes: cover city/year at page foot · AI-pass resilience · sumário rendering + real page numbers
 
