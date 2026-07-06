@@ -58,8 +58,9 @@ export function createReferenceDecider(cfg: AiConfig = loadAiConfig()): Referenc
           providerOptions: {
             openrouter: {
               // Cap reasoning so the model can't spend the whole output budget on
-              // chain-of-thought and emit no JSON (finishReason: 'length').
-              reasoning: { effort: cfg.referenceReasoningEffort },
+              // chain-of-thought and emit no JSON (finishReason: 'length'). An escalated
+              // retry (single stubborn entry) drops to `minimal`.
+              reasoning: { effort: chunk.escalated ? 'minimal' : cfg.referenceReasoningEffort },
               // Pin OpenRouter to a single backend when configured, so routing doesn't
               // swap hardware/quantization between runs (a source of run-to-run variance).
               ...(cfg.provider.length > 0 && {

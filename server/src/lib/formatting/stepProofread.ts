@@ -39,6 +39,14 @@ export interface ProofreadChunk {
   context: string[]
   guideline: Guideline
   blocks: ProofreadBlock[]
+  /**
+   * Set by the resilience wrapper on the LAST retry of a single stubborn paragraph. The
+   * real decider responds by dropping the reasoning effort to `minimal` — over-reasoning
+   * is the dominant failure mode (the model burns the whole token budget deliberating and
+   * emits no JSON), so thinking less is the one knob that changes the outcome on an
+   * identical retry.
+   */
+  escalated?: boolean
 }
 
 /** The model's answer for one paragraph: its corrected full text. */
@@ -160,6 +168,8 @@ export interface StepProofreadResult {
   documentXml: string
   /** Every decision the model returned, for logging/inspection. */
   decisions: ProofreadDecision[]
+  /** Block indices that failed every retry and kept their deterministic text. */
+  failedIndices: number[]
 }
 
 /**
@@ -169,22 +179,33 @@ export interface StepProofreadResult {
  * such chunk would otherwise sink the whole pass. Instead we **isolate** the failure and,
  * if the chunk has more than one paragraph, **split it in half and retry each half** as its
  * own AI call — so an oversized/over-reasoned chunk becomes several tractable ones. A single
- * paragraph that still fails is skipped (it keeps its deterministic text); the rest of the
- * document is unaffected.
+ * paragraph that still fails gets ONE escalated retry (reasoning effort `minimal` — see
+ * `ProofreadChunk.escalated`) and is then skipped (it keeps its deterministic text); the
+ * rest of the document is unaffected.
  */
-async function proofreadResilient(decider: ProofreadDecider, chunk: ProofreadChunk): Promise<ProofreadDecision[]> {
+async function proofreadResilient(
+  decider: ProofreadDecider,
+  chunk: ProofreadChunk,
+  failed: number[],
+): Promise<ProofreadDecision[]> {
   try {
     return await decider.proofread(chunk)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     if (chunk.blocks.length <= 1) {
-      console.warn(`[stepProofread] chunk ${chunk.chunkIndex} block ${chunk.blocks[0]?.i ?? '?'} failed, skipping: ${msg}`)
+      const i = chunk.blocks[0]?.i ?? -1
+      if (!chunk.escalated) {
+        console.warn(`[stepProofread] chunk ${chunk.chunkIndex} block ${i} failed, retrying with minimal reasoning: ${msg}`)
+        return proofreadResilient(decider, { ...chunk, escalated: true }, failed)
+      }
+      console.warn(`[stepProofread] block ${i} failed after escalation, keeping deterministic text: ${msg}`)
+      if (i >= 0) failed.push(i)
       return []
     }
     const mid = Math.ceil(chunk.blocks.length / 2)
     console.warn(`[stepProofread] chunk ${chunk.chunkIndex} (${chunk.blocks.length} blocks) failed, splitting and retrying: ${msg}`)
-    const left = await proofreadResilient(decider, { ...chunk, blocks: chunk.blocks.slice(0, mid) })
-    const right = await proofreadResilient(decider, { ...chunk, blocks: chunk.blocks.slice(mid) })
+    const left = await proofreadResilient(decider, { ...chunk, blocks: chunk.blocks.slice(0, mid) }, failed)
+    const right = await proofreadResilient(decider, { ...chunk, blocks: chunk.blocks.slice(mid) }, failed)
     return [...left, ...right]
   }
 }
@@ -202,11 +223,12 @@ export async function stepProofread(
   opts: ChunkOptions = {},
 ): Promise<StepProofreadResult> {
   const chunks = chunkProofread(documentXml, guideline, opts)
-  if (!chunks.length) return { documentXml, decisions: [] }
+  if (!chunks.length) return { documentXml, decisions: [], failedIndices: [] }
 
   const all: ProofreadDecision[] = []
+  const failed: number[] = []
   for (const chunk of chunks) {
-    all.push(...(await proofreadResilient(decider, chunk)))
+    all.push(...(await proofreadResilient(decider, chunk, failed)))
   }
-  return { documentXml: applyProofreadDecisions(documentXml, all), decisions: all }
+  return { documentXml: applyProofreadDecisions(documentXml, all), decisions: all, failedIndices: failed }
 }

@@ -299,43 +299,170 @@ function twipAttr(tag: string, attr: string): number {
   return m ? parseInt(m[1], 10) : 0
 }
 
+/** Kinds that get full-page vertical distribution (content centered, city/year at the foot). */
+const DISTRIBUTE_KINDS: ReadonlySet<PretextualKind> = new Set<PretextualKind>(['capa', 'folhaDeRosto'])
+
+/** A standalone city line above the year: letters/separators only (no digits, no sentence). */
+const CITY_LINE_RE = /^[\p{L}][\p{L}\s.'’\-–—]*$/u
+/** A combined "City – 2026" / "City, 2026" / "City 2026" line. */
+const CITY_YEAR_LINE_RE = /^[\p{L}][\p{L}\s.'’\-–—]*[,\s\-–—]\s*(19|20)\d{2}$/u
+
+/** Twips reserved at the page bottom per foot line (≈ a 12pt 1.5-spaced line + slack). */
+const FOOT_LINE_TWIPS = 400
+/** Extra breathing room added to the foot zone. */
+const FOOT_PAD_TWIPS = 200
+/** Safety slack so a page's rows never sum past the exact content height (renderer rounding). */
+const PAGE_SLACK_TWIPS = 60
+
 /**
- * Vertically center the capa's content within the page instead of leaving it clumped at
- * the top. ABNT NBR 14724 wants the institution near the top, title in the middle band,
- * and city/year at the foot — real distribution needs per-field classification (which
- * line is the institution vs. the title vs. the author), a bigger feature tracked
- * separately (`business_decisions/pretextual-elements.html`, "detect and confirm"). This
- * is the scoped middle ground: treat the capa as one block and center it as a whole.
+ * Is this text plausibly the cover's city line (the line right above the year)?
+ * Deliberately strict — a false positive would drag the TITLE to the page foot:
+ * short, few words, not ALL-CAPS (capa titles/institutions are uppercase; city
+ * lines are title-case), and never the natureza/orientador note.
+ */
+function isCityLine(text: string): boolean {
+  if (!text || text.length > 30) return false
+  if (!CITY_LINE_RE.test(text)) return false
+  if (text.split(/\s+/).length > 4) return false
+  if (text === text.toUpperCase()) return false
+  return !NATUREZA_RE.test(text) && !ORIENTADOR_RE.test(text)
+}
+
+/** True when the paragraph starts a new page (`<w:pageBreakBefore/>`, not an explicit off). */
+function hasPageBreakBefore(block: string): boolean {
+  const m = block.match(/<w:pageBreakBefore\b[^>]*\/?>/)
+  return !!m && !/w:val="(?:false|0)"/.test(m[0])
+}
+
+/** True when the paragraph contains an explicit page-break run (`<w:br w:type="page"/>`). */
+const hasPageBreakRun = (block: string) => /<w:br\b[^>]*w:type="page"/.test(block)
+
+/**
+ * Remove page-break artifacts from a paragraph that is moving inside a table cell.
+ * Word/LibreOffice ignore `pageBreakBefore` inside tables and render a break run as a
+ * stray blank line — the exact-height rows now own the pagination, so both go.
+ */
+function stripPageBreaks(block: string): string {
+  return block
+    .replace(/<w:pageBreakBefore\b[^>]*\/>/g, '')
+    .replace(/<w:r>(?:<w:rPr>[\s\S]*?<\/w:rPr>)?<w:br\b[^>]*w:type="page"[^>]*\/><\/w:r>/g, '')
+    .replace(/<w:br\b[^>]*w:type="page"[^>]*\/>/g, '')
+}
+
+interface PageGroup {
+  start: number
+  end: number
+}
+
+/**
+ * Split a section's block range into the author's own pages, using their explicit
+ * break signals: `pageBreakBefore` starts a new group at that block; a `<w:br
+ * w:type="page"/>` run ends the group at that block. A section with no breaks is one
+ * group. This matters for the merged capa+folha case (a single-year-line document
+ * collapses both covers into one `folhaDeRosto` section spanning several real pages) —
+ * each real page still gets its own centered zone and its own pinned city/year foot.
+ */
+function splitPageGroups(blocks: string[], start: number, end: number): PageGroup[] {
+  const groups: PageGroup[] = []
+  let a = start
+  for (let i = start; i <= end; i++) {
+    if (i > a && hasPageBreakBefore(blocks[i])) {
+      groups.push({ start: a, end: i - 1 })
+      a = i
+    }
+    if (hasPageBreakRun(blocks[i]) && i < end) {
+      groups.push({ start: a, end: i })
+      a = i + 1
+    }
+  }
+  if (a <= end) groups.push({ start: a, end })
+  return groups
+}
+
+/** The trailing city/year block range of a page group, or null when the page has none. */
+function detectFoot(texts: string[], g: PageGroup): PageGroup | null {
+  let last = g.end
+  while (last >= g.start && !texts[last]) last--
+  if (last < g.start) return null
+
+  const t = texts[last]
+  if (YEAR_LINE_RE.test(t)) {
+    // Bare year — take the short city line right above it (skipping blanks) too.
+    let prev = last - 1
+    while (prev >= g.start && !texts[prev]) prev--
+    if (prev >= g.start && isCityLine(texts[prev])) return { start: prev, end: last }
+    return { start: last, end: last }
+  }
+  if (t.length <= 70 && CITY_YEAR_LINE_RE.test(t)) return { start: last, end: last }
+  return null
+}
+
+/** One borderless table row: a full-width cell with the given height and vertical alignment. */
+function buildRow(cellBlocks: string[], height: number, vAlign: 'center' | 'bottom', contentW: number): string {
+  const content = cellBlocks.length ? cellBlocks.join('') : '<w:p/>'
+  return (
+    `<w:tr><w:trPr><w:trHeight w:val="${height}" w:hRule="atLeast"/></w:trPr>` +
+    `<w:tc><w:tcPr><w:tcW w:w="${contentW}" w:type="dxa"/><w:vAlign w:val="${vAlign}"/></w:tcPr>${content}</w:tc></w:tr>`
+  )
+}
+
+/**
+ * Rows for one cover page: a centered main zone plus — when the page ends with a
+ * city/year block — a bottom-aligned foot zone, so the city/date sit on the page's
+ * last lines per ABNT NBR 14724. Trailing blank paragraphs after the year are dropped:
+ * they were the author's manual push-down, and the foot row now owns that job.
+ */
+function buildGroupRows(blocks: string[], texts: string[], g: PageGroup, contentW: number, contentH: number): string[] {
+  const clean = (from: number, to: number) => blocks.slice(from, to + 1).map(stripPageBreaks)
+  const foot = detectFoot(texts, g)
+  if (!foot) return [buildRow(clean(g.start, g.end), contentH - PAGE_SLACK_TWIPS, 'center', contentW)]
+
+  const footBlocks = clean(foot.start, foot.end)
+  const footH = footBlocks.length * FOOT_LINE_TWIPS + FOOT_PAD_TWIPS
+  const mainBlocks = foot.start > g.start ? clean(g.start, foot.start - 1) : []
+  return [
+    buildRow(mainBlocks, contentH - footH - PAGE_SLACK_TWIPS, 'center', contentW),
+    buildRow(footBlocks, footH, 'bottom', contentW),
+  ]
+}
+
+/**
+ * Vertically distribute the cover pages (capa AND folha de rosto) within their pages:
+ * the content is centered in the page's main zone and the trailing city/year lines are
+ * pinned to the page foot, per ABNT NBR 14724. (Full 3-zone layout — institution top /
+ * title middle — still needs per-field classification, tracked separately in
+ * `business_decisions/pretextual-elements.html`; center+foot is the scoped middle ground.)
  *
- * TWO APPROACHES WERE TRIED AND EMPIRICALLY VERIFIED AGAINST THE REAL PDF EXPORT PATH
+ * THREE APPROACHES WERE TRIED AND EMPIRICALLY VERIFIED AGAINST THE REAL PDF EXPORT PATH
  * (LibreOffice headless, `docxToPdf.ts`) before landing on this one:
  *  1. A fixed `spaceBefore` push on the city/year line (the original `applyCoverYearBottom`)
  *     — a constant tuned against one content height; a longer/shorter capa pushed the
- *     break to the wrong page. This is the bug that prompted this rewrite.
+ *     break to the wrong page. This is the bug that prompted the rewrite.
  *  2. OOXML section-level `<w:vAlign w:val="both|center|bottom"/>` (Word's native
- *     "vertical justify a page" property, applied via a section break on the capa's last
- *     paragraph) — textbook-correct per the spec, but LibreOffice 26.2 silently ignores
- *     it: rendered identically to no `vAlign` at all, verified with `both`, `center` and
- *     `bottom` on both a mid-document section break and the document's own final section.
+ *     "vertical justify a page" property) — textbook-correct per the spec, but
+ *     LibreOffice 26.2 silently ignores it (verified with `both`, `center`, `bottom`).
  *  3. **Table-cell `vAlign` (what this function does)** — LibreOffice DOES honor
- *     `<w:vAlign>` inside `<w:tcPr>` (a much more common/tested code path than the
- *     section property). Confirmed empirically: a borderless single-cell table sized to
- *     the exact page content height, `vAlign="center"`, renders centered in the exported
- *     PDF. No constant to tune — the height comes from the guideline's own page size/margins.
+ *     `<w:vAlign>` inside `<w:tcPr>`. A borderless table sized to the page content
+ *     area renders exactly as laid out in the exported PDF. No constant to tune — the
+ *     geometry comes from the document's own page size/margins.
  *
- * Collapses the capa's N paragraphs into ONE `<w:tbl>` block, so the caller MUST run this
- * only after every other block-index-dependent pass is done (Step C/D, Step P, sumário,
- * captions/placeholders — anything keyed on `PretextualResult`/`ReferenceRegion` indices).
- * `processFormatting` runs it last, re-detecting pré-textuais fresh at that point.
+ * Each section is split into the author's own pages (`splitPageGroups`) and every page
+ * becomes a main row (`vAlign=center`) plus, when it ends with a city/year block, a foot
+ * row (`vAlign=bottom`); each page's rows sum to the page content height, so pagination
+ * is enforced by the row heights themselves. Contiguous cover sections (capa directly
+ * followed by folha de rosto) are merged into ONE `<w:tbl>` — two adjacent tables would
+ * be merged by Word anyway, with unpredictable layout.
+ *
+ * Collapses N paragraphs into ONE `<w:tbl>` block per cover run, so the caller MUST run
+ * this only after every other block-index-dependent pass is done (Step C/D, Step P,
+ * sumário, captions/placeholders — anything keyed on `PretextualResult`/`ReferenceRegion`
+ * indices). `processFormatting` runs it last, re-detecting pré-textuais fresh at that point.
  */
 export function applyCoverVerticalDistribution(documentXml: string, sections: PretextualSection[]): string {
-  const capa = sections.find(s => s.kind === 'capa')
-  if (!capa) return documentXml
-
-  const blocks = getBlocks(documentXml)
-  for (let i = capa.blockStart; i <= capa.blockEnd; i++) {
-    if (!isParagraph(blocks[i])) return documentXml // already wrapped, or something we can't nest
-  }
+  const targets = sections
+    .filter(s => DISTRIBUTE_KINDS.has(s.kind))
+    .sort((a, b) => a.blockStart - b.blockStart)
+  if (targets.length === 0) return documentXml
 
   const finalSectPr = documentXml.match(/<w:sectPr\b[\s\S]*?<\/w:sectPr>(?=\s*<\/w:body>)/)?.[0]
   if (!finalSectPr) return documentXml
@@ -347,21 +474,52 @@ export function applyCoverVerticalDistribution(documentXml: string, sections: Pr
   const contentH = twipAttr(pgSz, 'w:h') - twipAttr(pgMar, 'w:top') - twipAttr(pgMar, 'w:bottom')
   if (contentW <= 0 || contentH <= 0) return documentXml
 
-  const capaParagraphs = blocks.slice(capa.blockStart, capa.blockEnd + 1).join('')
-  const table =
-    '<w:tbl>' +
-    `<w:tblPr><w:tblW w:w="${contentW}" w:type="dxa"/><w:tblBorders>` +
-    '<w:top w:val="none"/><w:left w:val="none"/><w:bottom w:val="none"/><w:right w:val="none"/>' +
-    '<w:insideH w:val="none"/><w:insideV w:val="none"/></w:tblBorders></w:tblPr>' +
-    `<w:tblGrid><w:gridCol w:w="${contentW}"/></w:tblGrid>` +
-    `<w:tr><w:trPr><w:trHeight w:val="${contentH}" w:hRule="exact"/></w:trPr>` +
-    `<w:tc><w:tcPr><w:tcW w:w="${contentW}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>${capaParagraphs}</w:tc>` +
-    '</w:tr></w:tbl>'
+  const blocks = getBlocks(documentXml)
+  const texts = blocks.map(b => (isParagraph(b) ? blockText(b).trim() : ''))
+
+  // Merge contiguous cover sections into one run → one table per run.
+  const tableRuns: PretextualSection[][] = []
+  for (const s of targets) {
+    const prev = tableRuns[tableRuns.length - 1]
+    if (prev && prev[prev.length - 1].blockEnd + 1 === s.blockStart) prev.push(s)
+    else tableRuns.push([s])
+  }
 
   const byIndex = new Map<number, string>()
-  byIndex.set(capa.blockStart, table)
-  for (let i = capa.blockStart + 1; i <= capa.blockEnd; i++) byIndex.set(i, '')
-  return replaceBlocks(documentXml, byIndex)
+  for (const run of tableRuns) {
+    const start = run[0].blockStart
+    const end = run[run.length - 1].blockEnd
+    // Skip a run that is already wrapped (idempotency) or contains something we can't nest.
+    let allParagraphs = true
+    for (let i = start; i <= end; i++) {
+      if (!isParagraph(blocks[i])) { allParagraphs = false; break }
+    }
+    if (!allParagraphs) continue
+
+    const rows: string[] = []
+    for (const s of run) {
+      for (const g of splitPageGroups(blocks, s.blockStart, s.blockEnd)) {
+        rows.push(...buildGroupRows(blocks, texts, g, contentW, contentH))
+      }
+    }
+
+    const table =
+      '<w:tbl>' +
+      `<w:tblPr><w:tblW w:w="${contentW}" w:type="dxa"/><w:tblBorders>` +
+      '<w:top w:val="none"/><w:left w:val="none"/><w:bottom w:val="none"/><w:right w:val="none"/>' +
+      '<w:insideH w:val="none"/><w:insideV w:val="none"/></w:tblBorders>' +
+      '<w:tblLayout w:type="fixed"/>' +
+      '<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>' +
+      '<w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr>' +
+      `<w:tblGrid><w:gridCol w:w="${contentW}"/></w:tblGrid>` +
+      rows.join('') +
+      '</w:tbl>'
+
+    byIndex.set(start, table)
+    for (let i = start + 1; i <= end; i++) byIndex.set(i, '')
+  }
+
+  return byIndex.size ? replaceBlocks(documentXml, byIndex) : documentXml
 }
 
 /** Inject `<w:pageBreakBefore/>` into a paragraph's `<w:pPr>`, creating one if absent. */

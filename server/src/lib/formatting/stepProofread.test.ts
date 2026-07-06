@@ -153,15 +153,21 @@ describe('stepProofread (end to end with fake decider)', () => {
     expect(calls.some(c => c.length === 1)).toBe(true)
   })
 
-  it('skips a single block that keeps failing without sinking the rest', async () => {
+  it('escalates a single stubborn block once, then skips it without sinking the rest', async () => {
     // Block 2 always fails even alone; blocks 1 and 3 succeed. The pass must still finish.
+    const seen: { is: number[]; escalated?: boolean }[] = []
     const flaky: ProofreadDecider = {
       async proofread(chunk) {
+        seen.push({ is: chunk.blocks.map(b => b.i), escalated: chunk.escalated })
         if (chunk.blocks.some(b => b.i === 2)) throw new Error('finishReason length')
         return []
       },
     }
-    const { documentXml: out } = await stepProofread(DOC, 'abnt', flaky, { refStartIndex: REF_START, maxChars: 100000, maxBlocks: 100 })
+    const { documentXml: out, failedIndices } = await stepProofread(DOC, 'abnt', flaky, { refStartIndex: REF_START, maxChars: 100000, maxBlocks: 100 })
     expect(out).toBe(DOC) // no decisions applied, but no throw — pass completed
+    expect(failedIndices).toEqual([2])
+    const attempts = seen.filter(s => s.is.length === 1 && s.is[0] === 2)
+    expect(attempts).toHaveLength(2) // normal try + one escalated retry (minimal reasoning)
+    expect(attempts[1].escalated).toBe(true)
   })
 })

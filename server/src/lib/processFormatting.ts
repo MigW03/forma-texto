@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import { sendProjectReadyEmail, sendReuploadNeededEmail } from './notify'
 import { docxToPdf } from './docxToPdf'
+import { paginateSumario } from './paginateSumario'
 import {
   unzipDocx,
   zipDocx,
@@ -309,6 +310,9 @@ export async function processFormatting(projectId: string): Promise<void> {
             })
             workingDocXml = result.documentXml
             console.log(`[processFormatting] ${projectId} Step C: located ${region.entryIndices.length} entr(ies), reformatted ${result.decisions.length} (${since(cStart)})`)
+            if (result.failedIndices.length > 0) {
+              console.warn(`[processFormatting] ${projectId} Step C: ${result.failedIndices.length} entr(ies) failed every retry (kept Step B layout): [${result.failedIndices.join(', ')}]`)
+            }
             logReferences(projectId, result.decisions)
           } catch (err) {
             console.error(`[processFormatting] Step C failed for ${projectId} (non-fatal, keeping deterministic result):`, err)
@@ -330,6 +334,9 @@ export async function processFormatting(projectId: string): Promise<void> {
           })
           workingDocXml = result.documentXml
           console.log(`[processFormatting] ${projectId} Step D: ${result.decisions.length} paragraph(s) classified (${since(dStart)})`)
+          if (result.failedIndices.length > 0) {
+            console.warn(`[processFormatting] ${projectId} Step D: ${result.failedIndices.length} block(s) failed every retry (kept deterministic style): [${result.failedIndices.join(', ')}]`)
+          }
           logHeadings(projectId, workingDocXml, result.decisions, refInput.selectedPages)
         } catch (err) {
           console.error(`[processFormatting] Step D failed for ${projectId} (non-fatal, keeping deterministic result):`, err)
@@ -412,6 +419,9 @@ export async function processFormatting(projectId: string): Promise<void> {
         })
         workingDocXml = result.documentXml
         console.log(`[processFormatting] ${projectId} Step P: ${result.decisions.length} paragraph(s) corrected (${since(pStart)})`)
+        if (result.failedIndices.length > 0) {
+          console.warn(`[processFormatting] ${projectId} Step P: ${result.failedIndices.length} block(s) failed every retry (kept deterministic text): [${result.failedIndices.join(', ')}]`)
+        }
         logProofread(projectId, preDocXml, result.decisions)
       } catch (err) {
         console.error(`[processFormatting] Step P failed for ${projectId} (non-fatal, keeping prior result):`, err)
@@ -441,6 +451,17 @@ export async function processFormatting(projectId: string): Promise<void> {
       // per-level look directly on heading runs. Must follow setRunFonts (keeps rPr
       // order valid). Formatting only.
       workingDocXml = setHeadingRunProps(workingDocXml, getGuideline(guideline))
+    }
+
+    // Sumário pagination — THE LAST content transform, by contract: it renders the
+    // final document (LibreOffice → PDF), reads which page each heading landed on, and
+    // stamps the numbers into the sumário entries. Anything running after it could
+    // shift pages and stale the numbers. Skipped for needs_input docs (the red
+    // placeholders inflate the layout); the finalize-inputs route paginates instead,
+    // after the user's fills produce the real final document. Non-fatal — a failure
+    // leaves the numbers blank.
+    if (doFormatting && pending.length === 0) {
+      workingDocXml = await paginateSumario(files, workingDocXml, workingStylesXml, projectId)
     }
 
     const out = { documentXml: workingDocXml, stylesXml: workingStylesXml }

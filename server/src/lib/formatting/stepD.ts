@@ -28,6 +28,13 @@ export interface HeadingChunk {
   context: string[]
   guideline: Guideline
   blocks: BlockDescriptor[]
+  /**
+   * Set by the resilience wrapper on the LAST retry of a single stubborn block. The real
+   * decider responds by dropping the reasoning effort to `minimal` — over-reasoning is the
+   * dominant failure mode (the model burns the whole token budget deliberating and emits no
+   * JSON), so thinking less is the one knob that changes the outcome on an identical retry.
+   */
+  escalated?: boolean
 }
 
 /** The model's answer for one block. */
@@ -170,13 +177,53 @@ export interface StepDResult {
   documentXml: string
   /** Every decision the model returned (including `body`), for logging/inspection. */
   decisions: HeadingDecision[]
+  /** Block indices that failed every retry and kept their deterministic style. */
+  failedIndices: number[]
+}
+
+/**
+ * Classify one chunk, recovering from a model failure by splitting it into smaller
+ * calls (mirrors Step P's `proofreadResilient`). A model can blow its token budget on
+ * a chunk (reasoning tokens but no JSON → `finishReason: length` → the decider throws),
+ * and one such chunk would otherwise sink the WHOLE heading pass. Instead the failure is
+ * isolated: a multi-block chunk is split in half and each half retried as its own AI
+ * call; a single block that still fails gets ONE escalated retry (reasoning effort
+ * `minimal` — see `HeadingChunk.escalated`) and is then skipped, keeping its
+ * deterministic style. The rest of the document is unaffected.
+ */
+async function classifyResilient(
+  decider: HeadingDecider,
+  chunk: HeadingChunk,
+  failed: number[],
+): Promise<HeadingDecision[]> {
+  try {
+    return await decider.classify(chunk)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (chunk.blocks.length <= 1) {
+      const i = chunk.blocks[0]?.i ?? -1
+      if (!chunk.escalated) {
+        console.warn(`[stepD] chunk ${chunk.chunkIndex} block ${i} failed, retrying with minimal reasoning: ${msg}`)
+        return classifyResilient(decider, { ...chunk, escalated: true }, failed)
+      }
+      console.warn(`[stepD] block ${i} failed after escalation, keeping deterministic style: ${msg}`)
+      if (i >= 0) failed.push(i)
+      return []
+    }
+    const mid = Math.ceil(chunk.blocks.length / 2)
+    console.warn(`[stepD] chunk ${chunk.chunkIndex} (${chunk.blocks.length} blocks) failed, splitting and retrying: ${msg}`)
+    const left = await classifyResilient(decider, { ...chunk, blocks: chunk.blocks.slice(0, mid) }, failed)
+    const right = await classifyResilient(decider, { ...chunk, blocks: chunk.blocks.slice(mid) }, failed)
+    return [...left, ...right]
+  }
 }
 
 /**
  * Run Step D end to end: chunk → classify each chunk via the injected decider →
  * apply all decisions. Returns the original XML unchanged (and no decisions) when
- * there is nothing to classify. Throws only if the decider throws — the
- * orchestrator wraps this call so an AI failure keeps the deterministic A/B result.
+ * there is nothing to classify. Each chunk is isolated and split-retried, so a single
+ * failing chunk no longer discards the whole pass (see `classifyResilient`) — the
+ * orchestrator's try/catch now only guards genuinely unexpected errors.
  */
 export async function stepD(
   documentXml: string,
@@ -185,11 +232,12 @@ export async function stepD(
   opts: ChunkOptions = {},
 ): Promise<StepDResult> {
   const chunks = chunkHeadings(documentXml, guideline, opts)
-  if (!chunks.length) return { documentXml, decisions: [] }
+  if (!chunks.length) return { documentXml, decisions: [], failedIndices: [] }
 
   const all: HeadingDecision[] = []
+  const failed: number[] = []
   for (const chunk of chunks) {
-    all.push(...(await decider.classify(chunk)))
+    all.push(...(await classifyResilient(decider, chunk, failed)))
   }
-  return { documentXml: applyHeadingDecisions(documentXml, all), decisions: all }
+  return { documentXml: applyHeadingDecisions(documentXml, all), decisions: all, failedIndices: failed }
 }

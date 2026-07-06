@@ -160,8 +160,10 @@ export function createHeadingDecider(cfg: AiConfig = loadAiConfig()): HeadingDec
           providerOptions: {
             openrouter: {
               // Cap reasoning so the model can't burn the whole output budget deliberating
-              // ambiguous front matter and emit no JSON (finishReason: 'length').
-              reasoning: { effort: cfg.headingReasoningEffort },
+              // ambiguous front matter and emit no JSON (finishReason: 'length'). An
+              // escalated retry (single stubborn block) drops to `minimal` — thinking less
+              // is the one knob that changes the outcome of an identical retry.
+              reasoning: { effort: chunk.escalated ? 'minimal' : cfg.headingReasoningEffort },
               // Pin OpenRouter to a single backend when configured, so routing doesn't
               // swap hardware/quantization between runs (a source of run-to-run variance).
               ...(cfg.provider.length > 0 && {

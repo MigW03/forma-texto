@@ -54,8 +54,9 @@ export function createProofreadDecider(cfg: AiConfig = loadAiConfig()): Proofrea
             openrouter: {
               // Low reasoning effort: Step Punct already did the mechanical work, so the
               // model only needs light grammar. Keeps reasoning models from spending the
-              // whole output budget on chain-of-thought and never emitting the JSON.
-              reasoning: { effort: cfg.proofreadReasoningEffort },
+              // whole output budget on chain-of-thought and never emitting the JSON. An
+              // escalated retry (single stubborn paragraph) drops to `minimal`.
+              reasoning: { effort: chunk.escalated ? 'minimal' : cfg.proofreadReasoningEffort },
               // Pin OpenRouter to a single backend when configured, so routing doesn't
               // swap hardware/quantization between runs (a source of run-to-run variance).
               ...(cfg.provider.length > 0 && {

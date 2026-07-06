@@ -76,6 +76,18 @@ for either service.
   keeping the `<w:pPr>` Step B applied. An entry with no usable segments is left
   unchanged. Each entry is independent, so Step C carries no cross-chunk context.
 
+### Failure isolation (all three AI passes: C, D, P)
+
+A model failure on one chunk never sinks a pass. Each pass wraps its chunk calls in a
+resilience loop: a failing multi-block chunk is split in half and each half retried as
+its own AI call (recursing down to single blocks — smaller batches stop reasoning
+models from burning the whole token budget on chain-of-thought); a single block that
+still fails gets ONE escalated retry (`chunk.escalated: true` → the decider drops the
+OpenRouter reasoning effort to `minimal`) and is then skipped, keeping its
+deterministic result. Passes return `failedIndices`, and the orchestrator logs how
+many blocks stayed deterministic — degradation is visible, never silent. The
+mechanism is model-agnostic by design.
+
 ## Proofreading (Step P)
 
 Proofreading is the second paid service. It fixes grammar, punctuation, spelling,
@@ -149,7 +161,10 @@ the latency analysis behind this.
 
 | File | Role |
 |---|---|
-| `processFormatting.ts` | Orchestrator: download → A → B → C → D → re-zip → upload → stamp |
+| `processFormatting.ts` | Orchestrator: download → A → B → C → D → sumário → images/captions → (P) → cover distribution → sumário pagination → re-zip → upload → stamp |
+| `sumario.ts` | Sumário rebuild from Heading1–3 (entries with a right tab, no leader; tab pos from the doc's own sectPr) |
+| `sumarioPagination.ts` | Pure entry↔page matching for the sumário page numbers (TOC-page skip, monotonic search) |
+| `../paginateSumario.ts` | LAST pipeline step: render via LibreOffice → per-page text (`pdf-parse`) → stamp sumário page numbers (non-fatal) |
 | `applyStepA.ts` | Step A (rewriteStyles · stripOverrides · rewriteMargins · fontPolicy) |
 | `references.ts` | Step B + shared `locateReferences` / `pageForBlock` |
 | `stepC.ts` | Step C chunk + apply (model-agnostic) |

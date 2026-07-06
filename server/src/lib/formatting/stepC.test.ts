@@ -174,4 +174,26 @@ describe('stepC (end to end with fake decider)', () => {
     await stepC(DOC, 'abnt', spy, REGION)
     expect(seen[0].guideline).toBe('abnt')
   })
+
+  it('splits a failing chunk, escalates the stubborn entry, and keeps the healthy one', async () => {
+    const seen: { is: number[]; escalated?: boolean }[] = []
+    const flaky: ReferenceDecider = {
+      async reformat(chunk) {
+        seen.push({ is: chunk.entries.map(e => e.i), escalated: chunk.escalated })
+        if (chunk.entries.length > 1) throw new Error('finishReason length')
+        if (chunk.entries[0].i === 4) throw new Error('finishReason length')
+        return [{ i: chunk.entries[0].i, segments: [{ text: 'Gil. ' }, { text: 'Titulo', emphasis: 'bold' as const }] }]
+      },
+    }
+    const { documentXml: out, decisions, failedIndices } = await stepC(DOC, 'abnt', flaky, REGION)
+    // Entry 3 reformatted despite the initial two-entry chunk failing; entry 4 skipped.
+    expect(decisions.map(d => d.i)).toEqual([3])
+    expect(failedIndices).toEqual([4])
+    const blocks = getBlocks(out)
+    expect(blocks[3]).toContain('<w:b/>')
+    expect(blockText(blocks[4])).toBe(ENTRY4) // kept the deterministic Step B layout
+    const attempts = seen.filter(s => s.is.length === 1 && s.is[0] === 4)
+    expect(attempts).toHaveLength(2) // normal try + one escalated retry
+    expect(attempts[1].escalated).toBe(true)
+  })
 })

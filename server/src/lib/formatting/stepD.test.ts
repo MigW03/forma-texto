@@ -150,4 +150,54 @@ describe('stepD (end to end with fake decider)', () => {
     const empty = '<w:document><w:body><w:p/></w:body></w:document>'
     expect((await stepD(empty, 'abnt', fakeDecider)).documentXml).toBe(empty)
   })
+
+  it('splits a failing multi-block chunk and retries the halves (decision still lands)', async () => {
+    const calls: number[][] = []
+    const splitting: HeadingDecider = {
+      async classify(chunk) {
+        calls.push(chunk.blocks.map(b => b.i))
+        if (chunk.blocks.length > 1) throw new Error('No object generated: finishReason length')
+        return chunk.blocks.map(b => (/^\d+\s/.test(b.text.trim()) ? { i: b.i, role: 'h1' as const } : { i: b.i, role: 'body' as const }))
+      },
+    }
+    const { documentXml: out, decisions, failedIndices } = await stepD(DOC, 'abnt', splitting, { refStartIndex: REF_START, maxChars: 100000, maxBlocks: 100 })
+    expect(calls[0]).toEqual([0, 1, 2, 3, 4]) // one big chunk first…
+    expect(calls.some(c => c.length === 1)).toBe(true) // …subdivided down to singletons
+    expect(decisions.filter(d => d.role === 'h1').map(d => d.i)).toEqual([1])
+    expect(getBlocks(out)[1]).toContain('<w:pStyle w:val="Heading1"/>')
+    expect(failedIndices).toEqual([])
+  })
+
+  it('escalates a single stubborn block once (minimal reasoning), then skips it and reports the index', async () => {
+    const seen: { is: number[]; escalated?: boolean }[] = []
+    const flaky: HeadingDecider = {
+      async classify(chunk) {
+        seen.push({ is: chunk.blocks.map(b => b.i), escalated: chunk.escalated })
+        if (chunk.blocks.some(b => b.i === 3)) throw new Error('finishReason length')
+        return []
+      },
+    }
+    const { documentXml: out, failedIndices } = await stepD(DOC, 'abnt', flaky, { refStartIndex: REF_START, maxChars: 100000, maxBlocks: 100 })
+    expect(out).toBe(DOC) // pass completed without sinking the document
+    expect(failedIndices).toEqual([3])
+    const attempts = seen.filter(s => s.is.length === 1 && s.is[0] === 3)
+    expect(attempts).toHaveLength(2) // normal try + one escalated retry
+    expect(attempts[0].escalated).toBeUndefined()
+    expect(attempts[1].escalated).toBe(true)
+  })
+
+  it('applies the decision when the escalated retry recovers', async () => {
+    let failures = 0
+    const flaky: HeadingDecider = {
+      async classify(chunk) {
+        if (chunk.blocks.length > 1) throw new Error('length')
+        if (chunk.blocks[0].i === 1 && !chunk.escalated) { failures++; throw new Error('length') }
+        return chunk.blocks[0].i === 1 ? [{ i: 1, role: 'h1' as const }] : []
+      },
+    }
+    const { documentXml: out, failedIndices } = await stepD(DOC, 'abnt', flaky, { refStartIndex: REF_START, maxChars: 100000, maxBlocks: 100 })
+    expect(failures).toBe(1)
+    expect(failedIndices).toEqual([])
+    expect(getBlocks(out)[1]).toContain('<w:pStyle w:val="Heading1"/>')
+  })
 })

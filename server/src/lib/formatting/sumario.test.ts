@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildSumario } from './sumario'
+import { buildSumario, sumarioTabPos } from './sumario'
 import { getBlocks, blockText } from './blocks'
 import type { PretextualResult } from './preTextual'
 
@@ -82,12 +82,25 @@ describe('buildSumario', () => {
     expect(blocks[3]).toContain('w:left="1418"')   // H3 indent
   })
 
-  it('inserts dot-leader tab stop on each entry', () => {
+  it('inserts a plain right tab stop (no dot leader) on each entry', () => {
     const doc = DOC(sumarioLabel + para('old') + h1('1 INTRO'))
     const result = buildSumario(doc, pretextualWith(0, 1, 2))
     const blocks = getBlocks(result)
-    expect(blocks[1]).toContain('w:leader="dot"')
+    expect(blocks[1]).not.toContain('w:leader')
     expect(blocks[1]).toContain('w:val="right"')
+    // No sectPr in the fixture → fallback tab position, inside the ABNT text width.
+    expect(blocks[1]).toContain('w:pos="9061"')
+  })
+
+  it('derives the tab position from the document sectPr (inside the text width)', () => {
+    const body =
+      sumarioLabel + para('old') + h1('1 INTRO') +
+      '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>'
+    const doc = DOC(body)
+    // Letter page: 12240 − 1440 − 1440 = 9360 content width → tab at 9360 − 10.
+    expect(sumarioTabPos(doc)).toBe(9350)
+    const result = buildSumario(doc, pretextualWith(0, 1, 2))
+    expect(getBlocks(result)[1]).toContain('w:pos="9350"')
   })
 
   it('appends entries after a label-only sumário (no existing content blocks)', () => {

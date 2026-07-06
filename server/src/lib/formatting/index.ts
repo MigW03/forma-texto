@@ -37,5 +37,7 @@ export { applyPunctNorm, applyPunctNormWithStats, isNoopPunct } from './applyPun
 export type { PunctStats } from './applyPunctNorm'
 export { detectAndInsertPlaceholders, finalizeInputs } from './missingInputs'
 export type { MissingInputKind, PendingInput } from './missingInputs'
-export { buildSumario } from './sumario'
+export { buildSumario, sumarioTabPos } from './sumario'
+export { findSumarioEntries, assignEntryPages, applySumarioPageNumbers } from './sumarioPagination'
+export type { SumarioEntryRef, SumarioPaginationResult } from './sumarioPagination'
 export { demoteImplausibleHeadings } from './headingSanity'

@@ -38,6 +38,13 @@ export interface ReferenceChunk {
   totalChunks: number
   guideline: Guideline
   entries: ReferenceEntry[]
+  /**
+   * Set by the resilience wrapper on the LAST retry of a single stubborn entry. The real
+   * decider responds by dropping the reasoning effort to `minimal` — over-reasoning is the
+   * dominant failure mode (reasoning tokens but no JSON), so thinking less is the one knob
+   * that changes the outcome on an identical retry.
+   */
+  escalated?: boolean
 }
 
 /** The compact shape the AI sees for one entry: its index and full current text. */
@@ -194,14 +201,50 @@ export interface StepCResult {
   documentXml: string
   /** Every decision the model returned, for logging/inspection. */
   decisions: ReferenceDecision[]
+  /** Entry block indices that failed every retry and kept their Step B layout. */
+  failedIndices: number[]
+}
+
+/**
+ * Reformat one chunk, recovering from a model failure by splitting it into smaller
+ * calls (mirrors Step D/P). A multi-entry chunk that fails is split in half and each
+ * half retried as its own AI call; a single entry that still fails gets ONE escalated
+ * retry (reasoning effort `minimal`) and is then skipped — it keeps the deterministic
+ * Step B layout, and the rest of the references are unaffected.
+ */
+async function reformatResilient(
+  decider: ReferenceDecider,
+  chunk: ReferenceChunk,
+  failed: number[],
+): Promise<ReferenceDecision[]> {
+  try {
+    return await decider.reformat(chunk)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (chunk.entries.length <= 1) {
+      const i = chunk.entries[0]?.i ?? -1
+      if (!chunk.escalated) {
+        console.warn(`[stepC] chunk ${chunk.chunkIndex} entry ${i} failed, retrying with minimal reasoning: ${msg}`)
+        return reformatResilient(decider, { ...chunk, escalated: true }, failed)
+      }
+      console.warn(`[stepC] entry ${i} failed after escalation, keeping Step B layout: ${msg}`)
+      if (i >= 0) failed.push(i)
+      return []
+    }
+    const mid = Math.ceil(chunk.entries.length / 2)
+    console.warn(`[stepC] chunk ${chunk.chunkIndex} (${chunk.entries.length} entries) failed, splitting and retrying: ${msg}`)
+    const left = await reformatResilient(decider, { ...chunk, entries: chunk.entries.slice(0, mid) }, failed)
+    const right = await reformatResilient(decider, { ...chunk, entries: chunk.entries.slice(mid) }, failed)
+    return [...left, ...right]
+  }
 }
 
 /**
  * Run Step C end to end: chunk the references region → reformat each chunk via the
  * injected decider → apply all decisions. Returns the original XML unchanged (and
- * no decisions) when there is no references region to reformat. Throws only if the
- * decider throws — the orchestrator wraps this call so an AI failure keeps the
- * deterministic A/B result.
+ * no decisions) when there is no references region to reformat. Each chunk is
+ * isolated and split-retried, so a single failing chunk no longer discards the whole
+ * pass (see `reformatResilient`).
  */
 export async function stepC(
   documentXml: string,
@@ -211,11 +254,12 @@ export async function stepC(
   opts: ChunkOptions = {},
 ): Promise<StepCResult> {
   const chunks = chunkReferences(documentXml, guideline, region, opts)
-  if (!chunks.length) return { documentXml, decisions: [] }
+  if (!chunks.length) return { documentXml, decisions: [], failedIndices: [] }
 
   const all: ReferenceDecision[] = []
+  const failed: number[] = []
   for (const chunk of chunks) {
-    all.push(...(await decider.reformat(chunk)))
+    all.push(...(await reformatResilient(decider, chunk, failed)))
   }
-  return { documentXml: applyReferenceDecisions(documentXml, all), decisions: all }
+  return { documentXml: applyReferenceDecisions(documentXml, all), decisions: all, failedIndices: failed }
 }

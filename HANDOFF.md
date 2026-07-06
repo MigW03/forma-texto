@@ -32,13 +32,13 @@ Deeper docs (keep these as the real source of truth):
 
 ## Current status
 
-- **Branch:** `main` — all pré-textual work (detection, formatting, refinements) merged and shipped.
+- **Branch:** `fable-fixes` — cover foot-pinning, AI-pass resilience, sumário rendering + real page numbers (this session). `main` has all earlier pré-textual work merged.
 - **Build:** web production build **verified green (2026-06-17)** (`npm run build` in `web/`).
-- **Tests:** server **359** passing (3 AI evals skipped); web **38** passing.
+- **Tests:** server **379** passing (3 AI evals skipped); web **38** passing.
 - **Working:** auth, onboarding flow, checkout (Stripe), dashboard, project detail/viewer,
   the DOCX formatting pipeline Steps A/B/C/D (both AI passes: reference reformatting + headings),
-  pré-textual detection + formatting + sumário generation, and the server-side proofreading pass (Step P).
-- **Key features:** billing unit = lauda (~300 words); DOCX input only; full pré-textual element handling (capa/folha de rosto/resumo/etc detection, vertical centering, section page breaks); caption detection with gap tolerance + embedded splitting; sumário TOC generation from detected headings (page numbers pending); appendix exclusion from billing (but included in output); image sizing on overflow; AI-powered heading classification + reference reformatting + grammar proofreading.
+  pré-textual detection + formatting + sumário generation **with real page numbers**, and the server-side proofreading pass (Step P).
+- **Key features:** billing unit = lauda (~300 words); DOCX input only; full pré-textual element handling (capa/folha de rosto/resumo/etc detection, vertical center + city/year pinned to the page foot on both covers, section page breaks); caption detection with gap tolerance + embedded splitting; sumário TOC generation from detected headings with real page numbers (LibreOffice render pass, the pipeline's last step); appendix exclusion from billing (but included in output); image sizing on overflow; AI-powered heading classification + reference reformatting + grammar proofreading — all three AI passes with split-retry + escalated-retry resilience.
 
 ## Pipeline state (formatting)
 
@@ -179,10 +179,12 @@ Deeper docs (keep these as the real source of truth):
 
 - [x] ~~**Confirm Step C live**~~ — **confirmed 2026-06-17**. Bold renders correctly in the output `.docx`.
 - [x] ~~**Merge `feature/docx-page-detection`** into main~~ — **merged 2026-07-06**.
-- [ ] **Pré-textual refinements** — full vertical distribution (3-zone layout: institution top / title
-      middle / city+year bottom; requires field-level detect-and-confirm UI); fix capa↔folha split for
-      single-year-line documents (split by page boundaries, not year-line count).
-      See `business_decisions/pretextual-elements.html`.
+- [ ] **Pré-textual refinements** — full 3-zone layout (institution top / title middle) still needs the
+      field-level detect-and-confirm UI. **Partially landed (2026-07-06, `fable-fixes`):**
+      `applyCoverVerticalDistribution` now does center + city/year-foot on BOTH capa and folha de rosto
+      and splits a merged single-year-line section into pages by the author's own page breaks, so the
+      formatting symptom of the capa↔folha misclassification is handled; the *classification* split
+      itself remains future work. See `business_decisions/pretextual-elements.html`.
 - [x] ~~**Sumário regeneration**~~ — **Built (2026-07-02), bug-fixed same day.** `buildSumario` in
       `sumario.ts` scans Heading1–3 styled paragraphs in the body after Step D and rebuilds the sumário
       section content. The "SUMÁRIO" label is preserved; existing content blocks are replaced; extra
@@ -199,10 +201,11 @@ Deeper docs (keep these as the real source of truth):
       Step D: clears the Title/Heading style off any paragraph over `MAX_HEADING_CHARS` (200, now shared
       from `blocks.ts`) — Step D itself only ever *promotes* headings by design, never demotes, so nothing
       else could have corrected this. `buildSumario` keeps the same length guard as a second line of
-      defense. 18 unit tests across `sumario.test.ts` + new `headingSanity.test.ts`. **Still open:** real
-      page numbers (needs a TOC field / pagination render pass); REFERÊNCIAS and other
-      `ReferencesHeading`-styled sections aren't scanned into the sumário (only Heading1-3 are). No
-      browser-verified end-to-end yet (backend-only XML logic, not exercised by the Vite preview).
+      defense. 18 unit tests across `sumario.test.ts` + new `headingSanity.test.ts`. **Real page numbers
+      landed 2026-07-06 (`fable-fixes`)** — LibreOffice render pass as the pipeline's last step (see
+      session log). **Still open:** REFERÊNCIAS and other `ReferencesHeading`-styled sections aren't
+      scanned into the sumário (only Heading1-3 are). No browser-verified end-to-end yet (backend-only
+      XML logic, not exercised by the Vite preview).
 - [x] ~~Migrate proofreading off n8n into the server~~ — done (Step P). Live-confirm on a real
       multi-page `.docx` upload (the inline eval fixture passed; one real end-to-end run pending).
 - [x] ~~Bug — references-formatting option shown without the formatting service.~~ **Fixed
@@ -245,6 +248,62 @@ Deeper docs (keep these as the real source of truth):
 ---
 
 ## Session log
+
+### 2026-07-06 (later) — fable-fixes: cover city/year at page foot · AI-pass resilience · sumário rendering + real page numbers
+
+Branch `fable-fixes`. Three user-reported problems fixed, all server-side.
+
+**1. City/date not on the cover pages' last lines (PDF export).** `applyCoverVerticalDistribution`
+(`preTextual.ts`) rewritten from "center the capa as one block" to a two-zone layout on **both capa and
+folha de rosto**: each cover page becomes a borderless-table main row (`vAlign=center`) plus, when the
+page's trailing lines are a city/year block (bare year, optional title-case city line above it, or a
+combined "Recife – 2024" line), a foot row (`vAlign=bottom`) pinning them to the page bottom (NBR 14724).
+Sections are split into the author's own pages first (`pageBreakBefore` / `<w:br w:type="page"/>`), so the
+merged single-year-line shape (the user's real case: capa+folha collapsed into one `folhaDeRosto`
+section) gets a centered zone + pinned foot on every real page. Contiguous capa+folha merge into ONE
+`<w:tbl>` (adjacent tables merge unpredictably in Word); per-page row heights sum to the content height so
+the rows themselves enforce pagination; page-break artifacts are stripped inside cells. The city-line
+matcher is deliberately strict (≤30 chars, ≤4 words, not ALL-CAPS, never natureza/orientador) so a title
+is never dragged to the foot. **Verified empirically** through the real LibreOffice export path:
+synthetic thesis → PDF → rendered PNGs show capa AND folha centered with "Recife / 2024" on the last
+lines of each page, natureza offset intact. **Debugging gotcha worth keeping:** a scratch doc whose cell
+paragraphs referenced styles missing from `styles.xml` (`CoverCentered` etc. — the scratch harness had
+skipped Step A) made LibreOffice silently ignore ALL layout (table row heights AND `pageBreakBefore`),
+rendering everything on one page. Production always runs Step A so the pipeline is unaffected — but don't
+chase "table heights ignored" before checking style resolution.
+
+**2. AI-pass reliability ("a lot of blocks failing").** Step D and C lost their ENTIRE pass on one thrown
+chunk (only Step P had split-retry). Now all three passes (`stepD.ts`, `stepC.ts`, `stepProofread.ts`)
+isolate a failing chunk, split it in half, retry the halves (recursing down to single blocks), and a
+single stubborn block gets ONE **escalated** retry — the chunk carries `escalated: true` and the decider
+drops OpenRouter `reasoning.effort` to `minimal` (over-reasoning is the dominant failure mode; thinking
+less is the only knob that changes an identical retry) — then is skipped, keeping its deterministic
+result. Model-agnostic: the mechanism assumes nothing about which model runs the pass. Every pass now
+returns `failedIndices` and `processFormatting` warns `N block(s) failed every retry (kept deterministic
+…)` so partial degradation is visible in job logs instead of silent.
+
+**3. Sumário rendering + real page numbers.** (a) The entry tab stop was hardcoded at 9072 twips — 1 twip
+PAST the A4/ABNT text width (9071) — so docx-preview pushed the tab + dot leader off the right edge and
+wrapped entries onto a second line (the reported "lines breaking in two, dashes pushing out").
+`sumarioTabPos` (`sumario.ts`) now derives the position from the document's own final `sectPr` minus a
+10-twip inset (fallback 9061), and the dot leader is **removed** (plain right tab) per user request.
+(b) **Real page numbers, as the pipeline's LAST content transform:** `lib/paginateSumario.ts` zips the
+otherwise-final doc, renders it through the real LibreOffice converter (`docxToPdf`), extracts per-page
+text with `pdf-parse` (new dep; `lib/pdfPageTexts.ts`), and `formatting/sumarioPagination.ts` maps each
+entry to its physical page — skipping the sumário's own page(s) (label page + contiguous TOC-looking
+pages by entry-coverage ratio ≥ 0.35), searching monotonically in document order, advancing a repeated
+title past its previous occurrence, and leaving a not-found entry blank (never a guess). The number is
+stamped as a run after the entry's tab; idempotent (a re-run replaces, never stacks). Wired in
+`processFormatting` (complete path) AND `routes/processing.ts` finalize-inputs (`needs_input` docs are
+paginated only after the user's fills produce the final document, so placeholder-shifted pages are never
+baked in). Non-fatal: no LibreOffice → numbers stay blank, job completes. Physical (PDF-viewer) page
+numbers by design — the doc has no printed header numbers yet; the ABNT folha-counting convention should
+land together with that future header-numbering pass. Live e2e: 4/4 entries numbered correctly, verified
+against the rendered PDF pages.
+
+Server suite **379 green** (was 359; +20: sumarioPagination 11, resilience 6, cover/sumário test
+rewrites), `tsc --noEmit` clean, PLAN.md updated. New dep: `pdf-parse` (+ `@types/pdf-parse`).
+Not yet run on a real paid upload — the next live processing exercises all three fixes together.
 
 ### 2026-07-06 — Merge pré-textual work to main
 
