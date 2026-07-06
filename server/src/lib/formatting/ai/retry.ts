@@ -31,7 +31,10 @@ export function isConnectionResetError(err: unknown): boolean {
         m.includes('econnreset') ||
         m.includes('socket hang up') ||
         m.includes('fetch failed') ||
-        m.includes('failed to process successful response')
+        m.includes('failed to process successful response') ||
+        m.includes('resourceexhausted') ||
+        m.includes('request limit reached') ||
+        m.includes('worker local')
       ) {
         return true
       }

@@ -157,13 +157,18 @@ export function createHeadingDecider(cfg: AiConfig = loadAiConfig()): HeadingDec
           maxOutputTokens: cfg.maxTokens,
           maxRetries: cfg.maxRetries,
           experimental_repairText: repairDecisions,
-          // Pin OpenRouter to a single backend when configured, so routing doesn't
-          // swap hardware/quantization between runs (a source of run-to-run variance).
-          ...(cfg.provider.length > 0 && {
-            providerOptions: {
-              openrouter: { provider: { order: cfg.provider, allow_fallbacks: false } },
+          providerOptions: {
+            openrouter: {
+              // Cap reasoning so the model can't burn the whole output budget deliberating
+              // ambiguous front matter and emit no JSON (finishReason: 'length').
+              reasoning: { effort: cfg.headingReasoningEffort },
+              // Pin OpenRouter to a single backend when configured, so routing doesn't
+              // swap hardware/quantization between runs (a source of run-to-run variance).
+              ...(cfg.provider.length > 0 && {
+                provider: { order: cfg.provider, allow_fallbacks: false },
+              }),
             },
-          }),
+          },
         }),
         { retries: cfg.maxRetries },
       )

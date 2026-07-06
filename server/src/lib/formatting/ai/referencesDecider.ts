@@ -55,13 +55,18 @@ export function createReferenceDecider(cfg: AiConfig = loadAiConfig()): Referenc
           maxOutputTokens: cfg.maxTokens,
           maxRetries: cfg.maxRetries,
           experimental_repairText: repairDecisions,
-          // Pin OpenRouter to a single backend when configured, so routing doesn't
-          // swap hardware/quantization between runs (a source of run-to-run variance).
-          ...(cfg.provider.length > 0 && {
-            providerOptions: {
-              openrouter: { provider: { order: cfg.provider, allow_fallbacks: false } },
+          providerOptions: {
+            openrouter: {
+              // Cap reasoning so the model can't spend the whole output budget on
+              // chain-of-thought and emit no JSON (finishReason: 'length').
+              reasoning: { effort: cfg.referenceReasoningEffort },
+              // Pin OpenRouter to a single backend when configured, so routing doesn't
+              // swap hardware/quantization between runs (a source of run-to-run variance).
+              ...(cfg.provider.length > 0 && {
+                provider: { order: cfg.provider, allow_fallbacks: false },
+              }),
             },
-          }),
+          },
         }),
         { retries: cfg.maxRetries },
       )

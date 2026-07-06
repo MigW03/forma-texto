@@ -50,6 +50,14 @@ describe('chunkHeadings', () => {
     expect(chunks.every(c => c.totalChunks === chunks.length)).toBe(true)
   })
 
+  it('splits on the paragraph-count cap even when the char budget is generous', () => {
+    // 5 short candidates fit easily in 10000 chars, but maxBlocks:2 forces 3 chunks.
+    const chunks = chunkHeadings(DOC, 'abnt', { refStartIndex: REF_START, maxChars: 10000, maxBlocks: 2 })
+    expect(chunks.length).toBe(3) // [0,1] [2,3] [4]
+    expect(chunks.every(c => c.blocks.length <= 2)).toBe(true)
+    expect(chunks.flatMap(c => c.blocks.map(b => b.i))).toEqual([0, 1, 2, 3, 4])
+  })
+
   it('carries prior heading text as cross-chunk context', () => {
     const chunks = chunkHeadings(DOC, 'abnt', { refStartIndex: REF_START, maxChars: 60 })
     const later = chunks.find(c => c.chunkIndex > 0)
@@ -72,6 +80,18 @@ describe('chunkHeadings', () => {
       `</w:body></w:document>`
     const [chunk] = chunkHeadings(doc, 'abnt', { refStartIndex: 2, appendixStartIndex: 4 })
     expect(chunk.blocks.map(b => b.i)).toEqual([0, 1, 4, 5]) // refs [2,3] excluded, appendix kept
+  })
+
+  it('excludes the pré-textual region so a cover/abstract line is never a heading candidate', () => {
+    // 0 RESUMO (pré-textual) · 1 abstract text · 2 body heading · 3 body
+    const doc = `<w:document><w:body>` +
+      `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>RESUMO</w:t></w:r></w:p>` +
+      `<w:p><w:r><w:t>Texto do resumo.</w:t></w:r></w:p>` +
+      `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>1 INTRODUÇÃO</w:t></w:r></w:p>` +
+      `<w:p><w:r><w:t>corpo</w:t></w:r></w:p>` +
+      `</w:body></w:document>`
+    const [chunk] = chunkHeadings(doc, 'abnt', { bodyStartIndex: 2 })
+    expect(chunk.blocks.map(b => b.i)).toEqual([2, 3]) // pré-textual [0,1] excluded
   })
 
   it('excludes list items so numbered list entries are never offered as heading candidates', () => {

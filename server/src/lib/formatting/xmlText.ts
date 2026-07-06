@@ -26,3 +26,23 @@ export const stripInvalidXmlChars = (s: string): string => s.replace(INVALID_XML
 /** Strip XML-illegal chars, then escape `& < >`. Use for any model-authored text. */
 export const escapeXml = (s: string): string =>
   stripInvalidXmlChars(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+/**
+ * Decode the XML entities Word (or any valid XML writer) uses for markup-significant
+ * characters inside `<w:t>` text — a literal `&`, `<` or `>` can never appear raw in
+ * XML text content, so the source always carries `&amp;`/`&lt;`/`&gt;` etc. instead.
+ * Any consumer that wants the actual displayed text — heading/classification regexes,
+ * the sumário's rebuilt TOC entries (which re-escape via `escapeXml` before
+ * splicing) — must decode these back first, or a plain `&` round-trips as the
+ * literal string `&amp;` after re-escaping (double-encoded). `&amp;` is decoded LAST
+ * so an already-decoded `&` is never re-interpreted as the start of another entity.
+ */
+export const decodeXmlEntities = (s: string): string =>
+  s
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, d: string) => String.fromCodePoint(parseInt(d, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h: string) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&amp;/g, '&')

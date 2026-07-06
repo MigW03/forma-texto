@@ -313,6 +313,25 @@
     "selectedLaudas": "Selected laudas",
     "referencesAuto": "The references section is detected automatically by its heading."
   },
+  "pretextual": {
+    "groupLabel": "Pre text elements",
+    "hint": "Front-matter pages — not counted as laudas.",
+    "kind": {
+      "capa": "Cover",
+      "folhaDeRosto": "Title page",
+      "folhaDeAprovacao": "Approval page",
+      "dedicatoria": "Dedication",
+      "agradecimentos": "Acknowledgements",
+      "epigrafe": "Epigraph",
+      "errata": "Errata",
+      "resumo": "Abstract (PT)",
+      "abstract": "Abstract (EN)",
+      "listaIlustracoes": "List of figures",
+      "listaTabelas": "List of tables",
+      "listaAbreviaturas": "List of abbreviations",
+      "sumario": "Contents"
+    }
+  },
   "pageSelection": {
     "title": "Select pages to process",
     "subtitle": "Choose which pages you want us to work on. Your first page is free.",

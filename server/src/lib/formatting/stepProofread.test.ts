@@ -37,6 +37,20 @@ describe('chunkProofread', () => {
     expect(chunk.blocks[1].text).toBe('O aluno fizeram a prova com cuidado.') // full run-concatenated text
   })
 
+  it('excludes cover blocks via excludeIndices but still proofreads the rest of the front matter', () => {
+    // 0 capa line (exclude) · 1 RESUMO heading · 2 resumo prose · 3 body heading · 4 body
+    const doc = `<w:document><w:body>` +
+      para(run('UNIVERSIDADE FEDERAL DE MINAS GERAIS')) +
+      styled('ReferencesHeading', 'RESUMO') +
+      para(run('Este trabalho investiga a formatacao.')) +
+      para(run('1 INTRODUÇÃO'), `<w:pPr><w:pStyle w:val="Heading1"/></w:pPr>`) +
+      para(run('corpo do texto')) +
+      `</w:body></w:document>`
+    const chunks = chunkProofread(doc, 'abnt', { excludeIndices: new Set([0]) })
+    const all = chunks.flatMap(c => c.blocks.map(b => b.i))
+    expect(all).toEqual([1, 2, 3, 4]) // capa (0) excluded; resumo heading+prose (1,2) still proofread
+  })
+
   it('starts a new chunk at each Heading1 (chapter) boundary', () => {
     const doc =
       `<w:document><w:body>` +
@@ -54,6 +68,14 @@ describe('chunkProofread', () => {
   it('splits on the char budget without splitting a paragraph', () => {
     const chunks = chunkProofread(DOC, 'abnt', { refStartIndex: REF_START, maxChars: 20 })
     expect(chunks.length).toBeGreaterThan(1)
+    expect(chunks.flatMap(c => c.blocks.map(b => b.i))).toEqual([1, 2, 3])
+  })
+
+  it('splits on the paragraph-count cap even when the char budget is generous', () => {
+    // Candidates [1,2,3] fit in 10000 chars; maxBlocks:2 forces 2 chunks.
+    const chunks = chunkProofread(DOC, 'abnt', { refStartIndex: REF_START, maxChars: 10000, maxBlocks: 2 })
+    expect(chunks.length).toBe(2) // [1,2] [3]
+    expect(chunks.every(c => c.blocks.length <= 2)).toBe(true)
     expect(chunks.flatMap(c => c.blocks.map(b => b.i))).toEqual([1, 2, 3])
   })
 })
@@ -109,5 +131,37 @@ describe('stepProofread (end to end with fake decider)', () => {
   it('returns the document unchanged when nothing matches', async () => {
     const noop: ProofreadDecider = { async proofread() { return [] } }
     expect((await stepProofread(DOC, 'abnt', noop, { refStartIndex: REF_START })).documentXml).toBe(DOC)
+  })
+
+  it('splits a failing multi-block chunk and retries the halves', async () => {
+    // Force one big chunk (maxBlocks high). Decider throws on >1 block (simulates a length
+    // error), succeeds on a single block — so the chunk must subdivide down to singletons.
+    const calls: number[][] = []
+    const splitting: ProofreadDecider = {
+      async proofread(chunk) {
+        calls.push(chunk.blocks.map(b => b.i))
+        if (chunk.blocks.length > 1) throw new Error('No object generated: finishReason length')
+        return chunk.blocks.filter(b => b.text.includes('fizeram')).map(b => ({ i: b.i, text: b.text.replace('fizeram', 'fez') }))
+      },
+    }
+    const { documentXml: out, decisions } = await stepProofread(DOC, 'abnt', splitting, { refStartIndex: REF_START, maxChars: 100000, maxBlocks: 100 })
+    // The correction still lands despite the initial chunk failing.
+    expect(decisions.map(d => d.i)).toEqual([2])
+    expect(blockText(getBlocks(out)[2])).toBe('O aluno fez a prova com cuidado.')
+    // It retried with progressively smaller block sets (the first call had all 3 candidates).
+    expect(calls[0]).toEqual([1, 2, 3])
+    expect(calls.some(c => c.length === 1)).toBe(true)
+  })
+
+  it('skips a single block that keeps failing without sinking the rest', async () => {
+    // Block 2 always fails even alone; blocks 1 and 3 succeed. The pass must still finish.
+    const flaky: ProofreadDecider = {
+      async proofread(chunk) {
+        if (chunk.blocks.some(b => b.i === 2)) throw new Error('finishReason length')
+        return []
+      },
+    }
+    const { documentXml: out } = await stepProofread(DOC, 'abnt', flaky, { refStartIndex: REF_START, maxChars: 100000, maxBlocks: 100 })
+    expect(out).toBe(DOC) // no decisions applied, but no throw — pass completed
   })
 })

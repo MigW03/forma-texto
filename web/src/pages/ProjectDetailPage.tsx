@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, FileText, Download, Loader2, Upload, Link2 } from 'lucide-react'
@@ -10,10 +10,11 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth-context'
 import { calcPrice, formatBRL } from '../lib/pricing'
 import type { ServiceKey } from '../lib/pricing'
+import { decodeFilename } from '../lib/filename'
 import { formatPageRanges } from '../lib/format'
 import { normalizeStatus, STATUS_BADGE_VARIANT } from '../lib/status'
 import { sliceDocxByLaudas, getDocxBlocks } from '../lib/docx-slice'
-import { computeLaudas, laudaBlockSet } from '../lib/laudas'
+import { analyzeDocument, uploadKeepSet } from '../lib/laudas'
 import type { GuidelineId } from '../lib/guidelines'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -224,7 +225,7 @@ function PreviewError({ url, fileName }: { url: string; fileName: string }) {
       </div>
       <p className="text-sm text-muted max-w-xs">{t('project.previewError')}</p>
       <Button asChild variant="outline">
-        <a href={url} download={fileName}>
+        <a href={url} target="_blank" rel="noopener noreferrer">
           <Download size={14} />
           {t('project.downloadFile')}
         </a>
@@ -399,23 +400,57 @@ const DOCX_PAGE_STYLES = `
   }
 `
 
-function DocxViewer({
-  url,
-  fileName,
-  zoom,
-  pageBreakLabel,
-}: {
+const PLACEHOLDER_TEXTS = new Set([
+  '[inserir legenda da figura]',
+  '[inserir fonte]',
+  '[inserir legenda da tabela]',
+])
+
+export interface DocxViewerHandle {
+  scrollToPlaceholder(allPending: PendingInputFE[], target: PendingInputFE): void
+}
+
+const DocxViewer = forwardRef<DocxViewerHandle, {
   url: string
   fileName: string
   zoom: number
   pageBreakLabel: string
-}) {
+}>(function DocxViewer({
+  url,
+  fileName,
+  zoom,
+  pageBreakLabel,
+}, ref) {
   const { t } = useTranslation()
   const outerRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const styleRef = useRef<HTMLDivElement>(null)
   const [loadError, setLoadError] = useState(false)
   const [loading, setLoading] = useState(true)
+
+  useImperativeHandle(ref, () => ({
+    scrollToPlaceholder(allPending: PendingInputFE[], target: PendingInputFE) {
+      const body = bodyRef.current
+      if (!body) return
+      const sorted = [...allPending].sort((a, b) => a.insertedAt - b.insertedAt)
+      const targetIdx = sorted.findIndex(p => p.id === target.id)
+      if (targetIdx < 0) return
+      const elements: Element[] = []
+      const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT)
+      let node: Node | null
+      while ((node = walker.nextNode())) {
+        const text = node.textContent?.trim() ?? ''
+        if (PLACEHOLDER_TEXTS.has(text)) {
+          const el = node.parentElement
+          if (el) {
+            const color = window.getComputedStyle(el).color
+            if (color === 'rgb(255, 0, 0)') elements.push(el)
+          }
+        }
+      }
+      elements[targetIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    },
+  }), [])
 
   useEffect(() => {
     const body = bodyRef.current
@@ -489,7 +524,7 @@ function DocxViewer({
       </div>
     </div>
   )
-}
+})
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
@@ -532,6 +567,7 @@ export default function ProjectDetailPage() {
   const [recovering, setRecovering] = useState(false)
   const [recoverError, setRecoverError] = useState<string | null>(null)
   const viewerWrapRef = useRef<HTMLDivElement>(null)
+  const docxViewerRef = useRef<DocxViewerHandle>(null)
   const signedProcPathRef = useRef<string | null>(null)
   const finalizingRef = useRef(false)
 
@@ -703,11 +739,12 @@ export default function ProjectDetailPage() {
       if (selectedLaudas.length > 0) {
         try {
           const blocks = await getDocxBlocks(file)
-          const laudas = computeLaudas(blocks)
+          const { laudas } = analyzeDocument(blocks)
           // Only slice when the selection is a real subset — if it already covers every
-          // lauda, keep the file whole (avoids a pointless re-zip).
+          // lauda, keep the file whole (avoids a pointless re-zip). Pré-textuais are
+          // always retained by uploadKeepSet regardless of the lauda selection.
           if (selectedLaudas.length < laudas.length) {
-            fileToUpload = await sliceDocxByLaudas(file, laudaBlockSet(laudas, selectedLaudas))
+            fileToUpload = await sliceDocxByLaudas(file, uploadKeepSet(blocks, selectedLaudas))
           }
         } catch (err) {
           console.error('Recovery slicing failed, uploading full file:', err)
@@ -832,6 +869,7 @@ export default function ProjectDetailPage() {
           />
         ) : previewUrl && isDocx ? (
           <DocxViewer
+            ref={docxViewerRef}
             url={previewUrl}
             fileName={project.original_file_name}
             zoom={zoom}
@@ -941,6 +979,7 @@ export default function ProjectDetailPage() {
                       placeholder={t(placeholderKey)}
                       value={fills.get(p.id) ?? ''}
                       onChange={e => setFills(prev => new Map([...prev, [p.id, e.target.value]]))}
+                      onFocus={() => docxViewerRef.current?.scrollToPlaceholder(pendingInputs, p)}
                     />
                   )}
                 </div>
@@ -969,7 +1008,7 @@ export default function ProjectDetailPage() {
             )}
             {canDownloadProcessed && processedPdfUrl && (
               <Button asChild className="w-full">
-                <a href={processedPdfUrl} download={pdfDownloadName}>
+                <a href={processedPdfUrl} target="_blank" rel="noopener noreferrer">
                   <Download size={14} />
                   {t('project.downloadFinalPdf')}
                 </a>
@@ -1047,7 +1086,7 @@ function RecoverUpload({
         return
       }
       const blob = await res.blob()
-      const filename = res.headers.get('X-Filename') ?? 'document.docx'
+      const filename = decodeFilename(res.headers.get('X-Filename'))
       onFile(new File([blob], filename, { type: blob.type }))
       // Leave `fetching` true — the parent's busy state + reload take over from here.
     } catch {

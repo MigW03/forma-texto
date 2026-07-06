@@ -32,6 +32,15 @@ describe('blockText', () => {
     expect(blockText(getBlocks(DOC)[1])).toBe('1 INTRODUÇÃO')
     expect(blockText(getBlocks(DOC)[4])).toBe('') // empty paragraph
   })
+
+  it('decodes XML entities so a literal "&" round-trips correctly', () => {
+    // Word (and any valid XML writer) always escapes "&" as "&amp;" in <w:t> text —
+    // a paragraph titled "CESAR & LOIS" is stored as "CESAR &amp; LOIS" in the XML.
+    // Without decoding, downstream re-escaping (e.g. sumário TOC entries) doubles it
+    // to a literal "&amp;" in the output.
+    const doc = `<w:document><w:body><w:p><w:r><w:t>CESAR &amp; LOIS</w:t></w:r></w:p></w:body></w:document>`
+    expect(blockText(getBlocks(doc)[0])).toBe('CESAR & LOIS')
+  })
 })
 
 describe('blockDescriptor', () => {

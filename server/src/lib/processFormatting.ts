@@ -17,6 +17,13 @@ import {
   locateReferences,
   autoLocateReferences,
   locateAppendixStart,
+  detectPretextual,
+  applyPretextualHeadings,
+  applyCoverAlignment,
+  applyFolhaRostoAlignment,
+  applyPretextualPageBreaks,
+  applyCoverVerticalDistribution,
+  coverBlockIndices,
   resolveGuideline,
   getGuideline,
   stepC,
@@ -32,6 +39,8 @@ import {
   getBlocks,
   blockText,
   detectAndInsertPlaceholders,
+  buildSumario,
+  demoteImplausibleHeadings,
   type HeadingDecision,
   type ReferenceDecision,
   type ProofreadDecision,
@@ -247,6 +256,31 @@ export async function processFormatting(projectId: string): Promise<void> {
       workingDocXml = formatReferences(a.documentXml, guideline, refInput) // Step B: references
       region = locateReferences(workingDocXml, refInput)
 
+      // Correct paragraphs the author left in a Title/Heading style by mistake (typed a
+      // subheading, then kept typing body prose in the same style without switching back
+      // to Normal). Deterministic, always runs — the AI heading pass (Step D) only ever
+      // promotes, never demotes, by design, so this is the only place that can fix it.
+      // Runs before pré-textual detection/Step D so neither sees the bogus heading.
+      const beforeDemote = workingDocXml
+      workingDocXml = demoteImplausibleHeadings(workingDocXml)
+      if (workingDocXml !== beforeDemote) {
+        console.log(`[processFormatting] ${projectId} demoted implausibly long heading-styled paragraph(s) back to body text`)
+      }
+
+      // Pré-textual front matter (capa, folha de rosto, resumo, abstract, sumário, listas,
+      // agradecimentos, …). Each labeled heading gets the ABNT unnumbered-title style
+      // (centered, bold, UPPERCASE) deterministically; `bodyStart` then excludes the whole
+      // region from Step D so a cover/abstract line is never promoted to a numbered heading.
+      // The capa↔folha split is heuristic — correct cover layout/generation is future work.
+      const pretextual = detectPretextual(workingDocXml)
+      if (pretextual.bodyStart > 0) {
+        workingDocXml = applyPretextualHeadings(workingDocXml, pretextual.sections)
+        workingDocXml = applyCoverAlignment(workingDocXml, pretextual.sections)
+        workingDocXml = applyFolhaRostoAlignment(workingDocXml, pretextual.sections)
+        workingDocXml = applyPretextualPageBreaks(workingDocXml, pretextual.sections)
+        console.log(`[processFormatting] ${projectId} pré-textuais: [${pretextual.sections.map(s => s.kind).join(', ')}] — body starts at block ${pretextual.bodyStart}`)
+      }
+
       // Steps C & D (AI), behind the formatting flag, each wrapped on its own so any AI
       // failure keeps the deterministic A/B result — a paid job is never blocked by the
       // model. They share the references region: C reformats its entries, D uses its
@@ -290,7 +324,9 @@ export async function processFormatting(projectId: string): Promise<void> {
             // that follows references is re-included so its headings get classified.
             refStartIndex: region?.headingIdx ?? -1,
             appendixStartIndex: appendixStart ?? -1,
+            bodyStartIndex: pretextual.bodyStart,
             maxChars: aiCfg.maxCharsPerChunk,
+            maxBlocks: aiCfg.maxBlocksPerChunk,
           })
           workingDocXml = result.documentXml
           console.log(`[processFormatting] ${projectId} Step D: ${result.decisions.length} paragraph(s) classified (${since(dStart)})`)
@@ -300,16 +336,28 @@ export async function processFormatting(projectId: string): Promise<void> {
         }
       }
 
+      // Sumário: rebuild the table of contents from Heading1–3 paragraphs in the body.
+      // Runs after Step D so it sees all classified headings. Page numbers are left blank
+      // (set to a tab with dot leader but no number) — a future render pass will fill them.
+      // Block count may change, so appendixStart is recomputed before the caption passes.
+      workingDocXml = buildSumario(workingDocXml, pretextual)
+      const finalAppendixStart = locateAppendixStart(workingDocXml)
+      if (finalAppendixStart !== appendixStart) {
+        console.log(`[processFormatting] ${projectId} appendixStart shifted ${appendixStart} → ${finalAppendixStart} after sumário rebuild`)
+      }
+
       // Final deterministic touches, after the AI passes so they see the final heading
       // styles: (1) constrain inline image size + center; (2) image captions;
       // (3) cancel the page break before the FIRST H1. Image sizing runs over the WHOLE
       // document — an oversized image overflows the page even in the appendix/annex, so it
       // must be capped there too (it only shrinks overflow, never forces a size). Caption /
       // source insertion still stops at the appendix (we don't caption reproduced documents).
-      const captionFreezeAt = appendixStart ?? Infinity
+      const captionFreezeAt = finalAppendixStart ?? Infinity
       workingDocXml = formatImages(workingDocXml, guideline)
       workingDocXml = formatCaptions(workingDocXml, captionFreezeAt)
-      workingDocXml = suppressFirstHeadingPageBreak(workingDocXml)
+      // Only suppress the first H1 page break when the doc starts with H1 directly
+      // (no front matter). If pré-textuais exist, INTRODUÇÃO needs its own page.
+      if (pretextual.bodyStart === 0) workingDocXml = suppressFirstHeadingPageBreak(workingDocXml)
       // Drop the author's manual page break before chapter titles — the Heading1 style
       // already breaks, and the double break renders a blank page in the PDF (LibreOffice).
       workingDocXml = removeRedundantChapterPageBreaks(workingDocXml)
@@ -348,12 +396,19 @@ export async function processFormatting(projectId: string): Promise<void> {
       try {
         const refHeading = (region ?? autoLocateReferences(workingDocXml))?.headingIdx
         const refStart = refHeading ?? -1 // appendix is proofread now; only references are excluded
+        // Never proofread the cover/identity pages (capa, folha de rosto, folha de aprovação) —
+        // correcting names/institution/title is wrong. Detected fresh so it also applies in
+        // proofreading-only mode (where the formatting passes, and their detection, are skipped).
+        // The rest of the front matter (resumo, abstract, …) is proofread normally.
+        const coverExclude = coverBlockIndices(detectPretextual(workingDocXml).sections)
         const pStart = Date.now()
         const preDocXml = workingDocXml
         console.log(`[processFormatting] ${projectId} Step P: calling model (${aiCfg.proofreadModel})…`)
         const result = await stepProofread(workingDocXml, guideline, createProofreadDecider(aiCfg), {
           refStartIndex: refStart,
+          excludeIndices: coverExclude,
           maxChars: aiCfg.maxCharsPerChunk,
+          maxBlocks: aiCfg.maxBlocksPerChunk,
         })
         workingDocXml = result.documentXml
         console.log(`[processFormatting] ${projectId} Step P: ${result.decisions.length} paragraph(s) corrected (${since(pStart)})`)
@@ -361,6 +416,18 @@ export async function processFormatting(projectId: string): Promise<void> {
       } catch (err) {
         console.error(`[processFormatting] Step P failed for ${projectId} (non-fatal, keeping prior result):`, err)
       }
+    }
+
+    // Vertically center the capa within the page (institution/title/author/city/year as
+    // one block, rather than clumped at the top). Collapses the capa's paragraphs into a
+    // single table block (see `applyCoverVerticalDistribution`'s doc comment for why —
+    // table-cell vAlign is the one OOXML vertical-alignment mechanism LibreOffice actually
+    // honors), so it MUST run after every block-index-dependent pass above (Step C/D/P,
+    // sumário, captions/placeholders) — re-detects pré-textuais fresh rather than reusing
+    // the `pretextual` computed earlier, which is now stale (Step D/sumário can shift
+    // indices). Formatting only; a proofreading-only doc never touches the cover.
+    if (doFormatting) {
+      workingDocXml = applyCoverVerticalDistribution(workingDocXml, detectPretextual(workingDocXml).sections)
     }
 
     // Stamp the resolved family on every run as the LAST document transform (after Steps

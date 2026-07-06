@@ -1,4 +1,5 @@
 import { getDocxBlocks, type DocxBlock } from './docx-slice'
+import { detectPretextual } from './pretextual'
 
 /**
  * A "lauda" is the Brazilian standard text unit (~300 words). We bill and slice
@@ -36,13 +37,22 @@ export function countWords(text: string): number {
  * The whole document is counted, including any appendix/annex (Apêndice / Anexo):
  * those post-textual sections are billed and formatted like the rest. (The server
  * still skips only image caption/source insertion inside them.)
+ *
+ * `bodyStart` excludes the pré-textual region: blocks `[0, bodyStart)` (capa, folha
+ * de rosto, resumo, sumário, …) are not laudas — they are classified separately and
+ * not billed. Block indices in the returned laudas stay ABSOLUTE, so divider/dimming
+ * code maps them to the right rendered blocks unchanged.
  */
-export function computeLaudas(blocks: Pick<DocxBlock, 'text'>[], wordsPerLauda = WORDS_PER_LAUDA): Lauda[] {
+export function computeLaudas(
+  blocks: Pick<DocxBlock, 'text'>[],
+  wordsPerLauda = WORDS_PER_LAUDA,
+  bodyStart = 0,
+): Lauda[] {
   const laudas: Lauda[] = []
-  let start = 0
+  let start = bodyStart
   let words = 0
   let n = 1
-  for (let i = 0; i < blocks.length; i++) {
+  for (let i = bodyStart; i < blocks.length; i++) {
     words += countWords(blocks[i].text)
     if (words >= wordsPerLauda) {
       laudas.push({ index: n++, blockStart: start, blockEnd: i, wordCount: words })
@@ -61,9 +71,38 @@ export function computeLaudas(blocks: Pick<DocxBlock, 'text'>[], wordsPerLauda =
   return laudas
 }
 
+/**
+ * Detect the pré-textual region and compute body laudas in one pass — the single
+ * source of truth shared by page selection, checkout slicing, and recovery re-slicing
+ * so lauda numbering is identical everywhere. `bodyStart` is the first body block;
+ * `laudas` exclude the pré-textual region `[0, bodyStart)`.
+ */
+export function analyzeDocument(blocks: Pick<DocxBlock, 'text'>[]): {
+  laudas: Lauda[]
+  bodyStart: number
+} {
+  const { bodyStart } = detectPretextual(blocks)
+  return { laudas: computeLaudas(blocks, WORDS_PER_LAUDA, bodyStart), bodyStart }
+}
+
+/**
+ * Block indices to keep when slicing to `selectedLaudas`. The pré-textual region is
+ * ALWAYS kept (capa, folha de rosto, resumo, sumário, … must travel with the document
+ * even though they are not billable laudas), plus every block of the selected laudas.
+ */
+export function uploadKeepSet(
+  blocks: Pick<DocxBlock, 'text'>[],
+  selectedLaudas: Iterable<number>,
+): Set<number> {
+  const { laudas, bodyStart } = analyzeDocument(blocks)
+  const keep = laudaBlockSet(laudas, selectedLaudas)
+  for (let i = 0; i < bodyStart; i++) keep.add(i)
+  return keep
+}
+
 /** Parse a DOCX and compute its laudas in one call. */
 export async function getLaudas(file: File): Promise<Lauda[]> {
-  return computeLaudas(await getDocxBlocks(file))
+  return analyzeDocument(await getDocxBlocks(file)).laudas
 }
 
 /**

@@ -5,6 +5,7 @@ import { ArrowLeft, Check, Upload, Link as LinkIcon, ChevronDown, FileText, X, C
 import { ROUTES } from '../lib/routes'
 import { PRICING, formatBRL, type ServiceKey } from '../lib/pricing'
 import { getLaudas } from '../lib/laudas'
+import { decodeFilename } from '../lib/filename'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useGuidelines, localizedDescription } from '../lib/guidelines'
@@ -566,7 +567,7 @@ export default function GetStartedPage() {
                   return
                 }
                 const blob = await res.blob()
-                const filename = res.headers.get('X-Filename') ?? 'document.docx'
+                const filename = decodeFilename(res.headers.get('X-Filename'))
                 resolvedFile = new File([blob], filename, { type: blob.type })
                 // Scan the fetched .docx into laudas (word-based — page metadata is irrelevant).
                 resolvedPageCount = await getLaudaCount(resolvedFile)

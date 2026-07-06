@@ -10,6 +10,10 @@ const DOC = (body: string) =>
 const para = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`
 const captionPara = (text: string) => `<w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`
 const imagePara = '<w:p><w:r><w:drawing><wp:inline><a:blip r:embed="rId7"/></wp:inline></w:drawing></w:r></w:p>'
+// Some exported docs (e.g. Google Docs) put the figure's caption/source text as a
+// second run in the SAME paragraph as the drawing, instead of its own paragraph.
+const imageParaWithText = (text: string) =>
+  `<w:p><w:r><w:drawing><wp:inline><a:blip r:embed="rId7"/></wp:inline></w:drawing></w:r><w:r><w:t>${text}</w:t></w:r></w:p>`
 const tablePara = '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
 
 const styleOf = (b: string) => b.match(/<w:pStyle\b[^>]*w:val="([^"]*)"/)?.[1] ?? null
@@ -22,6 +26,15 @@ describe('detectAndInsertPlaceholders', () => {
     const { xml, pending } = detectAndInsertPlaceholders(doc)
     expect(xml).toBe(doc)
     expect(pending).toHaveLength(0)
+  })
+
+  it('does NOT insert a caption placeholder when a "Figura N" line is a blank line away', () => {
+    // The bug from a real doc: the author's "Figura 3 — …" caption sits one blank line
+    // above the image, so the old adjacency-only check inserted a spurious placeholder.
+    const doc = DOC(para('Figura 3 — Banksy') + para('') + imagePara + para('') + para('Fonte: CNN.'))
+    const { xml, pending } = detectAndInsertPlaceholders(doc)
+    expect(xml).toBe(doc)            // nothing inserted
+    expect(pending).toHaveLength(0)  // caption AND source both recognised across the blanks
   })
 
   it('inserts caption and source placeholders around an image', () => {
@@ -78,6 +91,74 @@ describe('detectAndInsertPlaceholders', () => {
     expect(blocks).toHaveLength(4) // intro, [caption placeholder], image, fonte
     expect(pending).toHaveLength(1)
     expect(pending[0].kind).toBe('figure_caption')
+  })
+
+  it('does not insert placeholders when caption/source use a period separator ("Figura 12. ...")', () => {
+    const doc = DOC(para('Figura 12. Respostas dos alunos.') + imagePara + para('Fonte: Imagem da autora.'))
+    const { xml, pending } = detectAndInsertPlaceholders(doc)
+    const blocks = getBlocks(xml)
+    expect(blocks).toHaveLength(3) // label, image, fonte — nothing inserted
+    expect(pending).toHaveLength(0)
+  })
+
+  it('does not insert a source placeholder when the next image already starts its own "Figura N" label', () => {
+    // A run of uncaptioned images followed directly by a labelled figure — the
+    // unlabelled image's "missing source" check must not wedge a placeholder right
+    // before the next figure's own caption.
+    const doc = DOC(imagePara + imagePara + imagePara + para('Figura 22 — Já tem legenda') + imagePara + para('Fonte: Imagem da autora.'))
+    const { xml, pending } = detectAndInsertPlaceholders(doc)
+    const blocks = getBlocks(xml)
+    // [caption placeholder for fig 1], img, img, img, label, img, fonte — no other placeholder
+    expect(blocks).toHaveLength(7)
+    expect(pending).toHaveLength(1)
+    expect(pending[0].kind).toBe('figure_caption')
+  })
+
+  it('does not insert a source placeholder when "Fonte:" is a run in the SAME paragraph as the drawing', () => {
+    const doc = DOC(para('Figura 22: Trabalho de um dos grupos') + imageParaWithText('Fonte: Imagem da autora') + para('3 CONSIDERAÇÕES FINAIS'))
+    const { xml, pending } = detectAndInsertPlaceholders(doc)
+    const blocks = getBlocks(xml)
+    expect(blocks).toHaveLength(3) // label, image+fonte (one paragraph), heading — nothing inserted
+    expect(pending).toHaveLength(0)
+  })
+
+  it('does not insert a caption placeholder when "Figura N" is a run in the SAME paragraph as the drawing', () => {
+    const doc = DOC(imageParaWithText('Figura 1 — legenda') + para('Fonte: autor (2024).'))
+    const { xml, pending } = detectAndInsertPlaceholders(doc)
+    const blocks = getBlocks(xml)
+    expect(blocks).toHaveLength(2)
+    expect(pending).toHaveLength(0)
+  })
+
+  it('replaces an empty "Fonte: " line with a placeholder for a figure (block count unchanged)', () => {
+    // The original file has "Fonte: " with nothing after the colon.
+    // Instead of inserting a new block, the empty line itself becomes the placeholder.
+    const doc = DOC(para('Figura 1 — mapa') + imagePara + para('Fonte: ') + para('body'))
+    const { xml, pending } = detectAndInsertPlaceholders(doc)
+    const blocks = getBlocks(xml)
+    // label, image, [placeholder replacing empty fonte], body — same count as input
+    expect(blocks).toHaveLength(4)
+    expect(isPlaceholder(blocks[2])).toBe(true)
+    expect(pending).toHaveLength(1)
+    expect(pending[0].kind).toBe('figure_source')
+    expect(pending[0].insertedAt).toBe(2)
+  })
+
+  it('replaces a bare "Fonte:" line (no trailing content) with a placeholder for a table', () => {
+    const doc = DOC(para('Tabela 1 — dados') + tablePara + para('Fonte:') + para('body'))
+    const { xml, pending } = detectAndInsertPlaceholders(doc)
+    const blocks = getBlocks(xml)
+    expect(blocks).toHaveLength(4)
+    expect(isPlaceholder(blocks[2])).toBe(true)
+    expect(pending).toHaveLength(1)
+    expect(pending[0].kind).toBe('table_source')
+  })
+
+  it('does NOT replace a fonte line that has actual content', () => {
+    const doc = DOC(para('Figura 1 — mapa') + imagePara + para('Fonte: Autor (2024).'))
+    const { xml, pending } = detectAndInsertPlaceholders(doc)
+    expect(xml).toBe(doc)
+    expect(pending).toHaveLength(0)
   })
 
   it('skips placeholders between stacked images', () => {

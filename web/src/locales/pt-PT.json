@@ -313,6 +313,25 @@
     "selectedLaudas": "Laudas selecionadas",
     "referencesAuto": "A secção de referências é detetada automaticamente pelo título."
   },
+  "pretextual": {
+    "groupLabel": "Elementos pré-textuais",
+    "hint": "Páginas pré-textuais — não contam como laudas.",
+    "kind": {
+      "capa": "Capa",
+      "folhaDeRosto": "Folha de rosto",
+      "folhaDeAprovacao": "Folha de aprovação",
+      "dedicatoria": "Dedicatória",
+      "agradecimentos": "Agradecimentos",
+      "epigrafe": "Epígrafe",
+      "errata": "Errata",
+      "resumo": "Resumo",
+      "abstract": "Abstract",
+      "listaIlustracoes": "Lista de ilustrações",
+      "listaTabelas": "Lista de tabelas",
+      "listaAbreviaturas": "Lista de abreviaturas",
+      "sumario": "Sumário"
+    }
+  },
   "pageSelection": {
     "title": "Selecione as páginas a processar",
     "subtitle": "Escolha quais páginas quer que trabalhemos. A sua primeira página é grátis.",

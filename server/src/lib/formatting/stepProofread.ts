@@ -55,11 +55,26 @@ export interface ProofreadDecider {
 export interface ChunkOptions {
   /** Index of the references heading; candidates at/after it are excluded. -1 = no references. */
   refStartIndex?: number
+  /**
+   * Block indices to never proofread — the pré-textual cover/identity pages (capa, folha
+   * de rosto, folha de aprovação). Their text is institution names, author/examiner names,
+   * the title, and dates: correcting any of it is wrong. The rest of the front matter
+   * (resumo, abstract, agradecimentos, …) is NOT excluded and is proofread normally.
+   */
+  excludeIndices?: ReadonlySet<number>
   /** Compact-text budget per chunk. Keep well under the model's context window. */
   maxChars?: number
+  /**
+   * Max paragraphs per chunk, independent of the char budget. Many *short* lines (front
+   * matter / TOC) all fit the char budget, so a char-only split packs dozens into one call —
+   * a reasoning model then over-deliberates the whole batch and blows its token budget without
+   * emitting JSON. Capping the count keeps each call small (cf. Step C `maxEntries`).
+   */
+  maxBlocks?: number
 }
 
 const DEFAULT_MAX_CHARS = 8000
+const DEFAULT_MAX_BLOCKS = 12
 
 const TITLE_STYLE = 'Title'
 
@@ -77,7 +92,7 @@ const looksLikeHeading = (style: string, bold: boolean, len: number) =>
 export function chunkProofread(
   documentXml: string,
   guideline: Guideline,
-  { refStartIndex = -1, maxChars = DEFAULT_MAX_CHARS }: ChunkOptions = {},
+  { refStartIndex = -1, excludeIndices, maxChars = DEFAULT_MAX_CHARS, maxBlocks = DEFAULT_MAX_BLOCKS }: ChunkOptions = {},
 ): ProofreadChunk[] {
   const blocks = getBlocks(documentXml)
   const candidates = blocks
@@ -85,6 +100,7 @@ export function chunkProofread(
     .filter(({ b, i }) => {
       if (!isParagraph(b) || blockText(b).length === 0) return false
       if (refStartIndex >= 0 && i >= refStartIndex) return false // references — never proofread
+      if (excludeIndices?.has(i)) return false // cover/identity pages — names must not be "corrected"
       if (!canSpliceParagraph(b)) return false // hyperlink/field/footnote — too risky
       const style = blockDescriptor(b, i).style
       if (style === TITLE_STYLE || style === CAPTION_STYLE) return false // title + captions excluded
@@ -104,8 +120,8 @@ export function chunkProofread(
     const text = paragraphText(b)
     const isChapterStart = d.style === 'Heading1'
     const cost = text.length + 40
-    // New chunk at a chapter boundary or when the budget would overflow (never mid-paragraph).
-    if (cur.length && (isChapterStart || size + cost > maxChars)) flush()
+    // New chunk at a chapter boundary, the char budget, or the paragraph-count cap.
+    if (cur.length && (isChapterStart || size + cost > maxChars || cur.length >= maxBlocks)) flush()
     cur.push({ i, text })
     size += cost
     if (looksLikeHeading(d.style, d.bold, d.len)) seenHeadings.push(text.slice(0, 120))
@@ -147,10 +163,37 @@ export interface StepProofreadResult {
 }
 
 /**
+ * Proofread one chunk, recovering from a model failure by splitting it into smaller
+ * calls. A reasoning model can still blow its token budget on a chunk (emitting reasoning
+ * but no JSON → `finishReason: length` → the decider throws), and on a long document one
+ * such chunk would otherwise sink the whole pass. Instead we **isolate** the failure and,
+ * if the chunk has more than one paragraph, **split it in half and retry each half** as its
+ * own AI call — so an oversized/over-reasoned chunk becomes several tractable ones. A single
+ * paragraph that still fails is skipped (it keeps its deterministic text); the rest of the
+ * document is unaffected.
+ */
+async function proofreadResilient(decider: ProofreadDecider, chunk: ProofreadChunk): Promise<ProofreadDecision[]> {
+  try {
+    return await decider.proofread(chunk)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (chunk.blocks.length <= 1) {
+      console.warn(`[stepProofread] chunk ${chunk.chunkIndex} block ${chunk.blocks[0]?.i ?? '?'} failed, skipping: ${msg}`)
+      return []
+    }
+    const mid = Math.ceil(chunk.blocks.length / 2)
+    console.warn(`[stepProofread] chunk ${chunk.chunkIndex} (${chunk.blocks.length} blocks) failed, splitting and retrying: ${msg}`)
+    const left = await proofreadResilient(decider, { ...chunk, blocks: chunk.blocks.slice(0, mid) })
+    const right = await proofreadResilient(decider, { ...chunk, blocks: chunk.blocks.slice(mid) })
+    return [...left, ...right]
+  }
+}
+
+/**
  * Run Step P end to end: chunk → proofread each chunk via the injected decider →
  * apply all decisions. Returns the original XML unchanged (and no decisions) when
- * there is nothing to proofread. Throws only if the decider throws — the orchestrator
- * wraps this call so an AI failure keeps the prior (deterministic) result.
+ * there is nothing to proofread. Each chunk is isolated and split-retried, so a single
+ * failing chunk no longer discards the whole pass (see `proofreadResilient`).
  */
 export async function stepProofread(
   documentXml: string,
@@ -163,7 +206,7 @@ export async function stepProofread(
 
   const all: ProofreadDecision[] = []
   for (const chunk of chunks) {
-    all.push(...(await decider.proofread(chunk)))
+    all.push(...(await proofreadResilient(decider, chunk)))
   }
   return { documentXml: applyProofreadDecisions(documentXml, all), decisions: all }
 }

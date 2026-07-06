@@ -24,3 +24,33 @@ describe('loadAiConfig per-step models', () => {
     expect(cfg.referenceModel).toBe('default/model')
   })
 })
+
+describe('loadAiConfig reasoning effort', () => {
+  it('defaults every structured pass to low', () => {
+    const cfg = loadAiConfig(base)
+    expect(cfg.headingReasoningEffort).toBe('low')
+    expect(cfg.referenceReasoningEffort).toBe('low')
+    expect(cfg.proofreadReasoningEffort).toBe('low')
+  })
+
+  it('reads a per-pass override and ignores an invalid value', () => {
+    const cfg = loadAiConfig({
+      ...base,
+      AI_HEADING_REASONING_EFFORT: 'minimal',
+      AI_REFERENCES_REASONING_EFFORT: 'bogus', // invalid → falls back to default
+    } as NodeJS.ProcessEnv)
+    expect(cfg.headingReasoningEffort).toBe('minimal')
+    expect(cfg.referenceReasoningEffort).toBe('low')
+  })
+
+  it('raises the default output budgets for reasoning headroom', () => {
+    const cfg = loadAiConfig(base)
+    expect(cfg.maxTokens).toBe(16384)
+    expect(cfg.proofreadMaxTokens).toBe(8192)
+  })
+
+  it('caps paragraphs per chunk (default 12, env-overridable)', () => {
+    expect(loadAiConfig(base).maxBlocksPerChunk).toBe(12)
+    expect(loadAiConfig({ ...base, AI_MAX_BLOCKS_PER_CHUNK: '6' } as NodeJS.ProcessEnv).maxBlocksPerChunk).toBe(6)
+  })
+})

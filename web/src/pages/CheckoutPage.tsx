@@ -13,7 +13,7 @@ import { useAuth } from '../lib/auth-context'
 import { supabase } from '../lib/supabase'
 import { getStoredFile } from '../lib/file-store'
 import { sliceDocxByLaudas, getDocxBlocks } from '../lib/docx-slice'
-import { computeLaudas, laudaBlockSet } from '../lib/laudas'
+import { uploadKeepSet } from '../lib/laudas'
 import { ROUTES } from '../lib/routes'
 
 const SERVICE_LABELS: Record<ServiceKey, string> = {
@@ -295,8 +295,9 @@ export default function CheckoutPage() {
       if (rawFile && selectedLaudas.length > 0 && !allSelected) {
         try {
           const blocks = await getDocxBlocks(rawFile)
-          const xmlLaudas = computeLaudas(blocks)
-          const keep = laudaBlockSet(xmlLaudas, selectedLaudas)
+          // Pré-textuais are excluded from laudas (same as page selection) but always
+          // kept in the slice, so the front matter reaches the server intact.
+          const keep = uploadKeepSet(blocks, selectedLaudas)
           fileToUpload = await sliceDocxByLaudas(rawFile, keep)
         } catch (err) {
           console.error('Lauda slicing failed, uploading full file:', err)

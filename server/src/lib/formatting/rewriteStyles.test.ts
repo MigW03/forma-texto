@@ -26,6 +26,36 @@ describe('rewriteStyles (ABNT)', () => {
     expect(out.match(/w:styleId="Normal"/g)?.length).toBe(1)
   })
 
+  it('defines a FolhaRostoNatureza style: right half-indent, left-aligned, body font, not bold/caps', () => {
+    const out = rewriteStyles(null, 'abnt')
+    const nat = out.match(/<w:style[^>]*w:styleId="FolhaRostoNatureza"[\s\S]*?<\/w:style>/)![0]
+    expect(nat).toContain('<w:jc w:val="left"/>') // left-aligned within its half
+    expect(nat).toContain('w:left="4536"')        // 8cm — midpoint of A4 text area
+    expect(nat).toContain('w:firstLine="0"')
+    expect(nat).toContain('w:ascii="Times New Roman"')
+    expect(nat).not.toContain('<w:b/>')
+    expect(nat).not.toContain('<w:caps/>')
+  })
+
+  it('defines a CoverCentered style: centered, no indent, body font, not bold/caps', () => {
+    const out = rewriteStyles(null, 'abnt')
+    const cover = out.match(/<w:style[^>]*w:styleId="CoverCentered"[\s\S]*?<\/w:style>/)![0]
+    expect(cover).toContain('<w:jc w:val="center"/>')
+    expect(cover).toContain('w:firstLine="0"')
+    expect(cover).toContain('w:ascii="Times New Roman"')
+    expect(cover).not.toContain('<w:b/>') // not forced bold — author run emphasis survives instead
+    expect(cover).not.toContain('<w:caps/>')
+  })
+
+  it('defines a ReferencesHeading style: page break before, centered, uppercase, bold', () => {
+    const out = rewriteStyles(null, 'abnt')
+    const rh = out.match(/<w:style[^>]*w:styleId="ReferencesHeading"[\s\S]*?<\/w:style>/)![0]
+    expect(rh).toContain('<w:pageBreakBefore/>')
+    expect(rh).toContain('<w:jc w:val="center"/>')
+    expect(rh).toContain('<w:caps/>')
+    expect(rh).toContain('<w:b/>')
+  })
+
   it('defines a Title style: never indented, uppercase, bold, centered', () => {
     const out = rewriteStyles(null, 'abnt')
     const title = out.match(/<w:style[^>]*w:styleId="Title"[\s\S]*?<\/w:style>/)![0]

@@ -1,5 +1,5 @@
 import { getGuideline, REFERENCES_HEADING_STYLE, type Guideline, type GuidelineSpec } from './guidelines'
-import { getBlocks, isParagraph, blockText, setParagraphStyle, replaceBlocks } from './blocks'
+import { getBlocks, isParagraph, blockText, setParagraphStyle, replaceBlocks, addPPrProperty } from './blocks'
 import { locateAppendixStart } from './postTextual'
 
 /**
@@ -228,5 +228,19 @@ export function formatReferences(
   const byIndex = new Map<number, string>()
   byIndex.set(region.headingIdx, setParagraphStyle(blocks[region.headingIdx], REFERENCES_HEADING_STYLE))
   for (const i of region.entryIndices) byIndex.set(i, setEntryFormatting(blocks[i], g))
+
+  // Zero out spacing on blank paragraphs inside the references region so they don't
+  // add a full 1.5-line gap on top of the entryAfter spacing already on each entry.
+  const entrySet = new Set(region.entryIndices)
+  const lastEntry = region.entryIndices[region.entryIndices.length - 1] ?? region.headingIdx
+  for (let i = region.headingIdx + 1; i <= lastEntry; i++) {
+    if (entrySet.has(i)) continue
+    const b = blocks[i]
+    if (!b || !isParagraph(b) || blockText(b).trim()) continue
+    let q = b.replace(/<w:(spacing|ind)\b[^>]*\/>/g, '')
+    q = addPPrProperty(q, '<w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/>')
+    byIndex.set(i, q)
+  }
+
   return replaceBlocks(documentXml, byIndex)
 }

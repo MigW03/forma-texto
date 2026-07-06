@@ -34,6 +34,13 @@ export interface AiConfig {
   /** Compact-text budget per chunk; keep well under the model's context window. */
   maxCharsPerChunk: number
   /**
+   * Max paragraphs per Step D/P chunk, independent of the char budget. Front matter / TOC are
+   * many short lines that all fit the char budget, so a char-only split packs dozens into one
+   * call and a reasoning model over-deliberates the whole batch (the `finishReason: length`
+   * failure). Capping the count keeps each call small — the Step C `referencesMaxEntries` lesson.
+   */
+  maxBlocksPerChunk: number
+  /**
    * Max reference entries per Step C call. References are short, so the char budget
    * alone would batch all of them into one request — but reasoning models over-reason
    * a large batch and silently drop most entries. Small batches keep each call
@@ -66,6 +73,17 @@ export interface AiConfig {
    * `none|minimal|low|medium|high|xhigh`.
    */
   proofreadReasoningEffort: ReasoningEffort
+  /**
+   * Reasoning effort for Step D (heading classification). A reasoning model with NO cap
+   * deliberates every ambiguous front-matter line (title vs body, TOC entry vs heading) and
+   * can burn the entire output budget on chain-of-thought — emitting reasoning tokens but no
+   * JSON, so the generation hits `finishReason: 'length'` and the parse fails (the whole pass
+   * then no-ops, keeping the deterministic A/B result). Capping the effort keeps the model
+   * answering. `none|minimal|low|medium|high|xhigh`.
+   */
+  headingReasoningEffort: ReasoningEffort
+  /** Reasoning effort for Step C (reference reformatting) — same rationale as Step D. */
+  referenceReasoningEffort: ReasoningEffort
 }
 
 export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
@@ -88,9 +106,13 @@ export function loadAiConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
     headingModel: env.AI_HEADING_MODEL ?? model,
     referenceModel: env.AI_REFERENCES_MODEL ?? model,
     proofreadModel: env.AI_PROOFREAD_MODEL ?? model,
-    maxTokens: num(env.AI_MAX_TOKENS, 8192),
-    proofreadMaxTokens: num(env.AI_PROOFREAD_MAX_TOKENS, 4096),
+    // Combined reasoning+output cap. Reasoning models spend most of it thinking, so the
+    // budget must clear (expected reasoning + the JSON) or the answer truncates. 16k gives
+    // headroom even on a heavy front-matter chunk; pair it with a capped reasoning effort.
+    maxTokens: num(env.AI_MAX_TOKENS, 16384),
+    proofreadMaxTokens: num(env.AI_PROOFREAD_MAX_TOKENS, 8192),
     maxCharsPerChunk: num(env.AI_MAX_CHARS_PER_CHUNK, 3000),
+    maxBlocksPerChunk: num(env.AI_MAX_BLOCKS_PER_CHUNK, 12),
     referencesMaxEntries: num(env.AI_REFERENCES_MAX_ENTRIES, 3),
     concurrency: num(env.AI_CONCURRENCY, 2),
     maxRetries: num(env.AI_MAX_RETRIES, 2),
@@ -101,5 +123,7 @@ export function loadAiConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
     enabled: env.AI_FORMATTING_ENABLED === 'true',
     proofreadingEnabled: env.AI_PROOFREADING_ENABLED === 'true',
     proofreadReasoningEffort: effort(env.AI_PROOFREAD_REASONING_EFFORT, 'low'),
+    headingReasoningEffort: effort(env.AI_HEADING_REASONING_EFFORT, 'low'),
+    referenceReasoningEffort: effort(env.AI_REFERENCES_REASONING_EFFORT, 'low'),
   }
 }

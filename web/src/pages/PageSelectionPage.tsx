@@ -5,7 +5,8 @@ import { ArrowLeft, Info, Check, ChevronDown } from 'lucide-react'
 import { ROUTES } from '../lib/routes'
 import { PRICING, calcPrice, formatBRL } from '../lib/pricing'
 import { storeFile } from '../lib/file-store'
-import { computeLaudas, type Lauda } from '../lib/laudas'
+import { computeLaudas, WORDS_PER_LAUDA, type Lauda } from '../lib/laudas'
+import { detectPretextual, type PretextualResult, type PretextualSection } from '../lib/pretextual'
 import { Button } from '@/components/ui/button'
 import { useGuidelines } from '../lib/guidelines'
 
@@ -34,12 +35,17 @@ const LAUDA_PREVIEW_STYLES = `
     border-radius: 9999px; white-space: nowrap;
   }
   .lauda-disabled { opacity: 0.38; filter: grayscale(0.45); transition: opacity 0.15s, filter 0.15s; }
+  /* Pré-textual section divider — amber, to read as "not a lauda" at a glance. */
+  .pretextual-divider .lauda-divider-label {
+    background: rgba(146,112,42,0.10); border-color: rgba(146,112,42,0.28); color: #92702A;
+  }
+  .pretextual-divider .lauda-divider-line { border-top-color: rgba(146,112,42,0.30); }
 `
 
-/** Build a "Lauda N" divider element (dashed rule on each side of a badge). */
-function buildLaudaDivider(labelText: string): HTMLDivElement {
+/** Build a divider (dashed rule on each side of a badge). `variant` recolors it. */
+function buildDivider(labelText: string, variant: 'lauda' | 'pretextual' = 'lauda'): HTMLDivElement {
   const div = document.createElement('div')
-  div.className = 'lauda-divider'
+  div.className = variant === 'pretextual' ? 'lauda-divider pretextual-divider' : 'lauda-divider'
   const l1 = document.createElement('span'); l1.className = 'lauda-divider-line'
   const label = document.createElement('span'); label.className = 'lauda-divider-label'; label.textContent = labelText
   const l2 = document.createElement('span'); l2.className = 'lauda-divider-line'
@@ -61,12 +67,16 @@ function LaudaPreview({
   file,
   selected,
   dividerLabelFor,
+  pretextualLabelFor,
   onLaudas,
+  onPretextual,
 }: {
   file: File
   selected: Set<number>
   dividerLabelFor: (n: number) => string
+  pretextualLabelFor: (s: PretextualSection) => string
   onLaudas: (laudas: Lauda[]) => void
+  onPretextual: (result: PretextualResult) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const blockElsRef = useRef<HTMLElement[]>([])
@@ -106,21 +116,38 @@ function LaudaPreview({
       })
       blockElsRef.current = blocks
 
-      const laudas = computeLaudas(blocks.map(b => ({ text: b.textContent ?? '' })))
+      const blockTexts = blocks.map(b => ({ text: b.textContent ?? '' }))
 
-      // blockIndex → owning lauda number, for the disabled styling.
+      // Pré-textual front matter (capa, folha de rosto, resumo, sumário, …) is
+      // classified separately and excluded from laudas: laudas start at bodyStart.
+      const pretextual = detectPretextual(blockTexts)
+      const laudas = computeLaudas(blockTexts, WORDS_PER_LAUDA, pretextual.bodyStart)
+
+      // blockIndex → owning lauda number, for the disabled styling. Pré-textual
+      // blocks have no lauda, so they are never dimmed by the selection.
       const map: number[] = []
       for (const l of laudas) {
         for (let i = l.blockStart; i <= l.blockEnd; i++) map[i] = l.index
       }
       blockToLaudaRef.current = map
 
-      // Divider after each lauda's last block (between laudas, not after the last).
-      for (let k = 0; k < laudas.length - 1; k++) {
-        const anchor = blocks[laudas[k].blockEnd]
-        if (anchor) anchor.after(buildLaudaDivider(dividerLabelFor(laudas[k + 1].index)))
+      // Label each detected pré-textual section in the flow (badge before its start).
+      for (const section of pretextual.sections) {
+        const anchor = blocks[section.blockStart]
+        if (anchor) anchor.before(buildDivider(pretextualLabelFor(section), 'pretextual'))
+      }
+      // "Lauda 1" divider where the body begins (after the pré-textual region).
+      if (pretextual.bodyStart > 0 && laudas.length > 0) {
+        const anchor = blocks[laudas[0].blockStart]
+        if (anchor) anchor.before(buildDivider(dividerLabelFor(laudas[0].index)))
+      }
+      // Divider before each subsequent lauda.
+      for (let k = 1; k < laudas.length; k++) {
+        const anchor = blocks[laudas[k].blockStart]
+        if (anchor) anchor.before(buildDivider(dividerLabelFor(laudas[k].index)))
       }
 
+      onPretextual(pretextual)
       onLaudas(laudas)
       setLoading(false)
     }).catch(() => { if (!cancelled) setLoading(false) })
@@ -169,6 +196,7 @@ export default function PageSelectionPage() {
   const file = state?.file ?? null
 
   const [laudas, setLaudas] = useState<Lauda[]>([])
+  const [pretextual, setPretextual] = useState<PretextualSection[]>([])
   const [ready, setReady] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
 
@@ -179,6 +207,16 @@ export default function PageSelectionPage() {
     setSelected(new Set(ls.map(l => l.index)))
     setReady(true)
   }, [])
+
+  // Detected pré-textual sections, reported by the same preview pass.
+  const handlePretextual = useCallback((r: PretextualResult) => {
+    setPretextual(r.sections)
+  }, [])
+
+  const pretextualLabelFor = useCallback(
+    (s: PretextualSection) => t(`pretextual.kind.${s.kind}`),
+    [t],
+  )
 
   const [activeServices, setActiveServices] = useState<Set<string>>(
     () => new Set(state?.services ?? [])
@@ -265,7 +303,31 @@ export default function PageSelectionPage() {
               <div className="w-5 h-5 border-2 border-forest/30 border-t-forest rounded-full animate-spin" />
             </div>
           ) : (
-            laudas.map(l => {
+          <>
+            {/* Pre text elements — detected front matter, not billed as laudas. */}
+            {pretextual.length > 0 && (
+              <div className="mb-1">
+                <p className="px-2.5 pt-1 pb-1.5 text-[10px] font-semibold text-amber-700 uppercase tracking-widest">
+                  {t('pretextual.groupLabel')}
+                </p>
+                <div className="flex flex-col gap-1">
+                  {pretextual.map((s, i) => (
+                    <div
+                      key={`${s.kind}-${i}`}
+                      className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg bg-amber-50/60"
+                    >
+                      <div className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                      <p className="text-sm leading-tight text-ink/80">{pretextualLabelFor(s)}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="px-2.5 pt-1.5 text-[11px] text-muted/70 leading-snug">
+                  {t('pretextual.hint')}
+                </p>
+                <div className="mx-2.5 mt-2 mb-1 border-t border-border" />
+              </div>
+            )}
+            {laudas.map(l => {
               const isSel = selected.has(l.index)
               return (
                 <button
@@ -290,7 +352,8 @@ export default function PageSelectionPage() {
                   </div>
                 </button>
               )
-            })
+            })}
+          </>
           )}
         </div>
       </div>
@@ -324,7 +387,9 @@ export default function PageSelectionPage() {
             file={file}
             selected={selected}
             dividerLabelFor={dividerLabelFor}
+            pretextualLabelFor={pretextualLabelFor}
             onLaudas={handleLaudas}
+            onPretextual={handlePretextual}
           />
         )}
       </div>

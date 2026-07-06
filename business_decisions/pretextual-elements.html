@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Decision · ABNT Pré-Textual Elements</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:ital,opsz@1,18&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --sand: #F0EEE8;
+    --paper: #FBFAF7;
+    --ink: #1A1A18;
+    --muted: #6B6B60;
+    --border: #DDDBD3;
+    --forest: #1A3C2E;
+    --forest-mid: #2D5A3F;
+    --forest-light: #3D7A57;
+    --forest-tint: #EAF0EC;
+    --amber: #92702A;
+    --amber-tint: #F6F0E2;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--ink);
+    background: var(--sand);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    padding: 40px 16px 80px;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+
+  header {
+    background: var(--ink);
+    color: var(--sand);
+    border-radius: 24px;
+    padding: 44px 48px 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  header::after {
+    content: "";
+    position: absolute;
+    right: -80px; top: -80px;
+    width: 280px; height: 280px;
+    background: radial-gradient(circle, rgba(61,122,87,0.35), transparent 70%);
+    pointer-events: none;
+  }
+  .eyebrow {
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--forest-light);
+  }
+  header .eyebrow { color: #7FB492; }
+  h1 {
+    font-size: 2.1rem; font-weight: 700; line-height: 1.15;
+    letter-spacing: -0.02em; margin: 10px 0 14px; max-width: 24ch;
+  }
+  .header-meta {
+    display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+    font-size: 0.88rem; color: rgba(240,238,232,0.7);
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--forest-light); color: #fff;
+    font-size: 0.8rem; font-weight: 600;
+    padding: 5px 14px; border-radius: 999px;
+  }
+  .pill svg { width: 14px; height: 14px; }
+
+  .verdict {
+    display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px;
+    margin: 18px 0;
+  }
+  @media (max-width: 680px) { .verdict { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--paper);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 26px 28px;
+  }
+  .verdict-card {
+    background: var(--forest);
+    color: #fff; border: none;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .verdict-card .eyebrow { color: #8FC3A1; }
+  .verdict-card h2 { color: #fff; border: none; padding: 0; margin: 0; font-size: 1.3rem; }
+  .verdict-card p { color: rgba(255,255,255,0.85); font-size: 0.95rem; }
+  .verdict-card strong { color: #fff; }
+
+  .scorecard { display: flex; flex-direction: column; justify-content: center; gap: 14px; }
+  .score-row { display: flex; align-items: center; gap: 14px; }
+  .score-num {
+    font-size: 1.9rem; font-weight: 700; line-height: 1;
+    width: 52px; text-align: right; letter-spacing: -0.02em;
+  }
+  .score-row.det .score-num { color: var(--forest-mid); }
+  .score-row.confirm .score-num { color: var(--amber); }
+  .score-row.regen .score-num { color: var(--muted); }
+  .score-label { font-size: 0.86rem; color: var(--muted); line-height: 1.3; }
+  .score-label b { color: var(--ink); font-weight: 600; display: block; }
+
+  section { margin-top: 40px; }
+  h2 {
+    font-size: 1.4rem; font-weight: 700; letter-spacing: -0.01em;
+    margin: 6px 0 4px;
+  }
+  .section-head { margin-bottom: 18px; }
+  h3 { font-size: 1.05rem; font-weight: 600; }
+  p { margin: 12px 0; color: #2E2E2A; }
+  .lead { font-size: 1.06rem; color: var(--ink); }
+  em.serif { font-family: "Newsreader", Georgia, serif; font-style: italic; }
+  code {
+    background: var(--sand); border: 1px solid var(--border);
+    border-radius: 6px; padding: 1px 6px;
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 0.84em;
+  }
+
+  .table-card { padding: 8px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  thead th {
+    text-align: left; font-size: 0.74rem; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+    padding: 14px 16px 10px;
+  }
+  tbody td { padding: 14px 16px; border-top: 1px solid var(--border); vertical-align: top; }
+  tbody tr { transition: background 0.15s ease; }
+  tbody tr:hover { background: var(--sand); }
+  .dim { font-weight: 600; color: var(--ink); width: 24%; }
+  td.how { color: #2E2E2A; }
+  .verdict-cell { width: 118px; }
+  .tag {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em;
+    padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+  }
+  .tag.det { background: var(--forest-tint); color: var(--forest-mid); }
+  .tag.confirm { background: var(--amber-tint); color: var(--amber); }
+  .tag.regen { background: #fff; color: var(--muted); border: 1px solid var(--border); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .tag.det .dot { background: var(--forest-light); }
+  .tag.confirm .dot { background: #C49A4A; }
+  .tag.regen .dot { background: var(--muted); }
+
+  .reason {
+    border: 1px solid var(--border); border-radius: 16px;
+    background: var(--paper); padding: 20px 24px; margin: 14px 0;
+  }
+  .reason-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; margin-bottom: 4px;
+  }
+  .reason-head h3 { margin: 0; }
+  .reason p { margin: 8px 0 0; font-size: 0.95rem; }
+
+  .rec { border-left: 4px solid var(--forest); }
+  .rec p:first-of-type { margin-top: 0; }
+  .caveat {
+    font-size: 0.9rem; color: var(--muted);
+    border-top: 1px dashed var(--border); margin-top: 16px; padding-top: 14px;
+  }
+
+  .flow-card { padding: 24px 26px; }
+  .flow-card.recommended { border: 1.5px solid var(--forest-light); background: var(--forest-tint); }
+  .flow-title { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 1.02rem; margin-bottom: 18px; }
+  .timeline { position: relative; }
+  .step {
+    position: relative; padding: 0 0 16px 24px;
+    border-left: 2px solid rgba(61,122,87,0.35); margin-left: 5px;
+  }
+  .step:last-child { border-left-color: transparent; padding-bottom: 0; }
+  .step::before {
+    content: ""; position: absolute; left: -6px; top: 4px;
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--forest-light); box-shadow: 0 0 0 3px var(--forest-tint);
+  }
+  .step-label { font-size: 0.92rem; font-weight: 500; color: var(--ink); }
+  .step-note { font-size: 0.82rem; color: var(--muted); margin-top: 2px; }
+
+  .nextstep {
+    background: var(--ink); color: var(--sand);
+    border-radius: 18px; padding: 28px 30px; margin-top: 24px;
+    display: flex; gap: 18px; align-items: flex-start;
+  }
+  .nextstep .num {
+    flex: none; width: 40px; height: 40px; border-radius: 12px;
+    background: var(--forest-light); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 1.1rem;
+  }
+  .nextstep h2 { color: #fff; font-size: 1.15rem; margin: 0 0 6px; }
+  .nextstep p { color: rgba(240,238,232,0.78); font-size: 0.93rem; margin: 0; }
+  .nextstep code { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.18); color: #E8E6DF; }
+
+  .open {
+    border: 1px solid var(--border); border-radius: 16px;
+    background: var(--paper); padding: 20px 24px; margin: 14px 0;
+    border-left: 4px solid var(--amber);
+  }
+  .open h3 { margin-bottom: 6px; }
+  .open p { font-size: 0.95rem; margin: 4px 0 0; }
+
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; margin-top: 40px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===== Header ===== -->
+  <header>
+    <div class="eyebrow">Business Decision · 2026-06-26</div>
+    <h1>Identifying & Formatting ABNT Pré-Textual Elements</h1>
+    <div class="header-meta">
+      <span class="pill">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        Approach: detect-and-confirm
+      </span>
+      <span>Plan stage — no code yet</span>
+    </div>
+  </header>
+
+  <!-- ===== Verdict + scorecard ===== -->
+  <div class="verdict">
+    <div class="card verdict-card">
+      <div class="eyebrow">The short answer</div>
+      <h2>It is not one problem — it is three.</h2>
+      <p>Pré-textuais split by <strong>whether the element carries a label</strong>. Labeled sections (Resumo, Sumário, listas) are fully deterministic. The cover pages carry real data and need the user to confirm it. The Sumário's contents should be regenerated, not reformatted.</p>
+    </div>
+    <div class="card scorecard">
+      <div class="score-row det"><div class="score-num">9</div><div class="score-label"><b>Fully deterministic</b>label-anchored sections</div></div>
+      <div class="score-row confirm"><div class="score-num">3</div><div class="score-label"><b>Detect + confirm</b>capa, folha de rosto, folha de aprovação</div></div>
+      <div class="score-row regen"><div class="score-num">1</div><div class="score-label"><b>Regenerate</b>Sumário contents, from the heading tree</div></div>
+    </div>
+  </div>
+
+  <!-- ===== Core insight ===== -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">The framing</div>
+      <h2>The core insight</h2>
+    </div>
+    <p class="lead">The question isn't "can we detect pré-textuais?" — it's <em class="serif">which</em> pré-textual, because they are not the same kind of thing.</p>
+    <p>Some pré-textuais announce themselves with a fixed heading word — <code>RESUMO</code>, <code>ABSTRACT</code>, <code>SUMÁRIO</code>, <code>LISTA DE TABELAS</code>. Those are an exact match for the deterministic, anchored-regex approach the pipeline already uses for the post-textual Apêndice and Anexo sections in <code>postTextual.ts</code>. No AI, no template, no guessing.</p>
+    <p>The cover pages — <strong>capa</strong>, <strong>folha de rosto</strong>, <strong>folha de aprovação</strong> — are different. They carry no heading word, just a free layout of institution, author, title, advisor, city, and year. We can detect <em>where</em> they are with high confidence, but we cannot always tell <em>which line is which field</em> with no formatting cue. And we cannot borrow that data from elsewhere: the uploader is not guaranteed to be the author, and the project title may be a placeholder like "thesis". So the data must come from the document or from the user — which is exactly why these need a confirm step.</p>
+  </section>
+
+  <!-- ===== Classification table ===== -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">Element by element</div>
+      <h2>How each element is handled</h2>
+    </div>
+    <div class="card table-card">
+      <table>
+        <thead>
+          <tr><th class="dim">Element</th><th>How we identify it</th><th class="verdict-cell">Approach</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="dim">Resumo</td><td class="how">Label regex <code>^RESUMO$</code> (anchored, case-insensitive)</td><td><span class="tag det"><span class="dot"></span>Deterministic</span></td></tr>
+          <tr><td class="dim">Abstract / Resumen</td><td class="how">Label regex <code>^(ABSTRACT|RESUMEN)$</code></td><td><span class="tag det"><span class="dot"></span>Deterministic</span></td></tr>
+          <tr><td class="dim">Sumário (title)</td><td class="how">Label regex <code>^SUMÁRIO$</code></td><td><span class="tag det"><span class="dot"></span>Deterministic</span></td></tr>
+          <tr><td class="dim">Agradecimentos</td><td class="how">Label regex</td><td><span class="tag det"><span class="dot"></span>Deterministic</span></td></tr>
+          <tr><td class="dim">Errata</td><td class="how">Label regex</td><td><span class="tag det"><span class="dot"></span>Deterministic</span></td></tr>
+          <tr><td class="dim">Lista de ilustrações / figuras</td><td class="how">Label regex</td><td><span class="tag det"><span class="dot"></span>Deterministic</span></td></tr>
+          <tr><td class="dim">Lista de tabelas</td><td class="how">Label regex</td><td><span class="tag det"><span class="dot"></span>Deterministic</span></td></tr>
+          <tr><td class="dim">Lista de abreviaturas / símbolos</td><td class="how">Label regex</td><td><span class="tag det"><span class="dot"></span>Deterministic</span></td></tr>
+          <tr><td class="dim">Capa</td><td class="how">Page-1 region, bounded by year-line anchor <code>^(19|20)\d{2}$</code></td><td><span class="tag confirm"><span class="dot"></span>Detect + confirm</span></td></tr>
+          <tr><td class="dim">Folha de rosto</td><td class="how">Natureza note + <code>Orientador:</code> regex, year anchor</td><td><span class="tag confirm"><span class="dot"></span>Detect + confirm</span></td></tr>
+          <tr><td class="dim">Folha de aprovação</td><td class="how">Approval phrases + signature/date lines</td><td><span class="tag confirm"><span class="dot"></span>Detect + confirm</span></td></tr>
+          <tr><td class="dim">Dedicatória / Epígrafe</td><td class="how">Unlabeled; located by position + elimination</td><td><span class="tag confirm"><span class="dot"></span>Detect + confirm</span></td></tr>
+          <tr><td class="dim">Sumário (contents)</td><td class="how">Built from the Step D heading tree — not parsed</td><td><span class="tag regen"><span class="dot"></span>Regenerate</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===== Reasoning ===== -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">The why</div>
+      <h2>Reasoning, bucket by bucket</h2>
+    </div>
+
+    <div class="reason">
+      <div class="reason-head"><h3>Bucket 1 — labeled sections are a solved pattern</h3><span class="tag det"><span class="dot"></span>Deterministic</span></div>
+      <p>Resumo, Abstract, Sumário, the listas, Agradecimentos and Errata all open with a fixed, unnumbered heading word. A new <code>preTextual.ts</code> mirroring <code>postTextual.ts</code> can anchor each label at both ends (<code>^…$</code>), so an in-body mention never matches, then apply the <code>unnumberedTitle</code> style. That style is already specified in the ABNT spec (§8) and flagged as not-yet-applied — this wires it up. Cheapest, most reliable win; ship first.</p>
+    </div>
+
+    <div class="reason">
+      <div class="reason-head"><h3>Bucket 2 — cover pages: region is detectable, fields are not</h3><span class="tag confirm"><span class="dot"></span>Detect + confirm</span></div>
+      <p>We can locate the cover region deterministically: page position, the lone <strong>year line</strong> as a hard bottom anchor, the <strong>natureza note</strong> ("apresentado ao… como requisito parcial…") and the <strong>orientador line</strong> as folha-de-rosto fingerprints. What stays ambiguous is telling author from title from institution when all three are plain centered lines. So the pipeline parses its best guess, then shows the user a pre-filled form to confirm or correct before the cover is rebuilt to ABNT spacing. No silent guessing on someone's thesis cover.</p>
+    </div>
+
+    <div class="reason">
+      <div class="reason-head"><h3>The data-source rule that forces the confirm step</h3><span class="tag confirm"><span class="dot"></span>Detect + confirm</span></div>
+      <p>We deliberately do <strong>not</strong> fall back to account name as the author or the project title as the document title. The uploader may not be the author, and the project title can be a stand-in like "thesis". That removes the one shortcut that could have skipped the form — which is precisely why detect-and-confirm, not parse-only, is the right call here.</p>
+    </div>
+
+    <div class="reason">
+      <div class="reason-head"><h3>Bucket 3 — the Sumário's contents should be regenerated</h3><span class="tag regen"><span class="dot"></span>Regenerate</span></div>
+      <p>Step D already produces a corrected heading tree (title / h1 / h2 / h3). The Sumário entries should be built <em>from</em> that tree, not reformatted from whatever the author typed — a reformat would faithfully reproduce their mistakes. The open issue is page numbers: DOCX has no page metadata (the same wall the references locator hits), so numbering needs either a Word TOC field that updates on open, or a render pass. Worth deciding on its own.</p>
+    </div>
+  </section>
+
+  <!-- ===== Recommendation ===== -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">The call</div>
+      <h2>Recommendation</h2>
+    </div>
+    <div class="card rec">
+      <p><strong>Build in three independent slices, in this order.</strong></p>
+      <p><strong>1 · Labeled sections.</strong> Add <code>preTextual.ts</code> (anchored-regex detection mirroring <code>postTextual.ts</code>) and wire the <code>unnumberedTitle</code> style into Step A. Fully deterministic, no UI change, no AI — lands fast and stands alone.</p>
+      <p><strong>2 · Cover pages, detect-and-confirm.</strong> Deterministic region detection (year anchor + natureza/orientador regex) extracts a best-guess field set; a new confirm screen lets the user correct it; deterministic generation rebuilds capa / folha de rosto / folha de aprovação from those confirmed fields.</p>
+      <p><strong>3 · Sumário regeneration.</strong> Build entries from the Step D heading tree, after the page-numbering question is settled.</p>
+      <p class="caveat">Honest caveat: slice 2 adds a step to the user flow and a parser whose accuracy will need real-document tuning. But the confirm screen is the safety net — a weak parse costs the user a few corrections, never a wrong author silently printed on their cover.</p>
+    </div>
+  </section>
+
+  <!-- ===== Flow ===== -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">How slice 2 runs</div>
+      <h2>The detect-and-confirm flow</h2>
+    </div>
+    <div class="card flow-card recommended">
+      <div class="flow-title">Cover pages <span class="pill">Recommended</span></div>
+      <div class="timeline">
+        <div class="step"><div class="step-label">Locate the cover region</div><div class="step-note">page position + year-line anchor — deterministic</div></div>
+        <div class="step"><div class="step-label">Detect which pages are present</div><div class="step-note">natureza / orientador / approval regex → capa vs folha de rosto vs aprovação</div></div>
+        <div class="step"><div class="step-label">Parse best-guess fields</div><div class="step-note">author, title, institution, advisor, natureza, city, year</div></div>
+        <div class="step"><div class="step-label">Show confirm screen, pre-filled</div><div class="step-note">user corrects ambiguous lines — never silently guessed</div></div>
+        <div class="step"><div class="step-label">Generate covers from confirmed fields</div><div class="step-note">deterministic ABNT layout, no AI</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Open questions ===== -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">Still to settle</div>
+      <h2>Open questions</h2>
+    </div>
+    <div class="open">
+      <h3>Sumário page numbers</h3>
+      <p>Word TOC field that updates on open (zero numbering logic, but requires a real Word style/field), or a render pass to compute numbers ourselves? DOCX gives us no page metadata either way.</p>
+    </div>
+    <div class="open">
+      <h3>Where the confirm screen lives in the flow</h3>
+      <p>A new step between processing and download, or folded into the existing <code>needs_input</code> mechanism already used for missing captions/sources (<code>pending_inputs</code>)? The latter reuses machinery that exists.</p>
+    </div>
+    <div class="open">
+      <h3>Missing covers</h3>
+      <p>When a document has no capa or no folha de rosto at all — do we offer to generate one from scratch via the same confirm form, or leave it untouched? This decides whether the form is "correct what we found" or "fill in what's needed".</p>
+    </div>
+  </section>
+
+  <!-- ===== Next step ===== -->
+  <div class="nextstep">
+    <div class="num">1</div>
+    <div>
+      <div class="eyebrow">Low-risk first move</div>
+      <h2>Ship the labeled-section detector</h2>
+      <p>Build <code>preTextual.ts</code> with anchored-regex detection for Resumo / Abstract / Sumário / Agradecimentos / Errata / the listas, and apply the already-specified <code>unnumberedTitle</code> style in Step A. Deterministic, testable in isolation, no UI work — a complete win that ships before any of the cover-page complexity is touched.</p>
+    </div>
+  </div>
+
+  <footer>FormaTexto · internal decision record · business_decisions/pretextual-elements.html</footer>
+
+</div>
+</body>
+</html>

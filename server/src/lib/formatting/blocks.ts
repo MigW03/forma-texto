@@ -13,20 +13,34 @@
  * `fast-xml-parser` behind this same contract — the passes won't change.
  */
 
+import { decodeXmlEntities } from './xmlText'
+
 export const BLOCK_RE =
   /<w:tbl\b[\s\S]*?<\/w:tbl>|<w:sdt\b[\s\S]*?<\/w:sdt>|<w:p\b[^>]*\/>|<w:p\b[^>]*>[\s\S]*?<\/w:p>/g
 
 /** Max chars of body text kept in a descriptor — heading cues live at the start. */
 const TEXT_CAP = 200
 
+/**
+ * Chars beyond which a heading-styled paragraph is implausible as a real heading —
+ * a real title/heading is a short line; anything longer is almost certainly a body
+ * paragraph left in a heading style by mistake. Shared by `headingSanity.ts` (which
+ * corrects the paragraph's style) and `sumario.ts` (which guards the TOC as a second,
+ * independent line of defense).
+ */
+export const MAX_HEADING_CHARS = 200
+
 export const isParagraph = (b: string) => /^<w:p\b/.test(b)
 
 /** True when the paragraph belongs to a numbered/bulleted list (`<w:numPr>` in its pPr). */
 export const isListItem = (b: string) => /<w:numPr\b/.test(b)
 
-/** Visible text of a block (all `<w:t>` runs concatenated, tags stripped, trimmed). */
-export const blockText = (b: string) =>
-  (b.match(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g) ?? []).map(t => t.replace(/<[^>]+>/g, '')).join('').trim()
+/** Visible text of a block (all `<w:t>` runs concatenated, tags stripped, entities decoded, trimmed). Tab elements emit a space so Word auto-TOC page numbers don't merge into the section name. */
+export const blockText = (b: string) => {
+  const withTabs = b.replace(/<w:tab\/>/g, ' ')
+  const raw = (withTabs.match(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g) ?? []).map(t => t.replace(/<[^>]+>/g, '')).join('').trim()
+  return decodeXmlEntities(raw)
+}
 
 /** Top-level body blocks (paragraphs / tables / sdt), in document order. */
 export function getBlocks(documentXml: string): string[] {
@@ -72,6 +86,43 @@ export function setParagraphStyle(p: string, styleId: string): string {
 /** Remove a paragraph's `<w:pStyle>` so it falls back to the default style (demote to body). */
 export function clearHeadingStyle(p: string): string {
   return p.replace(/<w:pStyle\b[^>]*\/>/, '')
+}
+
+/**
+ * Merge a `w:before` value into an existing `<w:spacing>` element in the pPr, or
+ * inject a new one. Safe when the paragraph already has a `<w:spacing>` for line
+ * height — avoids duplicate elements that cause the first one to silently win.
+ */
+export function setSpacingBefore(p: string, twips: number): string {
+  const attr = ` w:before="${twips}" w:beforeAutospacing="0"`
+  if (/<w:spacing\b/.test(p)) {
+    // Strip any existing w:before / w:beforeAutospacing attrs, then inject ours.
+    return p.replace(
+      /<w:spacing\b([^/]*)\//,
+      (_, rest) => {
+        const cleaned = rest
+          .replace(/\s*w:before="[^"]*"/g, '')
+          .replace(/\s*w:beforeAutospacing="[^"]*"/g, '')
+        return `<w:spacing${cleaned}${attr}/`
+      },
+    )
+  }
+  return addPPrProperty(p, `<w:spacing${attr}/>`)
+}
+
+/**
+ * Inject a raw XML snippet into a paragraph's `<w:pPr>`, creating the element if
+ * absent. Idempotent guard is the caller's responsibility (check before calling).
+ * Example: addPPrProperty(block, '<w:keepWithNext/>')
+ */
+export function addPPrProperty(p: string, propXml: string): string {
+  if (/<w:pPr\b[^>]*>/.test(p)) {
+    return p.replace(/<\/w:pPr>/, `${propXml}</w:pPr>`)
+  }
+  if (/<w:pPr\b[^>]*\/>/.test(p)) {
+    return p.replace(/<w:pPr\b[^>]*\/>/, `<w:pPr>${propXml}</w:pPr>`)
+  }
+  return p.replace(/(<w:p\b[^>]*>)/, `$1<w:pPr>${propXml}</w:pPr>`)
 }
 
 /**

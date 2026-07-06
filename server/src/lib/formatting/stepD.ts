@@ -59,11 +59,26 @@ export interface ChunkOptions {
    * classified. Candidates at/after this index are re-included. -1 = no appendix.
    */
   appendixStartIndex?: number
+  /**
+   * First body block index — the pré-textual region `[0, bodyStartIndex)` (capa, folha
+   * de rosto, resumo, sumário, …) is excluded so the model never promotes a cover or
+   * abstract line to a numbered heading. Those labeled headings get their own
+   * unnumbered-title style deterministically (`applyPretextualHeadings`). 0 = none.
+   */
+  bodyStartIndex?: number
   /** Compact-text budget per chunk. Keep well under the model's context window. */
   maxChars?: number
+  /**
+   * Max paragraphs per chunk, independent of the char budget. Front matter / TOC are many
+   * *short* lines that all fit the char budget, so a char-only split packs dozens into one
+   * call — a reasoning model then over-deliberates the whole batch and blows its token budget
+   * without emitting JSON. Capping the count keeps each call small (cf. Step C `maxEntries`).
+   */
+  maxBlocks?: number
 }
 
 const DEFAULT_MAX_CHARS = 8000
+const DEFAULT_MAX_BLOCKS = 12
 
 /** A block looks like a heading worth carrying in cross-chunk context. */
 const looksLikeHeading = (d: BlockDescriptor) => /heading/i.test(d.style) || (d.bold && d.len < 80)
@@ -76,7 +91,7 @@ const looksLikeHeading = (d: BlockDescriptor) => /heading/i.test(d.style) || (d.
 export function chunkHeadings(
   documentXml: string,
   guideline: Guideline,
-  { refStartIndex = -1, appendixStartIndex = -1, maxChars = DEFAULT_MAX_CHARS }: ChunkOptions = {},
+  { refStartIndex = -1, appendixStartIndex = -1, bodyStartIndex = 0, maxChars = DEFAULT_MAX_CHARS, maxBlocks = DEFAULT_MAX_BLOCKS }: ChunkOptions = {},
 ): HeadingChunk[] {
   const blocks = getBlocks(documentXml)
   const candidates = blocks
@@ -88,6 +103,9 @@ export function chunkHeadings(
     // re-include the appendix/annex that follows references so its headings are classified.
     .filter(({ b, i }) => {
       if (!isParagraph(b) || isListItem(b) || blockText(b).length === 0) return false
+      if (i < bodyStartIndex) return false // pré-textual front matter — never a body heading
+      const toc = b.match(/<w:pStyle\b[^>]*w:val="([^"]*)"/)?.[1] ?? ''
+      if (/^toc[\s\d]/i.test(toc)) return false // Word auto-TOC entries — never a body heading
       const beforeRefs = refStartIndex < 0 || i < refStartIndex
       const inAppendix = appendixStartIndex >= 0 && i >= appendixStartIndex
       return beforeRefs || inAppendix
@@ -111,7 +129,7 @@ export function chunkHeadings(
     const d = blockDescriptor(b, i)
     if (pageStart.has(i)) d.atPageStart = true
     const cost = d.text.length + 40
-    if (size + cost > maxChars && cur.length) {
+    if (cur.length && (size + cost > maxChars || cur.length >= maxBlocks)) {
       packed.push({ blocks: cur, context: seenHeadings.slice(-2) })
       cur = []
       size = 0

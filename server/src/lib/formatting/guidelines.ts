@@ -57,6 +57,16 @@ export const REFERENCES_HEADING_STYLE = 'ReferencesHeading'
 /** Word styleId used for image/figure captions (centered, 10pt, single spacing). */
 export const CAPTION_STYLE = 'Caption'
 
+/** Word styleId for cover (capa) paragraphs — centered, body font/size, no indent. */
+export const COVER_STYLE = 'CoverCentered'
+
+/**
+ * Word styleId for the folha de rosto natureza note — the ABNT "apresentada como
+ * requisito parcial…" + orientador block. Indented to the right half of the text
+ * area (8cm from the margin = midpoint of a 16cm A4 text area), left-aligned.
+ */
+export const FOLHA_ROSTO_NATUREZA_STYLE = 'FolhaRostoNatureza'
+
 /**
  * Built-in fallback values. Used only when `specs/{id}.md` is absent or invalid.
  * For guidelines that DO have a spec file (abnt), the `.md` wins via getGuideline().

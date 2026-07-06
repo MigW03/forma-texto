@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { formatCaptions } from './captions'
-import { getBlocks } from './blocks'
+import { formatCaptions, findCaptionsAbove, MAX_CONTINUATION_LINES } from './captions'
+import { getBlocks, blockText } from './blocks'
 
 const DOC = (body: string) =>
   '<?xml version="1.0"?>' +
@@ -25,6 +25,74 @@ describe('formatCaptions', () => {
     expect(styleOf(blocks[4])).toBeNull() // ordinary body after the source — untouched
   })
 
+  it('captions a "Figura N. " line (period separator instead of dash/colon)', () => {
+    const out = formatCaptions(DOC(para('Figura 12. Respostas dos alunos.') + imagePara + para('Fonte: Imagem da autora.')))
+    const blocks = getBlocks(out)
+    expect(styleOf(blocks[0])).toBe('Caption')
+    expect(styleOf(blocks[2])).toBe('Caption')
+  })
+
+  it('rewrites "Figura N." to "Figura N:" on the caption label', () => {
+    const out = formatCaptions(DOC(para('Figura 12. Respostas dos alunos.') + imagePara + para('Fonte: Imagem da autora.')))
+    const blocks = getBlocks(out)
+    expect(blockText(blocks[0])).toBe('Figura 12: Respostas dos alunos.')
+  })
+
+  it('preserves the sub-number dot ("Figura 12.1.") while still fixing the separator', () => {
+    const out = formatCaptions(DOC(para('Figura 12.1. Detalhe.') + imagePara + para('Fonte: Autor.')))
+    const blocks = getBlocks(out)
+    expect(blockText(blocks[0])).toBe('Figura 12.1: Detalhe.')
+  })
+
+  it('splits a caption/source embedded as a SECOND run in the image\'s own paragraph', () => {
+    // [drawing run]["Fonte: Imagem da autora" run] inside ONE <w:p> — seen in Google
+    // Docs exports. Must become its own Caption-styled paragraph, separate from the image.
+    const imageWithEmbeddedSource =
+      '<w:p><w:r><w:drawing><wp:inline><a:blip r:embed="rId7"/></wp:inline></w:drawing></w:r>' +
+      '<w:r><w:t>Fonte. Imagem da autora</w:t></w:r></w:p>'
+    const out = formatCaptions(DOC(para('Figura 22 — Trabalho') + imageWithEmbeddedSource + para('Próximo parágrafo.')))
+    const blocks = getBlocks(out)
+    expect(blocks).toHaveLength(4) // label, image (alone), source (split out), next paragraph
+    expect(styleOf(blocks[1])).toBeNull() // image paragraph — no longer carries text
+    expect(blockText(blocks[1])).toBe('')
+    expect(styleOf(blocks[2])).toBe('Caption')
+    expect(blockText(blocks[2])).toBe('Fonte: Imagem da autora') // dot normalized to colon too
+  })
+
+  it('splits an embedded figure label BEFORE the drawing run in the same paragraph', () => {
+    const imageWithEmbeddedLabel =
+      '<w:p><w:r><w:t>Figura 5. Antes do desenho</w:t></w:r>' +
+      '<w:r><w:drawing><wp:inline><a:blip r:embed="rId7"/></wp:inline></w:drawing></w:r></w:p>'
+    const out = formatCaptions(DOC(imageWithEmbeddedLabel + para('Fonte: Autor.')))
+    const blocks = getBlocks(out)
+    expect(blocks).toHaveLength(3) // label (split out), image (alone), source
+    expect(styleOf(blocks[0])).toBe('Caption')
+    expect(blockText(blocks[0])).toBe('Figura 5: Antes do desenho')
+    expect(blockText(blocks[1])).toBe('')
+  })
+
+  it('styles and normalizes a table caption above and source below a table', () => {
+    const out = formatCaptions(DOC(para('Tabela 1. Resultados') + tbl + para('Fonte. Autor (2024)')))
+    const blocks = getBlocks(out)
+    expect(styleOf(blocks[0])).toBe('Caption')
+    expect(blockText(blocks[0])).toBe('Tabela 1: Resultados')
+    expect(styleOf(blocks[2])).toBe('Caption')
+    expect(blockText(blocks[2])).toBe('Fonte: Autor (2024)')
+  })
+
+  it('rewrites "Fonte." to "Fonte:" on the source line', () => {
+    const out = formatCaptions(DOC(para('Figura 1 — Mapa') + imagePara + para('Fonte. IBGE.')))
+    const blocks = getBlocks(out)
+    expect(styleOf(blocks[2])).toBe('Caption')
+    expect(blockText(blocks[2])).toBe('Fonte: IBGE.')
+  })
+
+  it('leaves a correctly-punctuated "Fonte:" source line untouched', () => {
+    const out = formatCaptions(DOC(para('Figura 1 — Mapa') + imagePara + para('Fonte: IBGE.')))
+    const blocks = getBlocks(out)
+    expect(blockText(blocks[2])).toBe('Fonte: IBGE.')
+  })
+
   it('does NOT caption unlabelled paragraphs around an image', () => {
     const out = formatCaptions(DOC(para('A flowing sentence above the figure.') + imagePara + para('A flowing sentence below the figure.')))
     const blocks = getBlocks(out)
@@ -45,6 +113,83 @@ describe('formatCaptions', () => {
     const blocks = getBlocks(out)
     expect(styleOf(blocks[0])).toBeNull()
     expect(styleOf(blocks[2])).toBeNull()
+  })
+
+  it('captions a "Figura N —" line separated from the image by blank lines', () => {
+    // Author left a blank paragraph between the caption and the image, and between the
+    // image and the source — both must still be recognised (skipping the blanks).
+    const out = formatCaptions(DOC(
+      para('Figura 3 — Banksy') + para('') + imagePara + para('') + para('Fonte: CNN Brasil.'),
+    ))
+    const blocks = getBlocks(out)
+    expect(styleOf(blocks[0])).toBe('Caption')  // figure label, one blank line above the image
+    expect(styleOf(blocks[1])).toBeNull()       // the blank paragraph — untouched
+    expect(styleOf(blocks[2])).toBeNull()        // the image itself
+    expect(styleOf(blocks[4])).toBe('Caption')  // source, one blank line below the image
+  })
+
+  it('treats consecutive non-blank paragraphs between label and image as a multi-line caption', () => {
+    // Label directly above image plus a continuation line above that — both get tagged.
+    const out = formatCaptions(DOC(
+      para('Figura 3 — Título longo que') + para('continua nesta segunda linha') + imagePara,
+    ))
+    const blocks = getBlocks(out)
+    expect(styleOf(blocks[0])).toBe('Caption') // label line
+    expect(styleOf(blocks[1])).toBe('Caption') // continuation line
+  })
+
+  it('does NOT look past another image to grab a caption from a previous figure', () => {
+    // label → IMAGE_A → body → IMAGE_B: IMAGE_A is a hard barrier, body is not tagged.
+    const out = formatCaptions(DOC(
+      para('Figura 3 — earlier caption') + imagePara + para('body between images') + imagePara,
+    ))
+    const blocks = getBlocks(out)
+    expect(styleOf(blocks[0])).toBe('Caption') // first image's own caption — tagged
+    expect(styleOf(blocks[2])).toBeNull()       // body after IMAGE_A — NOT pulled to IMAGE_B
+  })
+
+  it('tags a long multi-line caption with many continuation lines', () => {
+    // Real ABNT captions can span many lines; all continuation lines up to
+    // MAX_CONTINUATION_LINES should be tagged.
+    const lines = [para('Figura 1 — label')]
+    for (let k = 0; k < MAX_CONTINUATION_LINES; k++) lines.push(para(`continuation ${k}`))
+    const out = formatCaptions(DOC(lines.join('') + imagePara))
+    const blocks = getBlocks(out)
+    // Label + all continuations tagged.
+    for (let k = 0; k <= MAX_CONTINUATION_LINES; k++) {
+      expect(styleOf(blocks[k])).toBe('Caption')
+    }
+  })
+
+  it('stops scan when continuation count exceeds the limit', () => {
+    const lines = [para('Figura 1 — label')]
+    for (let k = 0; k < MAX_CONTINUATION_LINES + 1; k++) lines.push(para(`continuation ${k}`))
+    const out = formatCaptions(DOC(lines.join('') + imagePara))
+    const blocks = getBlocks(out)
+    for (let k = 0; k <= MAX_CONTINUATION_LINES + 1; k++) {
+      expect(styleOf(blocks[k])).toBeNull()
+    }
+  })
+
+  it('crosses a single blank between the label and a continuation paragraph', () => {
+    // Authors sometimes leave a blank line between "Figura N —" and a description
+    // paragraph before the image. The blank peek finds the label and tags both.
+    const out = formatCaptions(DOC(
+      para('Figura 1 — label') + para('') + para('description paragraph') + imagePara,
+    ))
+    const blocks = getBlocks(out)
+    expect(styleOf(blocks[0])).toBe('Caption') // label reached via blank peek
+    expect(styleOf(blocks[2])).toBe('Caption') // description paragraph tagged
+  })
+
+  it('stops scan at two consecutive blanks between label and continuation', () => {
+    // Two blanks in a row — too far to be the same caption group.
+    const out = formatCaptions(DOC(
+      para('Figura 1 — label') + para('') + para('') + para('separate paragraph') + imagePara,
+    ))
+    const blocks = getBlocks(out)
+    expect(styleOf(blocks[0])).toBeNull() // label not reached
+    expect(styleOf(blocks[3])).toBeNull() // "separate paragraph" not tagged
   })
 
   it('accepts assorted figure labels and separators, case-insensitively', () => {

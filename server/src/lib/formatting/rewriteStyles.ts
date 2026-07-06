@@ -1,4 +1,4 @@
-import { getGuideline, REFERENCES_HEADING_STYLE, CAPTION_STYLE, type Guideline, type GuidelineSpec } from './guidelines'
+import { getGuideline, REFERENCES_HEADING_STYLE, CAPTION_STYLE, COVER_STYLE, FOLHA_ROSTO_NATUREZA_STYLE, type Guideline, type GuidelineSpec } from './guidelines'
 
 /**
  * Step A — rewrite styles.xml.
@@ -104,6 +104,7 @@ function referencesHeadingBlock(g: GuidelineSpec): string {
     '<w:basedOn w:val="Normal"/>' +
     '<w:next w:val="Normal"/>' +
     '<w:pPr>' +
+    '<w:pageBreakBefore/>' +
     '<w:keepNext/>' +
     `<w:spacing w:before="240" w:after="240" w:line="${g.body.line}" w:lineRule="auto"/>` +
     '<w:ind w:left="0" w:firstLine="0"/>' +
@@ -113,6 +114,57 @@ function referencesHeadingBlock(g: GuidelineSpec): string {
     `<w:rFonts w:ascii="${g.body.font}" w:hAnsi="${g.body.font}" w:cs="${g.body.font}"/>` +
     '<w:caps/>' +
     '<w:b/><w:bCs/>' +
+    `<w:sz w:val="${g.body.sz}"/><w:szCs w:val="${g.body.sz}"/>` +
+    '</w:rPr>' +
+    '</w:style>'
+  )
+}
+
+/**
+ * Cover (capa) paragraph style. Every paragraph of the capa is centered with no
+ * indent — ABNT distributes the institution, author, title, city and year centered
+ * on the page. Body font + size; bold/size that the author put on individual runs
+ * (e.g. a larger title) survive as direct run overrides. Applied by `applyCoverAlignment`.
+ */
+function coverBlock(g: GuidelineSpec): string {
+  return (
+    `<w:style w:type="paragraph" w:styleId="${COVER_STYLE}">` +
+    '<w:name w:val="Cover Centered"/>' +
+    '<w:basedOn w:val="Normal"/>' +
+    '<w:next w:val="Normal"/>' +
+    '<w:pPr>' +
+    `<w:spacing w:line="${g.body.line}" w:lineRule="auto"/>` +
+    '<w:ind w:left="0" w:firstLine="0"/>' + // centered text is never indented
+    '<w:jc w:val="center"/>' +
+    '</w:pPr>' +
+    '<w:rPr>' +
+    `<w:rFonts w:ascii="${g.body.font}" w:hAnsi="${g.body.font}" w:cs="${g.body.font}"/>` +
+    `<w:sz w:val="${g.body.sz}"/><w:szCs w:val="${g.body.sz}"/>` +
+    '</w:rPr>' +
+    '</w:style>'
+  )
+}
+
+/**
+ * Folha de rosto natureza note style. The "apresentada como requisito parcial…" +
+ * orientador block is positioned in the right half of the page per ABNT NBR 14724.
+ * Indented 8cm from the left margin (= midpoint of a 16cm A4 text area), left-aligned
+ * so the ragged-right edge stays within the page. Body font/size; not bold or caps.
+ */
+function naturezaBlock(g: GuidelineSpec): string {
+  const NATUREZA_INDENT = 4536 // 8cm in twips (1cm ≈ 567 twips); half of 16cm text area
+  return (
+    `<w:style w:type="paragraph" w:styleId="${FOLHA_ROSTO_NATUREZA_STYLE}">` +
+    '<w:name w:val="Folha de Rosto Natureza"/>' +
+    '<w:basedOn w:val="Normal"/>' +
+    '<w:next w:val="Normal"/>' +
+    '<w:pPr>' +
+    `<w:spacing w:line="${g.body.line}" w:lineRule="auto"/>` +
+    `<w:ind w:left="${NATUREZA_INDENT}" w:firstLine="0"/>` +
+    '<w:jc w:val="left"/>' +
+    '</w:pPr>' +
+    '<w:rPr>' +
+    `<w:rFonts w:ascii="${g.body.font}" w:hAnsi="${g.body.font}" w:cs="${g.body.font}"/>` +
     `<w:sz w:val="${g.body.sz}"/><w:szCs w:val="${g.body.sz}"/>` +
     '</w:rPr>' +
     '</w:style>'
@@ -194,6 +246,8 @@ export function rewriteStyles(stylesXml: string | null, guideline: Guideline, fo
   xml = upsertStyle(xml, 'Heading2', headingBlock(g, 2))
   xml = upsertStyle(xml, 'Heading3', headingBlock(g, 3))
   xml = upsertStyle(xml, REFERENCES_HEADING_STYLE, referencesHeadingBlock(g))
+  xml = upsertStyle(xml, COVER_STYLE, coverBlock(g))
+  xml = upsertStyle(xml, FOLHA_ROSTO_NATUREZA_STYLE, naturezaBlock(g))
   xml = upsertStyle(xml, CAPTION_STYLE, captionBlock(g))
 
   return xml
