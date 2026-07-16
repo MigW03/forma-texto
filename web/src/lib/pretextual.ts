@@ -93,13 +93,41 @@ function isTocEntry(text: string): boolean {
 
 /**
  * A real body heading: a section number followed by a word ("1 INTRODUÇÃO",
- * "1.1 Contexto"), or the unnumbered word "Introdução". Rejected if it looks like a
- * TOC entry (trailing page number / dot leaders) so sumário lines never match.
+ * "1.1 Contexto"). Rejected if it looks like a TOC entry (trailing page number / dot
+ * leaders) so sumário lines never match. The unnumbered word "Introdução" is handled
+ * separately (`isIntroducaoWord` + `looksLikeBodyProse`) since telling it apart from a
+ * same-text TOC entry needs lookahead context this function doesn't have.
  */
 function isBodyHeading(text: string): boolean {
   if (!text || isTocEntry(text)) return false
   if (/^\d+(\.\d+)*\.?\s+\p{L}/u.test(text)) return true
   return false
+}
+
+/**
+ * The bare word "Introdução" — matches whether or not the author (or Word's own
+ * `<w:numPr>` multilevel-list numbering, invisible to plain text) has numbered it yet.
+ * Ambiguous on its own: the sumário lists the same bare word as a TOC entry when the
+ * author hasn't paginated it (no trailing page number for `isTocEntry` to key on) —
+ * `looksLikeBodyProse` supplies the context check that tells the two apart.
+ */
+function isIntroducaoWord(text: string): boolean {
+  return /^introdu[çc][ãa]o$/i.test(text)
+}
+
+/**
+ * Distinguishes the real "Introdução" heading from a same-text sumário TOC entry: a
+ * real heading is immediately followed by an actual paragraph of body prose, while a
+ * TOC entry is followed by nothing of the sort (another short chapter-name-style line,
+ * or the section simply ends there). Prose is identified as long and/or ending in
+ * sentence punctuation and — per ABNT chapter-title convention (ALL-CAPS) — not itself
+ * a short all-caps line.
+ */
+function looksLikeBodyProse(text: string): boolean {
+  if (!text) return false
+  if (text.length > 60) return true
+  if (/[.!?…]$/.test(text)) return true
+  return text.length > 20 && text !== text.toUpperCase()
 }
 
 function matchLabel(text: string): PretextualKind | null {
@@ -150,6 +178,11 @@ export function detectPretextual(blocks: { text: string }[]): PretextualResult {
   let bodyStart = lastSignal + 1
   for (let i = lastSignal + 1; i < texts.length; i++) {
     if (isBodyHeading(texts[i])) { bodyStart = i; break }
+    if (isIntroducaoWord(texts[i])) {
+      let j = i + 1
+      while (j < texts.length && !texts[j]) j++
+      if (j < texts.length && looksLikeBodyProse(texts[j])) { bodyStart = i; break }
+    }
   }
 
   // 3. Build the section list.

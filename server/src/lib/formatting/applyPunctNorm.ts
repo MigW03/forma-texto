@@ -1,4 +1,4 @@
-import { BLOCK_RE, isParagraph, getBlocks, replaceBlocks } from './blocks'
+import { mapBlocks, isParagraph, getBlocks, replaceBlocks } from './blocks'
 
 /** Per-rule counts, surfaced for logging so we can see what the step actually did. */
 export interface PunctStats {
@@ -203,7 +203,7 @@ export function applyPunctNormWithStats(
   )
 
   // Pass 2: cross-run space-before-punctuation, scoped to each paragraph
-  xml = xml.replace(BLOCK_RE, block => (isParagraph(block) ? fixCrossRunSpacing(block, stats) : block))
+  xml = mapBlocks(xml, block => (isParagraph(block) ? fixCrossRunSpacing(block, stats) : block))
 
   return { xml, stats }
 }

@@ -24,6 +24,7 @@ import {
   applyFolhaRostoAlignment,
   applyPretextualPageBreaks,
   applyCoverVerticalDistribution,
+  suppressCoverPageNumber,
   coverBlockIndices,
   resolveGuideline,
   getGuideline,
@@ -450,6 +451,13 @@ export async function processFormatting(projectId: string): Promise<void> {
     // indices). Formatting only; a proofreading-only doc never touches the cover.
     if (doFormatting) {
       workingDocXml = applyCoverVerticalDistribution(workingDocXml, detectPretextual(workingDocXml).sections)
+      // ABNT: the capa shows no page number at all, even though it IS counted in the
+      // total. Real uploads commonly inherit a header with an auto PAGE field applied
+      // uniformly to every page (a Google Docs/Word template default, not something this
+      // pipeline adds) — `<w:titlePg/>` on the document's own section blanks just the
+      // first physical page's header, leaving every later page numbered normally.
+      // Independent of the table-based vertical distribution above; does not touch it.
+      workingDocXml = suppressCoverPageNumber(workingDocXml, detectPretextual(workingDocXml).sections)
     }
 
     // Stamp the resolved family on every run as the LAST document transform (after Steps

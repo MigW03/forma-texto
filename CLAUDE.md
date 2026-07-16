@@ -6,7 +6,7 @@ FormaTexto is an AI-powered document formatting and proofreading service. Users 
 
 ## Repository Layout
 
-- **[`HANDOFF.md`](HANDOFF.md)** — living snapshot of current project state, gotchas, and open work. **Read it first**, and update it at the end of each session.
+- **[`HANDOFF.md`](HANDOFF.md)** — living snapshot of current project state, gotchas, and open work. **Read it first**, and update it at the end of each session. Keep it short: current state, not a changelog — see the `PLAN.md`/`HANDOFF.md` rule under Key Rules before editing it.
 - **`web/`** — React + Vite frontend (this file is mostly about it). See [`web/README.md`](web/README.md).
 - **`server/`** — Express + TypeScript backend: Stripe, Supabase service-role, email, and the DOCX formatting pipeline.
 - **`docs/`** — architecture docs. The formatting pipeline is documented in [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md).
@@ -385,4 +385,20 @@ Brazil-first. Implications:
 6. **TypeScript strict** — no `any`, no unused vars.
 7. **`ProtectedRoute` wraps all auth-required pages** — already wired in `App.tsx`.
 8. **Tests:** the server has a vitest suite (`cd server && npm test`) — keep it green. The frontend has no test suite yet (planned).
-9. **Keep `PLAN.md` current** — after every major feature implementation, bug fix, or test, mark the corresponding pre-existing task as completed (`[ ]` → `[x]`) and update its description to reflect what was actually built. Never add new tasks during this update — only mark what already existed. New tasks go in a separate, deliberate edit.
+9. **`PLAN.md` and `HANDOFF.md` stay minimal — open items only, never an accumulating archive.** Both
+   files ballooned to 2000+ lines once before (session-by-session incident essays piling up on
+   completed items) and were pruned back down — don't let that happen again:
+   - **`PLAN.md` tracks only open work.** When a task is completed, **delete its bullet from `PLAN.md`
+     entirely** — do not mark it `[x]` and leave (or grow) a writeup describing what was built. The
+     code and `git log` are the record; `PLAN.md` is a checklist of what's *left*, not a changelog.
+     Never add new tasks and mark others complete in the same edit — those are separate, deliberate
+     edits.
+   - **`HANDOFF.md`'s Session log entry per session stays short** — a few sentences on what changed,
+     why, and what's left, not a full incident narrative with every dead end and self-caught bug. Once
+     the log holds more than ~5 recent dated entries, compress the older ones down to a single line
+     each (date + topic) instead of leaving full prose — `git log -p -- HANDOFF.md` is the durable
+     archive if the narrative is ever needed again.
+   - **`HANDOFF.md`'s "Open work" section lists only genuinely unresolved items.** Once something ships,
+     delete its entry outright — don't strike it through and keep the paragraph as a record.
+   - Before writing to either file, ask: is this already implied by the code, or already covered by
+     `HANDOFF.md`'s "Current status"/"Pipeline state"? If so, don't restate it.

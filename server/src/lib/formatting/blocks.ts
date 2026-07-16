@@ -7,16 +7,106 @@
  * the key that makes the AI passes' merge trivial: the model returns decisions
  * keyed by index, and `replaceBlocks` splices rewritten blocks back by index.
  *
- * Regex over WordprocessingML is fragile in general, but bounded here to
- * top-level block extraction and `<w:pStyle>` rewrites, which is safe. If nested
- * tables ever cause index drift on real documents, swap the internals for
- * `fast-xml-parser` behind this same contract — the passes won't change.
+ * Regex over WordprocessingML is fragile in general, but bounded here to top-level
+ * block extraction and `<w:pStyle>` rewrites, which is safe — WITH ONE CONFIRMED
+ * EXCEPTION: `<w:tbl>` and `<w:sdt>` can both legitimately nest (a table inside a
+ * table cell; Google Docs export can nest structured-document-tags — a real document
+ * hit this: `<w:sdt><w:sdtContent><w:ins/><w:sdt>...</w:sdt></w:sdtContent></w:sdt>`).
+ * A single non-greedy regex (the previous implementation here) closes at the FIRST
+ * matching close tag it finds — the INNER one — silently orphaning the outer tag's
+ * remaining content outside of any recognized block. That's harmless for a pass that
+ * only ever replaces a handful of SPECIFIC indices elsewhere in the document (the
+ * orphaned text just passes through `replaceBlocks` untouched, since `.replace()` only
+ * touches matched spans) — but a pass that reconstructs a whole region from the
+ * `blocks[]` array (`applyCoverVerticalDistribution` in `preTextual.ts`) drops that
+ * orphaned text from its output while the ORIGINAL string still contains its dangling
+ * closing tags elsewhere — genuinely invalid XML that LibreOffice refused to even open
+ * ("source file could not be loaded"), confirmed against the real document that
+ * surfaced this. `findBlockSpans` below replaces the single regex with a proper
+ * depth-tracked scan for `<w:tbl>`/`<w:sdt>` (paragraphs never nest, so the simple
+ * non-greedy match stays correct for `<w:p>`).
  */
 
 import { decodeXmlEntities } from './xmlText'
 
-export const BLOCK_RE =
-  /<w:tbl\b[\s\S]*?<\/w:tbl>|<w:sdt\b[\s\S]*?<\/w:sdt>|<w:p\b[^>]*\/>|<w:p\b[^>]*>[\s\S]*?<\/w:p>/g
+interface BlockSpan {
+  start: number
+  /** Exclusive. */
+  end: number
+}
+
+/** The tag types that open a block; used to find where the NEXT one starts scanning from. */
+const TOP_LEVEL_OPEN_RE = /<w:tbl\b[^>]*>|<w:sdt\b[^>]*>|<w:p\b[^>]*\/>|<w:p\b[^>]*>/g
+
+/**
+ * Index just past the true, OUTERMOST closing tag for a `<w:tbl>` or `<w:sdt>` whose
+ * own opening tag starts at `openIdx`. Depth-tracked so a nested occurrence of the same
+ * tag doesn't fool it into stopping early. Returns -1 if unterminated (malformed input —
+ * callers stop rather than emit a corrupted block in that case).
+ */
+function findNestedBlockEnd(xml: string, openIdx: number, tag: 'tbl' | 'sdt'): number {
+  const openRe = new RegExp(`<w:${tag}\\b[^>]*?/?>`, 'g')
+  const closeTag = `</w:${tag}>`
+  let depth = 0
+  let i = openIdx
+  for (;;) {
+    openRe.lastIndex = i
+    const openMatch = openRe.exec(xml)
+    const closeIdx = xml.indexOf(closeTag, i)
+    if (closeIdx === -1) return -1
+    if (openMatch && openMatch.index < closeIdx) {
+      if (!openMatch[0].endsWith('/>')) depth++ // a self-closed tag needs no matching close
+      i = openMatch.index + openMatch[0].length
+    } else {
+      depth--
+      i = closeIdx + closeTag.length
+      if (depth === 0) return i
+    }
+  }
+}
+
+/** Every top-level block's `[start, end)` span, in document order. */
+function findBlockSpans(xml: string): BlockSpan[] {
+  const spans: BlockSpan[] = []
+  let i = 0
+  while (i < xml.length) {
+    TOP_LEVEL_OPEN_RE.lastIndex = i
+    const m = TOP_LEVEL_OPEN_RE.exec(xml)
+    if (!m) break
+    const start = m.index
+    let end: number
+    if (m[0].startsWith('<w:tbl')) end = findNestedBlockEnd(xml, start, 'tbl')
+    else if (m[0].startsWith('<w:sdt')) end = findNestedBlockEnd(xml, start, 'sdt')
+    else if (m[0].endsWith('/>')) end = start + m[0].length // self-closed <w:p/>
+    else {
+      const closeIdx = xml.indexOf('</w:p>', start)
+      end = closeIdx === -1 ? -1 : closeIdx + '</w:p>'.length
+    }
+    if (end === -1) break // malformed from here on — stop rather than corrupt further
+    spans.push({ start, end })
+    i = end
+  }
+  return spans
+}
+
+/**
+ * Apply `fn` to every top-level block in document order, splicing its return value back
+ * in; content between blocks (whitespace, `<w:sectPr>`, anything `findBlockSpans` doesn't
+ * recognize) passes through byte-for-byte, same as the old `documentXml.replace(BLOCK_RE, …)`
+ * pattern this replaces. `getBlocks`/`replaceBlocks` are both built on this.
+ */
+export function mapBlocks(documentXml: string, fn: (block: string) => string): string {
+  const spans = findBlockSpans(documentXml)
+  let result = ''
+  let cursor = 0
+  for (const s of spans) {
+    result += documentXml.slice(cursor, s.start)
+    result += fn(documentXml.slice(s.start, s.end))
+    cursor = s.end
+  }
+  result += documentXml.slice(cursor)
+  return result
+}
 
 /** Max chars of body text kept in a descriptor — heading cues live at the start. */
 const TEXT_CAP = 200
@@ -32,6 +122,15 @@ export const MAX_HEADING_CHARS = 200
 
 export const isParagraph = (b: string) => /^<w:p\b/.test(b)
 
+/**
+ * True for a structured-document-tag block (`<w:sdt>`) — Word/Google-Docs-export wraps
+ * odds and ends in these (tracked-suggestion remnants, content controls). Valid as a
+ * child of `<w:tc>` too, so passes that move blocks into a table cell can treat it like
+ * a paragraph for nesting purposes; it carries no `<w:t>` text via `blockText`, so it
+ * reads as blank for any text-based scan (heading/caption/foot detection, etc.).
+ */
+export const isStructuredDocTag = (b: string) => /^<w:sdt\b/.test(b)
+
 /** True when the paragraph belongs to a numbered/bulleted list (`<w:numPr>` in its pPr). */
 export const isListItem = (b: string) => /<w:numPr\b/.test(b)
 
@@ -44,7 +143,7 @@ export const blockText = (b: string) => {
 
 /** Top-level body blocks (paragraphs / tables / sdt), in document order. */
 export function getBlocks(documentXml: string): string[] {
-  return documentXml.match(BLOCK_RE) ?? []
+  return findBlockSpans(documentXml).map(s => documentXml.slice(s.start, s.end))
 }
 
 /** The compact shape the AI sees — truncated text plus a few classification cues. */
@@ -128,12 +227,12 @@ export function addPPrProperty(p: string, propXml: string): string {
 /**
  * Splice rewritten blocks back into the document by absolute index. Blocks not
  * present in `byIndex` are left byte-for-byte untouched. Index alignment holds
- * because the same `BLOCK_RE` produced `getBlocks` and drives this replace.
+ * because the same `findBlockSpans` scan produced `getBlocks` and drives this replace.
  */
 export function replaceBlocks(documentXml: string, byIndex: Map<number, string>): string {
   let i = 0
-  return documentXml.replace(BLOCK_RE, m => {
+  return mapBlocks(documentXml, block => {
     const cur = i++
-    return byIndex.has(cur) ? byIndex.get(cur)! : m
+    return byIndex.has(cur) ? byIndex.get(cur)! : block
   })
 }

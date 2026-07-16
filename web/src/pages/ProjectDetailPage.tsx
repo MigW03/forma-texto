@@ -318,6 +318,20 @@ function PdfViewer({
 
 const DOCX_ZOOM_DEFAULT = 0.9
 
+// docx-preview computes right/center tab-stop positions (used by the sumário's page-
+// number column) in a `setTimeout(..., 500)` fired from INSIDE its own `renderAsync` —
+// not before it resolves, and not overridable. That computation calibrates itself by
+// measuring a probe appended to `document.body`, outside our `zoom` CSS wrapper — so if
+// `zoom` is already anything other than 1 when that timeout fires (it normally is,
+// since DOCX_ZOOM_DEFAULT is 0.9 and applies from the moment the DOM exists), the
+// calibration and the actual (zoomed) content disagree, and every right/center tab stop
+// lands at the wrong horizontal position — the sumário's stamped page number renders far
+// short of the margin (mistaken for "missing") and can force the entry to wrap. Ordinary
+// paragraphs never hit this because they don't use tab stops that reach the page edge.
+// The fix: hold the wrapper at zoom 1 (self-consistent — content and the library's own
+// calibration match) through that window, THEN apply the real zoom once it's fired.
+const TAB_STOP_SETTLE_MS = 600
+
 const DOCX_RENDER_OPTIONS = {
   inWrapper: true,
   breakPages: true,
@@ -501,6 +515,13 @@ const DocxViewer = forwardRef<DocxViewerHandle, {
         const override = document.createElement('style')
         override.textContent = DOCX_PAGE_STYLES
         style.appendChild(override)
+        // Keep the loading state (which also holds zoom at 1 — see the wrapper's
+        // `style` below) until docx-preview's internal, delayed tab-stop pass has
+        // actually fired. See TAB_STOP_SETTLE_MS above.
+        return new Promise<void>(res => setTimeout(res, TAB_STOP_SETTLE_MS))
+      })
+      .then(() => {
+        if (cancelled) return
         setLoading(false)
       })
       .catch(() => { if (!cancelled) { setLoadError(true); setLoading(false) } })
@@ -518,7 +539,8 @@ const DocxViewer = forwardRef<DocxViewerHandle, {
           <p className="text-xs text-muted max-w-xs">{t('project.loadingPreviewHint')}</p>
         </div>
       )}
-      <div style={{ zoom, display: loading ? 'none' : undefined }}>
+      {/* zoom held at 1 while loading — see TAB_STOP_SETTLE_MS above for why. */}
+      <div style={{ zoom: loading ? 1 : zoom, display: loading ? 'none' : undefined }}>
         <div ref={styleRef} />
         <div ref={bodyRef} className="docx-body" />
       </div>

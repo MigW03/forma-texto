@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classifyPretextual, detectPretextual, applyPretextualHeadings, applyCoverAlignment, applyFolhaRostoAlignment, applyPretextualPageBreaks, applyCoverVerticalDistribution, coverBlockIndices } from './preTextual'
+import { classifyPretextual, detectPretextual, applyPretextualHeadings, applyCoverAlignment, applyFolhaRostoAlignment, applyPretextualPageBreaks, applyCoverVerticalDistribution, suppressCoverPageNumber, coverBlockIndices } from './preTextual'
 import { REFERENCES_HEADING_STYLE, COVER_STYLE, FOLHA_ROSTO_NATUREZA_STYLE } from './guidelines'
 import { getBlocks } from './blocks'
 
@@ -42,6 +42,43 @@ describe('classifyPretextual', () => {
       'A presente tese sustenta que a normalização importa.',
     ])
     expect(r).toEqual({ sections: [], bodyStart: 0 })
+  })
+
+  it('finds the real "Introdução" heading when it carries no literal number (e.g. Word numPr numbering)', () => {
+    const r = classifyPretextual([
+      'SUMÁRIO',                                                // 0
+      '1 INTRODUÇÃO ... 5',                                     // 1 TOC entry
+      '2 DESENVOLVIMENTO ... 8',                                 // 2 TOC entry
+      'Introdução',                                              // 3 real heading, no literal number
+      'Este trabalho aborda o tema X de forma abrangente.',      // 4 body prose
+    ])
+    expect(r.bodyStart).toBe(3)
+    expect(r.sections.find(s => s.kind === 'sumario')).toEqual({ kind: 'sumario', blockStart: 0, blockEnd: 2 })
+  })
+
+  it('does not treat a same-text, un-paginated TOC entry as the real heading (regression guard)', () => {
+    // A manually-typed sumário with no page numbers yet: each entry is bare text,
+    // identical to the eventual real heading. The TOC entries must stay pré-textual —
+    // this is exactly the case that caused the original `^introdu[çc][ãa]o$` special
+    // case to be reverted (see HANDOFF.md 2026-06-29).
+    const r = classifyPretextual([
+      'SUMÁRIO',           // 0
+      'Introdução',        // 1 TOC entry, no page number
+      'Desenvolvimento',   // 2 TOC entry, no page number
+      'Conclusão',         // 3 TOC entry, no page number
+      'Introdução',        // 4 real heading
+      'Este trabalho aborda o tema X de forma abrangente.', // 5 body prose
+    ])
+    expect(r.bodyStart).toBe(4)
+    expect(r.sections.find(s => s.kind === 'sumario')).toEqual({ kind: 'sumario', blockStart: 0, blockEnd: 3 })
+  })
+
+  it('falls back to just past the sumário when no real heading is ever found (conservative)', () => {
+    const r = classifyPretextual([
+      'SUMÁRIO',      // 0
+      'Introdução',   // 1 TOC entry only, nothing else in the doc
+    ])
+    expect(r.bodyStart).toBe(1)
   })
 })
 
@@ -250,6 +287,41 @@ describe('applyCoverVerticalDistribution', () => {
     expect(mainCell).not.toContain('São Paulo')
   })
 
+  it('pins the maintaining institution to a top-aligned header zone, separate from the centered author/title', () => {
+    // Real bug: the institution name was rendered merged into the same centered block as
+    // the author/title, when ABNT NBR 14724 puts it at the TOP of the page specifically.
+    // Shape matches the real document that surfaced it: institution, a blank-line gap,
+    // author, a gap, title, a gap, city/year.
+    const xml = docWithSectPr([
+      'UNIVERSIDADE FEDERAL X', 'INSTITUTO DE ARTES', '', '',
+      'Maria Santos', '', '',
+      'TÍTULO DO TRABALHO', '', '',
+      'São Paulo', '2023', 'RESUMO', 'Texto.',
+    ])
+    const { sections } = detectPretextual(xml)
+    const out = applyCoverVerticalDistribution(xml, sections)
+    const table = getBlocks(out)[0]
+    const vAligns = [...table.matchAll(/<w:vAlign w:val="(\w+)"/g)].map(m => m[1])
+    expect(vAligns).toEqual(['top', 'center', 'bottom'])
+    const headerCell = table.slice(table.indexOf('<w:vAlign w:val="top"/>'), table.indexOf('<w:vAlign w:val="center"/>'))
+    expect(headerCell).toContain('UNIVERSIDADE FEDERAL X')
+    expect(headerCell).toContain('INSTITUTO DE ARTES')
+    expect(headerCell).not.toContain('Maria Santos')
+    const mainCell = table.slice(table.indexOf('<w:vAlign w:val="center"/>'), table.indexOf('<w:vAlign w:val="bottom"/>'))
+    expect(mainCell).toContain('Maria Santos')
+    expect(mainCell).toContain('TÍTULO DO TRABALHO')
+    expect(mainCell).not.toContain('UNIVERSIDADE')
+  })
+
+  it('does not create a header zone when the cover has no institution line (e.g. folha de rosto)', () => {
+    const xml = docWithSectPr(['Ana Lima', 'TÍTULO', '2023', 'RESUMO', 'Texto.'])
+    const { sections } = detectPretextual(xml)
+    const out = applyCoverVerticalDistribution(xml, sections)
+    const table = getBlocks(out)[0]
+    const vAligns = [...table.matchAll(/<w:vAlign w:val="(\w+)"/g)].map(m => m[1])
+    expect(vAligns).toEqual(['center', 'bottom']) // no 'top' row
+  })
+
   it('distributes the folha de rosto too (single-year document, no capa/folha split)', () => {
     // Only one year line + natureza → the whole leading region classifies as folhaDeRosto.
     const xml = docWithSectPr([
@@ -284,11 +356,13 @@ describe('applyCoverVerticalDistribution', () => {
     expect(blocks[0]).toMatch(/^<w:tbl>/)
     expect(blocks[1]).toContain('RESUMO')
     expect(out.match(/<w:tbl>/g)).toHaveLength(1)
-    // Two pages → 4 rows (main + foot each), each page summing to contentH − slack.
+    // Capa: 3 rows (header/main/foot, "UNIVERSIDADE X" triggers the institution header
+    // zone) — folha: 2 rows (main/foot, no institution line so no header zone). Each
+    // page's own rows still sum to contentH − slack.
     const heights = [...blocks[0].matchAll(/w:trHeight w:val="(\d+)"/g)].map(m => parseInt(m[1], 10))
-    expect(heights).toHaveLength(4)
-    expect(heights[0] + heights[1]).toBe(14003 - 60)
-    expect(heights[2] + heights[3]).toBe(14003 - 60)
+    expect(heights).toHaveLength(5)
+    expect(heights[0] + heights[1] + heights[2]).toBe(14003 - 60)
+    expect(heights[3] + heights[4]).toBe(14003 - 60)
   })
 
   it('splits a merged cover section into pages at the author\'s own page breaks', () => {
@@ -312,9 +386,11 @@ describe('applyCoverVerticalDistribution', () => {
     const out = applyCoverVerticalDistribution(xml, sections)
     const table = getBlocks(out)[0]
     expect(table).toMatch(/^<w:tbl>/)
-    // Two page groups → 4 rows; each foot carries its own city/year.
+    // Two page groups → 5 rows: the capa page gets header+main+foot ("UNIVERSIDADE X"
+    // triggers the institution header zone), the folha page gets just main+foot (no
+    // institution line there). Each foot still carries its own city/year.
     const heights = [...table.matchAll(/w:trHeight w:val="(\d+)"/g)].map(m => parseInt(m[1], 10))
-    expect(heights).toHaveLength(4)
+    expect(heights).toHaveLength(5)
     const footCells = [...table.matchAll(/<w:vAlign w:val="bottom"\/><\/w:tcPr>([\s\S]*?)<\/w:tc>/g)].map(m => m[1])
     expect(footCells).toHaveLength(2)
     expect(footCells[0]).toContain('Recife')
@@ -322,6 +398,151 @@ describe('applyCoverVerticalDistribution', () => {
     expect(footCells[1]).toContain('Recife – 2024')
     // The pageBreakBefore must not survive inside the table (rows own pagination now).
     expect(table).not.toContain('pageBreakBefore')
+  })
+
+  it('splits a merged cover section into pages at a mid-body section break (Word "Section Break (Next Page)")', () => {
+    // Same merged single-year-line scenario as above, but the capa/folha boundary is a
+    // Word section break (common in ABNT templates, to restart page numbering after the
+    // covers) instead of a plain page break. Regression test for the real bug: before
+    // `hasSectionBreak`, this boundary was invisible to `splitPageGroups`, so capa+folha
+    // rendered as ONE oversized page group — the capa's own city/year (not at the tail of
+    // the merged group) never got pinned to a foot, and the row-height drift downstream
+    // stranded the folha's real foot content on a spurious extra page.
+    const capaPage = ['UNIVERSIDADE X', 'TÍTULO DO TRABALHO', 'Recife', '2024']
+    const folhaPage = [
+      'Ana Lima',
+      'Tese apresentada ao programa como requisito parcial para obtenção do título.',
+      'Recife – 2024',
+    ]
+    // The section break belongs to the LAST paragraph of the ending section (capa's own
+    // year line), not the first paragraph of the next one — that's how OOXML represents it.
+    const capaParas = capaPage.slice(0, -1).map(t => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`).join('')
+    const capaLastPara =
+      `<w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr>` +
+      `<w:r><w:t>${capaPage[capaPage.length - 1]}</w:t></w:r></w:p>`
+    const paras =
+      capaParas + capaLastPara +
+      folhaPage.map(t => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`).join('') +
+      '<w:p><w:r><w:t>RESUMO</w:t></w:r></w:p><w:p><w:r><w:t>Texto.</w:t></w:r></w:p>' +
+      BODY_SECT_PR
+    const xml = `<w:document><w:body>${paras}</w:body></w:document>`
+    const { sections } = detectPretextual(xml)
+    expect(sections[0].kind).toBe('folhaDeRosto') // merged, same as the page-break variant above
+    const out = applyCoverVerticalDistribution(xml, sections)
+    const table = getBlocks(out)[0]
+    expect(table).toMatch(/^<w:tbl>/)
+    // Two page groups → 5 rows: the capa page gets header+main+foot ("UNIVERSIDADE X"
+    // triggers the institution header zone), the folha page gets just main+foot (no
+    // institution line there). Each foot still carries its own city/year.
+    const heights = [...table.matchAll(/w:trHeight w:val="(\d+)"/g)].map(m => parseInt(m[1], 10))
+    expect(heights).toHaveLength(5)
+    const footCells = [...table.matchAll(/<w:vAlign w:val="bottom"\/><\/w:tcPr>([\s\S]*?)<\/w:tc>/g)].map(m => m[1])
+    expect(footCells).toHaveLength(2)
+    expect(footCells[0]).toContain('Recife')
+    expect(footCells[0]).toContain('2024')
+    expect(footCells[1]).toContain('Recife – 2024')
+    // The mid-body sectPr must not survive inside the table (illegal there; rows own
+    // pagination now) — same treatment as pageBreakBefore/the explicit break run.
+    expect(table).not.toContain('<w:sectPr')
+  })
+
+  it('does NOT split on a long run of blank paragraphs — ABNT requires the cover stay on one page', () => {
+    // Real regression, found on an actual thesis: a capa with ~10 blank lines between the
+    // institution and the author's name (ordinary manual vertical spacing — the author
+    // has no other way to position content without a real layout tool) got split into
+    // THREE separate pages by an earlier version of this function that treated any long
+    // blank run as a "push to the next page" signal. ABNT requires the capa (and folha de
+    // rosto) to be exactly one page — the whole point of vAlign=center + the pinned foot
+    // is to REPLACE this kind of manual spacing with a real one-page layout, not to treat
+    // it as evidence more pages are needed. Only an explicit break marker may split a
+    // section now; blank paragraphs never do, however many of them there are.
+    const capaPage = ['UNIVERSIDADE X', 'TÍTULO DO TRABALHO', 'Recife', '2024']
+    const paras =
+      [capaPage[0]].map(t => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`).join('') +
+      Array.from({ length: 10 }, () => '<w:p/>').join('') + // author's manual spacing
+      capaPage.slice(1).map(t => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`).join('') +
+      '<w:p><w:r><w:t>RESUMO</w:t></w:r></w:p><w:p><w:r><w:t>Texto.</w:t></w:r></w:p>' +
+      BODY_SECT_PR
+    const xml = `<w:document><w:body>${paras}</w:body></w:document>`
+    const { sections } = detectPretextual(xml)
+    const out = applyCoverVerticalDistribution(xml, sections)
+    const table = getBlocks(out)[0]
+    expect(table).toMatch(/^<w:tbl>/)
+    // One page, not split into multiple — but 3 rows: header (institution, top-aligned),
+    // main (title, centered), foot (city/year, bottom-aligned). The 10 blank paragraphs
+    // are capped, not preserved verbatim (see `capBlankRuns`), so the row heights below
+    // still sum to one page.
+    const heights = [...table.matchAll(/w:trHeight w:val="(\d+)"/g)].map(m => parseInt(m[1], 10))
+    expect(heights).toHaveLength(3)
+    expect(heights.reduce((a, b) => a + b, 0)).toBe(14003 - 60)
+    const footCell = table.slice(table.indexOf('<w:vAlign w:val="bottom"/>'))
+    expect(footCell).toContain('Recife')
+    expect(footCell).toContain('2024')
+    const headerCell = table.slice(table.indexOf('<w:vAlign w:val="top"/>'), table.indexOf('<w:vAlign w:val="center"/>'))
+    expect(headerCell).toContain('UNIVERSIDADE X')
+    const mainCell = table.slice(table.indexOf('<w:vAlign w:val="center"/>'), table.indexOf('<w:vAlign w:val="bottom"/>'))
+    expect(mainCell).toContain('TÍTULO DO TRABALHO')
+    expect(mainCell).not.toContain('UNIVERSIDADE X')
+  })
+
+  it('does not bail out on a stray <w:sdt> block inside the cover (Google Docs tracked-suggestion remnant)', () => {
+    // Real bug, found on an actual thesis: a Google Docs export left a <w:sdt> wrapper
+    // behind (goog_rdk_* tag) holding what looked like the author's personal to-do list,
+    // never deleted, sitting inside the capa's own block range. `<w:sdt>` isn't a `<w:p>`,
+    // so the "can every block in this run nest into one table cell" check used to bail out
+    // on the ENTIRE run the instant it hit one — silently skipping vertical distribution
+    // (centering + city/year foot-pinning) for the whole cover, not just around the sdt.
+    const sdt =
+      '<w:sdt><w:sdtPr><w:id w:val="1"/><w:tag w:val="goog_rdk_1"/></w:sdtPr>' +
+      '<w:sdtContent><w:p><w:r><w:t>Fazer até 25 de maio</w:t></w:r></w:p></w:sdtContent></w:sdt>'
+    const paras =
+      ['UNIVERSIDADE X', 'TÍTULO DO TRABALHO'].map(t => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`).join('') +
+      sdt +
+      ['Recife', '2024', 'RESUMO', 'Texto.'].map(t => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`).join('')
+    const xml = `<w:document><w:body>${paras}${BODY_SECT_PR}</w:body></w:document>`
+    const { sections } = detectPretextual(xml)
+    const out = applyCoverVerticalDistribution(xml, sections)
+    const blocks = getBlocks(out)
+    const table = blocks[0]
+    expect(table).toMatch(/^<w:tbl>/)
+    // The sdt's visible text survives — but the wrapper itself is simplified away to a
+    // plain paragraph (see `simplifyStructuredDocTag`): real Google Docs sdt content can
+    // itself be borderline-malformed (a bare tracked-change marker as a direct, non-
+    // paragraph child; nested sdt-in-sdt) — LibreOffice tolerated that at the body level
+    // but silently failed to produce ANY output once it was moved verbatim into a table
+    // cell, confirmed against the real document that surfaced this bug.
+    expect(table).toContain('Fazer até 25 de maio')
+    expect(table).not.toContain('goog_rdk_1')
+    expect(table).not.toContain('<w:sdt')
+    // Vertical distribution actually ran: the year is pinned to its own foot row.
+    const footCell = table.slice(table.indexOf('<w:vAlign w:val="bottom"/>'))
+    expect(footCell).toContain('Recife')
+    expect(footCell).toContain('2024')
+  })
+
+  it('preserves every item of a run of consecutive <w:sdt> blocks, not just the first couple', () => {
+    // Real bug, found on an actual thesis: a 5-item to-do list, each entry its own
+    // <w:sdt> (Google Docs export), sat inside the cover's block range. `capBlankRuns`
+    // (added to stop dozens of the author's manual blank-line paragraphs from ballooning
+    // the row past one page) counts ANY block that reads as blank via `texts[]` toward
+    // its run-length cap — but a `<w:sdt>` ALWAYS reads as blank there (same convention
+    // `blockText`/`isParagraph` use throughout this file), even though it carries real,
+    // visible content once `simplifyStructuredDocTag` runs. Treating 5 consecutive sdt
+    // blocks as one long "blank run" silently dropped all but the cap's first 2 — the
+    // to-do list rendered with only 2 of its 5 real lines. Only a genuine blank `<w:p>`
+    // should ever be capped.
+    const todoItems = ['Fazer até 25 de maio', 'Escrever Cap 1 e 2', 'arrumar imagens Cap 3', 'Rever a conclusão', 'Fazer resumo']
+    const sdts = todoItems
+      .map((t, i) => `<w:sdt><w:sdtPr><w:id w:val="${i}"/><w:tag w:val="goog_rdk_${i}"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>${t}</w:t></w:r></w:p></w:sdtContent></w:sdt>`)
+      .join('')
+    const paras =
+      '<w:p><w:r><w:t>TÍTULO DO TRABALHO</w:t></w:r></w:p>' +
+      sdts +
+      ['Recife', '2024', 'RESUMO', 'Texto.'].map(t => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`).join('')
+    const xml = `<w:document><w:body>${paras}${BODY_SECT_PR}</w:body></w:document>`
+    const { sections } = detectPretextual(xml)
+    const table = getBlocks(applyCoverVerticalDistribution(xml, sections))[0]
+    for (const item of todoItems) expect(table).toContain(item)
   })
 
   it('is idempotent — a second call is a no-op (already collapsed, no longer plain paragraphs)', () => {
@@ -341,5 +562,37 @@ describe('applyCoverVerticalDistribution', () => {
     const xml = doc(['UNIVERSIDADE X', '2023', 'RESUMO', 'Texto.'])
     const { sections } = detectPretextual(xml)
     expect(applyCoverVerticalDistribution(xml, sections)).toBe(xml)
+  })
+})
+
+describe('suppressCoverPageNumber', () => {
+  it('adds titlePg to the final sectPr when a capa is present', () => {
+    const xml = docWithSectPr(['UNIVERSIDADE X', '2023', 'RESUMO', 'Texto.'])
+    const { sections } = detectPretextual(xml)
+    const out = suppressCoverPageNumber(xml, sections)
+    expect(out).toContain('<w:titlePg/>')
+    // still inside the final sectPr, immediately before its closing tag
+    expect(out).toMatch(/<w:titlePg\/><\/w:sectPr>/)
+  })
+
+  it('is idempotent — a second call does not add a duplicate titlePg', () => {
+    const xml = docWithSectPr(['UNIVERSIDADE X', '2023', 'RESUMO', 'Texto.'])
+    const { sections } = detectPretextual(xml)
+    const once = suppressCoverPageNumber(xml, sections)
+    const twice = suppressCoverPageNumber(once, sections)
+    expect(twice).toBe(once)
+    expect((twice.match(/<w:titlePg\/>/g) ?? []).length).toBe(1)
+  })
+
+  it('is a no-op when there is no capa or folha de rosto', () => {
+    const xml = docWithSectPr(['RESUMO', 'Texto.', '1 INTRODUÇÃO', 'Corpo.'])
+    const { sections } = detectPretextual(xml)
+    expect(suppressCoverPageNumber(xml, sections)).toBe(xml)
+  })
+
+  it('is a no-op when the document has no final sectPr', () => {
+    const xml = doc(['UNIVERSIDADE X', '2023', 'RESUMO', 'Texto.'])
+    const { sections } = detectPretextual(xml)
+    expect(suppressCoverPageNumber(xml, sections)).toBe(xml)
   })
 })

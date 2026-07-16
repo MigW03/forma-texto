@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { buildSumario, sumarioTabPos } from './sumario'
 import { getBlocks, blockText } from './blocks'
-import type { PretextualResult } from './preTextual'
+import { classifyPretextual, type PretextualResult } from './preTextual'
 
 const DOC = (body: string) =>
   '<?xml version="1.0"?>' +
@@ -179,5 +179,31 @@ describe('buildSumario', () => {
     // The long paragraph stays in the body (untouched) but must not be duplicated as a TOC entry.
     expect(blockText(blocks[1])).not.toContain('Milhazes, 1960')
     expect(blockText(blocks[2])).not.toContain('Milhazes, 1960')
+  })
+
+  it('regression: an unnumbered "Introdução" heading survives the sumário rebuild end-to-end', () => {
+    // Reproduces the real-world bug: classifyPretextual (fed the raw pre-Step-D text,
+    // where the heading is still Normal-styled and its "1" — if any — comes from Word's
+    // <w:numPr> list numbering rather than literal text) used to mis-set bodyStart past
+    // the real "Introdução" heading, so buildSumario deleted it while rebuilding the TOC.
+    const texts = [
+      'SUMÁRIO',                                             // 0
+      '1 INTRODUÇÃO ... 5',                                  // 1 TOC entry
+      'Introdução',                                          // 2 real heading (Heading1 by the time buildSumario runs)
+      'Este trabalho aborda o tema X de forma abrangente.',  // 3 body prose
+    ]
+    const pretextual = classifyPretextual(texts)
+    expect(pretextual.bodyStart).toBe(2) // sanity: the fix locates the real heading
+
+    const doc = DOC(
+      sumarioLabel +
+      para('1 INTRODUÇÃO ... 5') +
+      h1('Introdução') +
+      para('Este trabalho aborda o tema X de forma abrangente.'),
+    )
+    const result = buildSumario(doc, pretextual)
+    const texts2 = getBlocks(result).map(blockText)
+    expect(texts2.some(t => t.includes('Este trabalho aborda o tema X'))).toBe(true)
+    expect(texts2.some(t => t === 'Introdução')).toBe(true)
   })
 })

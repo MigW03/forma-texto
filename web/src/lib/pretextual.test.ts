@@ -114,3 +114,42 @@ describe('detectPretextual — edge cases', () => {
     expect(r.bodyStart).toBe(4)
   })
 })
+
+describe('detectPretextual — unnumbered "Introdução" heading', () => {
+  it('finds the real heading when it carries no literal number (e.g. Word numPr numbering)', () => {
+    const r = detectPretextual([
+      b('SUMÁRIO'),                                              // 0
+      b('1 INTRODUÇÃO ... 5'),                                   // 1 TOC entry
+      b('2 DESENVOLVIMENTO ... 8'),                               // 2 TOC entry
+      b('Introdução'),                                            // 3 real heading, no literal number
+      b('Este trabalho aborda o tema X de forma abrangente.'),    // 4 body prose
+    ])
+    expect(r.bodyStart).toBe(3)
+    expect(r.sections.find(s => s.kind === 'sumario')).toEqual({ kind: 'sumario', blockStart: 0, blockEnd: 2 })
+  })
+
+  it('does not treat a same-text, un-paginated TOC entry as the real heading (regression guard)', () => {
+    // A manually-typed sumário with no page numbers yet: each entry is bare text,
+    // identical to the eventual real heading. The TOC entries must stay pré-textual —
+    // this is exactly the case that caused the original `^introdu[çc][ãa]o$` special
+    // case to be reverted (see HANDOFF.md 2026-06-29).
+    const r = detectPretextual([
+      b('SUMÁRIO'),           // 0
+      b('Introdução'),        // 1 TOC entry, no page number
+      b('Desenvolvimento'),   // 2 TOC entry, no page number
+      b('Conclusão'),         // 3 TOC entry, no page number
+      b('Introdução'),        // 4 real heading
+      b('Este trabalho aborda o tema X de forma abrangente.'), // 5 body prose
+    ])
+    expect(r.bodyStart).toBe(4)
+    expect(r.sections.find(s => s.kind === 'sumario')).toEqual({ kind: 'sumario', blockStart: 0, blockEnd: 3 })
+  })
+
+  it('falls back to just past the sumário when no real heading is ever found (conservative)', () => {
+    const r = detectPretextual([
+      b('SUMÁRIO'),      // 0
+      b('Introdução'),   // 1 TOC entry only, nothing else in the doc
+    ])
+    expect(r.bodyStart).toBe(1)
+  })
+})

@@ -25,6 +25,41 @@ describe('getBlocks', () => {
     expect(blocks[3].startsWith('<w:tbl')).toBe(true)
     expect(isParagraph(blocks[4])).toBe(true) // self-closing <w:p/>
   })
+
+  it('does not truncate a <w:sdt> nested inside another <w:sdt>', () => {
+    // Real bug, found on an actual thesis: a single non-greedy regex (the previous
+    // implementation) closes at the FIRST </w:sdt> it finds — the INNER one — leaving
+    // the outer sdt's remaining content (here, the trailing paragraph and its own
+    // closing tags) outside of any recognized block. `replaceBlocks` then left that
+    // orphaned tail's dangling closing tags sitting in the output verbatim, wherever
+    // they happened to fall relative to whatever replaced the (truncated) outer block —
+    // genuinely invalid XML that LibreOffice refused to even open.
+    const nested =
+      '<w:sdt><w:sdtPr><w:tag w:val="outer"/></w:sdtPr><w:sdtContent>' +
+      '<w:p><w:r><w:t>outer text before</w:t></w:r></w:p>' +
+      '<w:sdt><w:sdtPr><w:tag w:val="inner"/></w:sdtPr><w:sdtContent>' +
+      '<w:p><w:r><w:t>inner text</w:t></w:r></w:p>' +
+      '</w:sdtContent></w:sdt>' +
+      '<w:p><w:r><w:t>outer text after</w:t></w:r></w:p>' +
+      '</w:sdtContent></w:sdt>'
+    const doc = `<w:document><w:body>${nested}<w:p><w:r><w:t>next paragraph</w:t></w:r></w:p></w:body></w:document>`
+    const blocks = getBlocks(doc)
+    expect(blocks).toHaveLength(2) // the whole nested sdt as ONE block, then the next paragraph
+    expect(blocks[0]).toBe(nested) // captured whole, not truncated at the inner </w:sdt>
+    expect(blocks[0]).toContain('outer text after') // survived the inner sdt's close tag
+    expect(blockText(blocks[1])).toBe('next paragraph') // correctly indexed after, not corrupted
+  })
+
+  it('does not truncate a <w:tbl> nested inside another <w:tbl> (a table inside a table cell)', () => {
+    const inner = '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>inner cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const outer = `<w:tbl><w:tr><w:tc><w:p><w:r><w:t>before</w:t></w:r></w:p>${inner}<w:p><w:r><w:t>after</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`
+    const doc = `<w:document><w:body>${outer}<w:p><w:r><w:t>next paragraph</w:t></w:r></w:p></w:body></w:document>`
+    const blocks = getBlocks(doc)
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0]).toBe(outer)
+    expect(blocks[0]).toContain('after')
+    expect(blockText(blocks[1])).toBe('next paragraph')
+  })
 })
 
 describe('blockText', () => {
@@ -91,5 +126,29 @@ describe('replaceBlocks', () => {
     expect(out).toContain('Texto normal do corpo.')
     // round-trips back to the same block count
     expect(getBlocks(out)).toHaveLength(5)
+  })
+
+  it('round-trips a nested <w:sdt> untouched and correctly replaces the block after it', () => {
+    // Same shape as the real bug: replacing a LATER block (by index) must not corrupt a
+    // nested sdt that comes before it, and the nested sdt itself must not be miscounted
+    // as two blocks (which would throw off every subsequent index).
+    const nested =
+      '<w:sdt><w:sdtPr><w:tag w:val="outer"/></w:sdtPr><w:sdtContent>' +
+      '<w:sdt><w:sdtPr><w:tag w:val="inner"/></w:sdtPr><w:sdtContent>' +
+      '<w:p><w:r><w:t>inner</w:t></w:r></w:p>' +
+      '</w:sdtContent></w:sdt>' +
+      '</w:sdtContent></w:sdt>'
+    const doc = `<w:document><w:body>${nested}<w:p><w:r><w:t>replace me</w:t></w:r></w:p></w:body></w:document>`
+    const replacement = '<w:p><w:r><w:t>replaced</w:t></w:r></w:p>'
+    const out = replaceBlocks(doc, new Map([[1, replacement]]))
+    expect(out).toContain(nested) // the nested sdt survives byte-for-byte, untouched
+    expect(out).toContain('replaced')
+    expect(out).not.toContain('replace me')
+    // Balanced tags — the real bug produced a dangling </w:sdtContent></w:sdt> because
+    // the nested sdt got miscounted; a simple depth check over both docs confirms parity.
+    const opens = (s: string) => (s.match(/<w:sdt\b[^>]*>/g) ?? []).length
+    const closes = (s: string) => (s.match(/<\/w:sdt>/g) ?? []).length
+    expect(opens(out)).toBe(closes(out))
+    expect(getBlocks(out)).toHaveLength(2)
   })
 })

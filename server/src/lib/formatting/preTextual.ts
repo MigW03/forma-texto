@@ -1,5 +1,6 @@
-import { getBlocks, isParagraph, blockText, setParagraphStyle, replaceBlocks } from './blocks'
+import { getBlocks, isParagraph, isStructuredDocTag, blockText, setParagraphStyle, replaceBlocks } from './blocks'
 import { REFERENCES_HEADING_STYLE, COVER_STYLE, FOLHA_ROSTO_NATUREZA_STYLE } from './guidelines'
+import { escapeXml } from './xmlText'
 
 /**
  * ABNT pré-textual element detection + formatting (server side).
@@ -111,6 +112,33 @@ function isBodyHeading(text: string): boolean {
   return false
 }
 
+/**
+ * The bare word "Introdução" — matches whether or not the author (or Word's own
+ * `<w:numPr>` multilevel-list numbering, which never shows up in `blockText`) has
+ * numbered it yet. On its own this is ambiguous: the sumário lists the same bare word
+ * as a TOC entry when the author hasn't paginated it (no trailing page number for
+ * `isTocEntry` to key on) — see `looksLikeBodyProse` for the context check that tells
+ * the two apart.
+ */
+function isIntroducaoWord(text: string): boolean {
+  return /^introdu[çc][ãa]o$/i.test(text)
+}
+
+/**
+ * Distinguishes the real "Introdução" heading from a same-text sumário TOC entry: a
+ * real heading is immediately followed by an actual paragraph of body prose, while a
+ * TOC entry is followed by nothing of the sort (another short chapter-name-style line,
+ * or the section simply ends there). Prose is identified as long and/or ending in
+ * sentence punctuation and — per ABNT chapter-title convention (ALL-CAPS) — not itself
+ * a short all-caps line.
+ */
+function looksLikeBodyProse(text: string): boolean {
+  if (!text) return false
+  if (text.length > 60) return true
+  if (/[.!?…]$/.test(text)) return true
+  return text.length > 20 && text !== text.toUpperCase()
+}
+
 function matchLabel(text: string): PretextualKind | null {
   for (const { kind, re } of LABEL_MATCHERS) if (re.test(text)) return kind
   return null
@@ -148,6 +176,11 @@ export function classifyPretextual(texts: string[]): PretextualResult {
   let bodyStart = lastSignal + 1
   for (let i = lastSignal + 1; i < trimmed.length; i++) {
     if (isBodyHeading(trimmed[i])) { bodyStart = i; break }
+    if (isIntroducaoWord(trimmed[i])) {
+      let j = i + 1
+      while (j < trimmed.length && !trimmed[j]) j++
+      if (j < trimmed.length && looksLikeBodyProse(trimmed[j])) { bodyStart = i; break }
+    }
   }
 
   const sections: PretextualSection[] = []
@@ -338,15 +371,38 @@ function hasPageBreakBefore(block: string): boolean {
 const hasPageBreakRun = (block: string) => /<w:br\b[^>]*w:type="page"/.test(block)
 
 /**
+ * True when this paragraph's own `<w:pPr>` carries a `<w:sectPr>` — a Word "Section
+ * Break (Next Page)" mid-document. OOXML attaches a section break to the LAST
+ * paragraph of the ending section (not the first of the next one), which is why this
+ * looks nothing like `hasPageBreakBefore`. Common in ABNT templates to restart page
+ * numbering between the cover pages and the body — `splitPageGroups` previously only
+ * recognized `pageBreakBefore`/an explicit break run, so a section break here merged
+ * capa and folha de rosto into one undivided page group: the capa's own city/year line
+ * (not at the tail of that merged group) was swept into the oversized "main" row
+ * instead of pinned to a foot, and the row-height arithmetic downstream (sized for one
+ * page but fed ~2 pages of content) drifted enough to strand the real foot content on
+ * a spurious extra page.
+ */
+const hasSectionBreak = (block: string) => {
+  const pPr = block.match(/<w:pPr>[\s\S]*?<\/w:pPr>/)?.[0]
+  return !!pPr && /<w:sectPr\b/.test(pPr)
+}
+
+/**
  * Remove page-break artifacts from a paragraph that is moving inside a table cell.
  * Word/LibreOffice ignore `pageBreakBefore` inside tables and render a break run as a
- * stray blank line — the exact-height rows now own the pagination, so both go.
+ * stray blank line — the exact-height rows now own the pagination, so both go. A
+ * `<w:sectPr>` nested in a table-cell paragraph is invalid OOXML (it must be a direct
+ * child of `<w:body>` or of a paragraph that itself is), so it is stripped too — the
+ * merged table already borrows its geometry from the document's final `<w:sectPr>`,
+ * so the intermediate section's own properties were never honored here anyway.
  */
 function stripPageBreaks(block: string): string {
   return block
     .replace(/<w:pageBreakBefore\b[^>]*\/>/g, '')
     .replace(/<w:r>(?:<w:rPr>[\s\S]*?<\/w:rPr>)?<w:br\b[^>]*w:type="page"[^>]*\/><\/w:r>/g, '')
     .replace(/<w:br\b[^>]*w:type="page"[^>]*\/>/g, '')
+    .replace(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/g, '')
 }
 
 interface PageGroup {
@@ -355,12 +411,32 @@ interface PageGroup {
 }
 
 /**
- * Split a section's block range into the author's own pages, using their explicit
- * break signals: `pageBreakBefore` starts a new group at that block; a `<w:br
- * w:type="page"/>` run ends the group at that block. A section with no breaks is one
- * group. This matters for the merged capa+folha case (a single-year-line document
+ * Split a section's block range into the author's own pages, using ONLY their explicit,
+ * unambiguous break signals: `pageBreakBefore` starts a new group at that block; a
+ * `<w:br w:type="page"/>` run or a mid-body `<w:sectPr>` (a Word "Section Break (Next
+ * Page)", common between covers and the body to restart page numbering) ends the group
+ * at that block. A section with no such markers is ONE group.
+ *
+ * A run of blank paragraphs is deliberately NOT treated as a page-boundary signal, even
+ * though a long one could be an author manually hitting Enter to push content down
+ * instead of using "page break" — a real, tried, and reverted approach (see git history:
+ * `findBlankRuns`/`BLANK_RUN_MIN_TWIPS`). The problem: ABNT requires the capa and folha de
+ * rosto to each be exactly ONE page — the whole point of this function's caller,
+ * `applyCoverVerticalDistribution` (vAlign=center for the main content + a pinned foot for
+ * the city/year), is to REPLACE an author's manual blank-line vertical spacing with a
+ * proper one-page layout. Treating that same manual spacing as a "push to a new page"
+ * signal directly defeats that purpose for the single most common real-world shape: a
+ * capa with generous blank-line gaps between institution / author / title / city+year,
+ * confirmed on a real document where 10 blank lines between the institution and the
+ * author's name split what must be one page into three. `classifyPretextual` already
+ * delimits each section's own end at its own year line (`sections.push({ kind: 'capa',
+ * blockStart: 0, blockEnd: yearLines[0] })`), so `detectFoot` finds the right city/year
+ * tail correctly with the whole section as ONE group — no blank-run detection needed for
+ * that. This matters for the merged capa+folha case too (a single-year-line document
  * collapses both covers into one `folhaDeRosto` section spanning several real pages) —
- * each real page still gets its own centered zone and its own pinned city/year foot.
+ * but only an explicit break marker between them is trusted to split that; if the author
+ * used neither a real break there, the (rarer) merged case stays one group, same as any
+ * other content lacking an explicit marker.
  */
 function splitPageGroups(blocks: string[], start: number, end: number): PageGroup[] {
   const groups: PageGroup[] = []
@@ -370,7 +446,7 @@ function splitPageGroups(blocks: string[], start: number, end: number): PageGrou
       groups.push({ start: a, end: i - 1 })
       a = i
     }
-    if (hasPageBreakRun(blocks[i]) && i < end) {
+    if ((hasPageBreakRun(blocks[i]) || hasSectionBreak(blocks[i])) && i < end) {
       groups.push({ start: a, end: i })
       a = i + 1
     }
@@ -397,8 +473,62 @@ function detectFoot(texts: string[], g: PageGroup): PageGroup | null {
   return null
 }
 
+/** A plausible "maintaining institution" header line: university/institute/faculty/
+ * department/center/school name — almost always present, and almost always ALL-CAPS, at
+ * the very top of a real ABNT capa. Folha de rosto conventionally does NOT repeat this
+ * (it opens with the author's name instead), so keying on these keywords — rather than
+ * "whatever the first line is" — naturally limits this to the capa without needing to
+ * know which section kind is being processed. */
+const INSTITUTION_LINE_RE = /\b(UNIVERSIDADE|INSTITUTO|FACULDADE|DEPARTAMENTO|CENTRO|ESCOLA|COL[ÉE]GIO|CAMPUS)\b/i
+
+/**
+ * Max lines a plausible institution header can span before we stop trusting it's still
+ * the header — a real one is short (university, institute, department, rarely more than
+ * 3-4 lines). Without this cap, a page with no blank line separating the header from
+ * whatever follows (an unusual document, or a test fixture) would swallow the author,
+ * title, or even the foot's own city/year into the top-aligned zone.
+ */
+const MAX_HEADER_LINES = 4
+
+/**
+ * The leading "maintaining institution" header block of a page group — per ABNT NBR
+ * 14724, it belongs at the TOP of the capa, not centered together with the author/title
+ * block below it. Returns the run of non-blank lines at the very start of the group, up
+ * to (not including) the first blank gap, `MAX_HEADER_LINES`, or `stopBefore` (pass the
+ * foot's own start index — the two must never overlap), whichever comes first. Only when
+ * the opening line actually reads like an institution name (`INSTITUTION_LINE_RE`) —
+ * otherwise null, so a group that doesn't open with one (folha de rosto; a capa authored
+ * without an institution line) is left exactly as before.
+ */
+function detectHeader(texts: string[], g: PageGroup, stopBefore: number): PageGroup | null {
+  let first = g.start
+  while (first <= g.end && !texts[first]) first++
+  if (first >= stopBefore || first > g.end || !INSTITUTION_LINE_RE.test(texts[first])) return null
+
+  const limit = Math.min(g.end, stopBefore - 1, first + MAX_HEADER_LINES - 1)
+  let last = first
+  while (last + 1 <= limit && texts[last + 1]) last++
+  return { start: first, end: last }
+}
+
+/**
+ * Reduce a structured-document-tag block to a plain paragraph carrying just its visible
+ * text, discarding whatever internal wrapper structure it had. Google Docs export can
+ * leave an `<w:sdt>`'s content in a shape that's borderline-malformed OOXML (a bare
+ * `<w:ins>` tracked-change marker as a direct, non-paragraph child; a `<w:sdt>` nested
+ * inside another) — LibreOffice tolerates this when it's a body-level block (real
+ * incident: this exact shape converted fine at the body level, but silently produced NO
+ * output PDF once moved verbatim into a `<w:tc>`, a stricter validation path). A plain
+ * paragraph is unconditionally safe there. Losing the tracked-change wrapper is fine —
+ * we only need the reader to still see the text, not Google Docs' revision metadata.
+ */
+function simplifyStructuredDocTag(block: string): string {
+  const text = blockText(block)
+  return text ? `<w:p><w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>` : '<w:p/>'
+}
+
 /** One borderless table row: a full-width cell with the given height and vertical alignment. */
-function buildRow(cellBlocks: string[], height: number, vAlign: 'center' | 'bottom', contentW: number): string {
+function buildRow(cellBlocks: string[], height: number, vAlign: 'top' | 'center' | 'bottom', contentW: number): string {
   const content = cellBlocks.length ? cellBlocks.join('') : '<w:p/>'
   return (
     `<w:tr><w:trPr><w:trHeight w:val="${height}" w:hRule="atLeast"/></w:trPr>` +
@@ -407,23 +537,83 @@ function buildRow(cellBlocks: string[], height: number, vAlign: 'center' | 'bott
 }
 
 /**
- * Rows for one cover page: a centered main zone plus — when the page ends with a
- * city/year block — a bottom-aligned foot zone, so the city/date sit on the page's
- * last lines per ABNT NBR 14724. Trailing blank paragraphs after the year are dropped:
- * they were the author's manual push-down, and the foot row now owns that job.
+ * Max consecutive blank paragraphs kept between real content in a page's main (non-foot)
+ * zone — enough for a visible gap between capa zones (institution / author / title)
+ * without the row's total height threatening to exceed one page. Real incident: a capa
+ * where 40 of its 48 blocks were blank (the author manually pushing institution → author
+ * → title apart, having no other way to position them) still overflowed onto a second
+ * page after the page-boundary fix above, because every one of those blank paragraphs
+ * was still preserved verbatim inside the single vAlign=center row. That defeats the
+ * entire point of this table: vAlign=center already distributes the content vertically
+ * within the page on its own — it needs no artificial blank-paragraph padding to do it,
+ * and keeping all of it just re-introduces the overflow risk this function exists to
+ * eliminate.
+ */
+const MAX_BLANK_RUN_IN_MAIN = 2
+
+/** `[from, to]` inclusive as a plain index array. */
+function indexRange(from: number, to: number): number[] {
+  const out: number[] = []
+  for (let i = from; i <= to; i++) out.push(i)
+  return out
+}
+
+/**
+ * Drop any run of GENUINELY blank paragraphs beyond `max` consecutive ones (keeping the
+ * first `max` of each run for a visual gap); every other index passes through untouched.
+ * Deliberately checks `isParagraph` too, not just `texts[i]` being falsy — a `<w:sdt>`
+ * block (real case: a run of to-do-list entries, each its own sdt) ALSO reads as blank
+ * text via `texts` (the same convention `blockText`/`isParagraph` use everywhere else in
+ * this file), but it is real content once `simplifyStructuredDocTag` runs, not filler —
+ * treating it as part of a blank run silently dropped most of that content in an earlier
+ * version of this function.
+ */
+function capBlankRuns(indices: number[], blocks: string[], texts: string[], max: number): number[] {
+  const out: number[] = []
+  let streak = 0
+  for (const i of indices) {
+    if (isParagraph(blocks[i]) && !texts[i]) {
+      streak++
+      if (streak <= max) out.push(i)
+    } else {
+      streak = 0
+      out.push(i)
+    }
+  }
+  return out
+}
+
+/**
+ * Rows for one cover page, in up to three zones per ABNT NBR 14724: a top-aligned header
+ * zone when the page opens with a maintaining-institution line (`detectHeader`); a
+ * centered main zone for whatever's left (author, title, …); and a bottom-aligned foot
+ * zone when the page ends with a city/year block (`detectFoot`), so the city/date sit on
+ * the page's last lines. Either zone is optional — a page with neither is just the
+ * original single centered row. Trailing blank paragraphs after the year are dropped:
+ * they were the author's manual push-down, and the foot row now owns that job. The main
+ * zone's own blank runs are capped the same way (`capBlankRuns`) — header/foot ranges are
+ * never more than a couple of lines in practice, so they're left as-is.
  */
 function buildGroupRows(blocks: string[], texts: string[], g: PageGroup, contentW: number, contentH: number): string[] {
-  const clean = (from: number, to: number) => blocks.slice(from, to + 1).map(stripPageBreaks)
+  const cleanBlock = (i: number) => (isStructuredDocTag(blocks[i]) ? simplifyStructuredDocTag(blocks[i]) : stripPageBreaks(blocks[i]))
   const foot = detectFoot(texts, g)
-  if (!foot) return [buildRow(clean(g.start, g.end), contentH - PAGE_SLACK_TWIPS, 'center', contentW)]
+  const header = detectHeader(texts, g, foot ? foot.start : g.end + 1)
 
-  const footBlocks = clean(foot.start, foot.end)
-  const footH = footBlocks.length * FOOT_LINE_TWIPS + FOOT_PAD_TWIPS
-  const mainBlocks = foot.start > g.start ? clean(g.start, foot.start - 1) : []
-  return [
-    buildRow(mainBlocks, contentH - footH - PAGE_SLACK_TWIPS, 'center', contentW),
-    buildRow(footBlocks, footH, 'bottom', contentW),
-  ]
+  const headerBlocks = header ? indexRange(header.start, header.end).map(cleanBlock) : []
+  const headerH = header ? headerBlocks.length * FOOT_LINE_TWIPS + FOOT_PAD_TWIPS : 0
+  const footBlocks = foot ? indexRange(foot.start, foot.end).map(cleanBlock) : []
+  const footH = foot ? footBlocks.length * FOOT_LINE_TWIPS + FOOT_PAD_TWIPS : 0
+
+  const mainStart = header ? header.end + 1 : g.start
+  const mainEnd = foot ? foot.start - 1 : g.end
+  const mainIdx = mainStart <= mainEnd ? capBlankRuns(indexRange(mainStart, mainEnd), blocks, texts, MAX_BLANK_RUN_IN_MAIN) : []
+  const mainBlocks = mainIdx.map(cleanBlock)
+
+  const rows: string[] = []
+  if (header) rows.push(buildRow(headerBlocks, headerH, 'top', contentW))
+  rows.push(buildRow(mainBlocks, contentH - headerH - footH - PAGE_SLACK_TWIPS, 'center', contentW))
+  if (foot) rows.push(buildRow(footBlocks, footH, 'bottom', contentW))
+  return rows
 }
 
 /**
@@ -490,11 +680,15 @@ export function applyCoverVerticalDistribution(documentXml: string, sections: Pr
     const start = run[0].blockStart
     const end = run[run.length - 1].blockEnd
     // Skip a run that is already wrapped (idempotency) or contains something we can't nest.
-    let allParagraphs = true
+    // `<w:sdt>` (a structured-document-tag — Google Docs export leaves these behind for
+    // tracked-suggestion remnants, e.g. a stray to-do list the author forgot to delete) is
+    // valid inside a table cell too and carries no text `blockText` can see, so it's treated
+    // the same as a paragraph here — a real `<w:tbl>` is still the only thing that blocks it.
+    let allCollapsible = true
     for (let i = start; i <= end; i++) {
-      if (!isParagraph(blocks[i])) { allParagraphs = false; break }
+      if (!isParagraph(blocks[i]) && !isStructuredDocTag(blocks[i])) { allCollapsible = false; break }
     }
-    if (!allParagraphs) continue
+    if (!allCollapsible) continue
 
     const rows: string[] = []
     for (const s of run) {
@@ -531,4 +725,36 @@ function addPageBreakBefore(block: string): string {
     return block.replace(/<w:pPr\b[^>]*\/>/, '<w:pPr><w:pageBreakBefore/></w:pPr>')
   }
   return block.replace(/(<w:p\b[^>]*>)/, '$1<w:pPr><w:pageBreakBefore/></w:pPr>')
+}
+
+/**
+ * Suppress the page-number header on the capa's own first page — ABNT requires the capa
+ * to show no page number at all, even though it IS counted in the total. Real documents
+ * commonly carry a header with an auto `PAGE` field applied to every page uniformly
+ * (confirmed on a real thesis: a single Word section, one `<w:headerReference>`, no
+ * per-page override), which is not itself something this pipeline generates — it's
+ * inherited from whatever template/export produced the original file.
+ *
+ * Uses OOXML's "different first page" flag, `<w:titlePg/>`, on the document's own
+ * section: with no `w:type="first"` header/footer reference provided alongside it,
+ * Word/LibreOffice render NO header on the section's first physical page, while every
+ * later page keeps using the document's normal header untouched — exactly "hide the
+ * capa's number, leave everything else numbered." A no-op when there's no cover section
+ * (nothing to suppress a number for) or the flag is already present (idempotent).
+ *
+ * Scoped deliberately narrow: only the flag itself, nothing about the fuller pré-textual
+ * roman-numeral / body-restarts-at-1 numbering convention some ABNT templates also use —
+ * that's a separate, bigger feature (tracked in `docs`/`business_decisions`), not implied
+ * by "the cover shouldn't show a number."
+ */
+export function suppressCoverPageNumber(documentXml: string, sections: PretextualSection[]): string {
+  const hasCover = sections.some(s => DISTRIBUTE_KINDS.has(s.kind))
+  if (!hasCover) return documentXml
+
+  const finalSectPr = documentXml.match(/<w:sectPr\b[\s\S]*?<\/w:sectPr>(?=\s*<\/w:body>)/)?.[0]
+  if (!finalSectPr) return documentXml
+  if (/<w:titlePg\/>/.test(finalSectPr)) return documentXml
+
+  const updated = finalSectPr.replace(/<\/w:sectPr>$/, '<w:titlePg/></w:sectPr>')
+  return documentXml.replace(finalSectPr, updated)
 }
