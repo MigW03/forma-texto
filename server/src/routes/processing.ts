@@ -4,6 +4,7 @@ import { processFormatting, exportPdfBeside } from '../lib/processFormatting'
 import { unzipDocx, zipDocx, finalizeInputs, detectPretextual, type PendingInput } from '../lib/formatting'
 import { paginateSumario } from '../lib/paginateSumario'
 import { sendProjectReadyEmail } from '../lib/notify'
+import { processingLimiter } from '../lib/rateLimit'
 
 const router = Router()
 
@@ -34,7 +35,7 @@ async function authorize(req: Request, projectId: string): Promise<boolean> {
 
 // POST /api/processing/start  { projectId }
 // Kicks off the formatting pipeline in the background and returns immediately.
-router.post('/start', async (req: Request, res: Response) => {
+router.post('/start', processingLimiter, async (req: Request, res: Response) => {
   const { projectId } = req.body as { projectId?: string }
   if (!projectId) {
     res.status(400).json({ error: 'projectId required' })

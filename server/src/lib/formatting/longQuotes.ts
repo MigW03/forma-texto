@@ -1,5 +1,7 @@
 import { getBlocks, isParagraph, isListItem, blockText, setParagraphStyle, replaceBlocks } from './blocks'
 import { LONG_QUOTE_STYLE } from './guidelines'
+import { parseParagraph, type Item } from './runs'
+import { escapeXml } from './xmlText'
 
 /**
  * Long (block) quotation pass (ABNT NBR 10520): a direct quotation longer than three
@@ -22,9 +24,14 @@ import { LONG_QUOTE_STYLE } from './guidelines'
  *     citation) that runs past three lines. These get their surrounding quotation marks
  *     stripped, since the block layout replaces the marks (NBR 10520).
  *
- * Only whole, standalone quoted paragraphs are converted — a quotation embedded in the
- * middle of a larger paragraph would need the paragraph split around it (mid-run), which
- * is deliberately left for a later pass.
+ * A quotation embedded mid-paragraph (lead-in prose, then the quote, optionally more
+ * prose after) is also handled: the paragraph is split into up to three — lead-in,
+ * the quote (LongQuote-styled, marks stripped), and trailing text — via
+ * `splitEmbeddedLongQuote`, reusing `runs.ts`'s paragraph parser so each piece keeps
+ * its original run-level formatting (bold/italic spans). Conservative by the same
+ * contract as the rest of this pipeline: any paragraph shape that isn't a plain run
+ * of text (hyperlinks, fields, footnotes, tabs, drawings — anything `parseParagraph`
+ * can't safely splice) is left unchanged rather than risk corrupting it.
  */
 
 /**
@@ -103,6 +110,80 @@ function stripSurroundingQuotes(p: string): string {
   return out
 }
 
+interface TextItem { rPr: string; text: string; start: number; end: number }
+
+/**
+ * Find an embedded quotation worth pulling out: an opening quote mark preceded by
+ * real lead-in text (not at the very start — a paragraph opening with a quote is the
+ * standalone case, already handled above), paired with the LAST closing-quote mark in
+ * the paragraph (mirrors `stripSurroundingQuotes`'s own "outermost close" heuristic —
+ * a long quotation commonly contains a nested quote-within-a-quote). Qualifies only
+ * when the quoted span itself clears the length bar; a short embedded quote stays inline.
+ */
+function findEmbeddedQuoteSpan(flattened: string): { openIdx: number; closeIdx: number } | null {
+  let openIdx = -1
+  for (let i = 0; i < flattened.length; i++) {
+    if (OPEN_QUOTE.test(flattened[i])) { openIdx = i; break }
+  }
+  if (openIdx <= 0 || !flattened.slice(0, openIdx).trim()) return null
+
+  const closeIdx = lastCloseQuoteIndex(flattened)
+  if (closeIdx < 0 || closeIdx <= openIdx + 1) return null
+  if (closeIdx - openIdx - 1 < MIN_LONG_QUOTE_CHARS) return null
+
+  return { openIdx, closeIdx }
+}
+
+/** Render the text items overlapping `[from, to)` as fresh `<w:r>` runs, formatting preserved. */
+function sliceItemsXml(items: TextItem[], from: number, to: number): string {
+  let out = ''
+  for (const it of items) {
+    const s = Math.max(from, it.start)
+    const e = Math.min(to, it.end)
+    if (s >= e) continue
+    const piece = it.text.slice(s - it.start, e - it.start)
+    if (!piece) continue
+    out += `<w:r>${it.rPr}<w:t xml:space="preserve">${escapeXml(piece)}</w:t></w:r>`
+  }
+  return out
+}
+
+/**
+ * Split a paragraph containing an embedded long quotation into lead-in / quote /
+ * trailing paragraphs (the last omitted when there's no text after the quote). Returns
+ * null when there's no qualifying embedded quote, or the paragraph's shape isn't a
+ * plain run of text `parseParagraph` can safely re-splice (hyperlinks, fields,
+ * footnotes, tabs, drawings, …) — same conservative contract as `runs.ts`.
+ */
+function splitEmbeddedLongQuote(p: string): string | null {
+  const parsed = parseParagraph(p)
+  if (!parsed || parsed.items.some((it: Item) => it.kind !== 'text')) return null
+
+  let pos = 0
+  const items: TextItem[] = parsed.items.map((it: Item) => {
+    const { rPr, text } = it as Extract<Item, { kind: 'text' }>
+    const start = pos
+    pos += text.length
+    return { rPr, text, start, end: pos }
+  })
+  const flattened = items.map(it => it.text).join('')
+
+  const span = findEmbeddedQuoteSpan(flattened)
+  if (!span) return null
+  const { openIdx, closeIdx } = span
+
+  const leadRuns = sliceItemsXml(items, 0, openIdx)
+  const quoteRuns = sliceItemsXml(items, openIdx + 1, closeIdx)
+  const trailRuns = sliceItemsXml(items, closeIdx + 1, flattened.length)
+  if (!leadRuns || !quoteRuns) return null
+
+  const leadP = `${parsed.openTag}${parsed.pPr}${leadRuns}</w:p>`
+  const quoteP = setParagraphStyle(`${parsed.openTag}${parsed.pPr}${quoteRuns}</w:p>`, LONG_QUOTE_STYLE)
+  const trailP = trailRuns ? `${parsed.openTag}${parsed.pPr}${trailRuns}</w:p>` : ''
+
+  return leadP + quoteP + trailP
+}
+
 /**
  * Tag long (block) quotations with the `LongQuote` style and drop the quotation marks of
  * over-long inline quotes. `stopAt` freezes the appendix/annex (a reproduced document is
@@ -122,11 +203,16 @@ export function formatLongQuotes(documentXml: string, stopAt = Infinity): string
 
     const quoted = isWhollyQuoted(text)
     const indented = leftIndentOf(b) >= LEFT_INDENT_THRESHOLD
-    if (!quoted && !indented) return
+    if (quoted || indented) {
+      let out = setParagraphStyle(b, LONG_QUOTE_STYLE)
+      if (quoted) out = stripSurroundingQuotes(out)
+      byIndex.set(i, out)
+      return
+    }
 
-    let out = setParagraphStyle(b, LONG_QUOTE_STYLE)
-    if (quoted) out = stripSurroundingQuotes(out)
-    byIndex.set(i, out)
+    // Not a standalone block quote — check for a long quotation embedded mid-paragraph.
+    const split = splitEmbeddedLongQuote(b)
+    if (split) byIndex.set(i, split)
   })
 
   return byIndex.size ? replaceBlocks(documentXml, byIndex) : documentXml

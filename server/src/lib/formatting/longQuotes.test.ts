@@ -99,4 +99,63 @@ describe('formatLongQuotes', () => {
     const doc = DOC(para('Parágrafo comum, curto e sem recuo.'))
     expect(formatLongQuotes(doc)).toBe(doc)
   })
+
+  describe('embedded quotation (lead-in / quote / trailing prose in one paragraph)', () => {
+    it('splits into lead-in, LongQuote, and trailing paragraphs', () => {
+      const doc = DOC(para(`Como afirma o autor: “${LONG}” Assim, conclui-se o argumento.`))
+      const blocks = getBlocks(formatLongQuotes(doc))
+      expect(blocks).toHaveLength(3)
+      expect(blockText(blocks[0])).toBe('Como afirma o autor:')
+      expect(styleOf(blocks[1])).toBe('LongQuote')
+      const quoteText = blockText(blocks[1])
+      expect(quoteText.startsWith('“')).toBe(false)
+      expect(quoteText.endsWith('”')).toBe(false)
+      expect(quoteText).toContain('investigação sobre o ensino')
+      expect(blockText(blocks[2])).toBe('Assim, conclui-se o argumento.')
+    })
+
+    it('omits the trailing paragraph when the quote runs to the end', () => {
+      const doc = DOC(para(`Como afirma o autor: “${LONG}”`))
+      const blocks = getBlocks(formatLongQuotes(doc))
+      expect(blocks).toHaveLength(2)
+      expect(blockText(blocks[0])).toBe('Como afirma o autor:')
+      expect(styleOf(blocks[1])).toBe('LongQuote')
+    })
+
+    it('leaves it alone when the embedded quoted span itself is short, even if the whole paragraph is long', () => {
+      const doc = DOC(para(`${LONG} Diz o autor: "curta." ${LONG}`))
+      expect(formatLongQuotes(doc)).toBe(doc)
+    })
+
+    it('preserves run-level formatting (bold/italic) across the split', () => {
+      const leadRuns =
+        '<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Como </w:t></w:r>' +
+        '<w:r><w:t xml:space="preserve">afirma o autor: </w:t></w:r>'
+      const quoteRuns =
+        '<w:r><w:t xml:space="preserve">“</w:t></w:r>' +
+        `<w:r><w:rPr><w:i/></w:rPr><w:t xml:space="preserve">${LONG}</w:t></w:r>` +
+        '<w:r><w:t xml:space="preserve">”</w:t></w:r>'
+      const trailRuns = '<w:r><w:t xml:space="preserve"> Assim conclui-se.</w:t></w:r>'
+      const doc = DOC(`<w:p>${leadRuns}${quoteRuns}${trailRuns}</w:p>`)
+      const blocks = getBlocks(formatLongQuotes(doc))
+      expect(blocks).toHaveLength(3)
+      expect(blocks[0]).toContain('<w:b/>')
+      expect(blocks[1]).toContain('<w:i/>')
+      expect(styleOf(blocks[1])).toBe('LongQuote')
+      expect(blockText(blocks[2])).toBe('Assim conclui-se.')
+    })
+
+    it('leaves a paragraph with a hyperlink unchanged even though it looks like an embedded long quote', () => {
+      const p =
+        `<w:p><w:r><w:t xml:space="preserve">Como afirma o autor: “${LONG}” </w:t></w:r>` +
+        '<w:hyperlink r:id="rId1"><w:r><w:t>link</w:t></w:r></w:hyperlink></w:p>'
+      const doc = DOC(p)
+      expect(formatLongQuotes(doc)).toBe(doc)
+    })
+
+    it('does not attempt an embedded split at/after stopAt', () => {
+      const doc = DOC(para(`Como afirma o autor: “${LONG}” Assim conclui.`))
+      expect(formatLongQuotes(doc, 0)).toBe(doc) // block 0 frozen
+    })
+  })
 })

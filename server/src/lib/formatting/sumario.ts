@@ -20,7 +20,7 @@ const TAB_INSET = 10
 const LEVEL_INDENT: Record<number, number> = { 1: 0, 2: 709, 3: 1418 }
 
 /** Return 1–6 when the block carries a Heading N style, else null. */
-function headingLevel(block: string): number | null {
+export function headingLevel(block: string): number | null {
   const m = block.match(/<w:pStyle\b[^>]*w:val="Heading(\d)"/i)
   if (!m) return null
   const n = parseInt(m[1], 10)

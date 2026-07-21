@@ -47,6 +47,7 @@ import {
   bodyStartForPageNumbering,
   demoteImplausibleHeadings,
   applyHeadingNumbering,
+  validateOutput,
   type HeadingDecision,
   type ReferenceDecision,
   type ProofreadDecision,
@@ -511,6 +512,21 @@ export async function processFormatting(projectId: string): Promise<void> {
         sections: finalPretextual.sections,
         bodyStart: finalPretextual.bodyStart,
       })
+
+      // Output-validation backstop: independent of whether the AI passes succeeded,
+      // catch the deterministic-bug class (malformed XML, a sumário/heading-count
+      // mismatch, an unresolved page-number placeholder, a flagged-but-not-located
+      // references page) before this document ever reaches a paying user. A failure
+      // here throws — same retriable-to-`pending` path as any other pipeline error
+      // (see the outer catch) — rather than stamping `complete` on a silently-broken doc.
+      const issues = validateOutput(workingDocXml, {
+        pretextual: finalPretextual,
+        referencesFlagged: refInput.referencePages.length > 0,
+        referenceRegion: region,
+      })
+      if (issues.length > 0) {
+        throw new Error(`output validation failed: ${issues.map(i => `${i.code}: ${i.message}`).join('; ')}`)
+      }
     }
 
     const out = { documentXml: workingDocXml, stylesXml: workingStylesXml }

@@ -225,7 +225,7 @@ function PreviewError({ url, fileName }: { url: string; fileName: string }) {
       </div>
       <p className="text-sm text-muted max-w-xs">{t('project.previewError')}</p>
       <Button asChild variant="outline">
-        <a href={url} target="_blank" rel="noopener noreferrer">
+        <a href={url} download={fileName}>
           <Download size={14} />
           {t('project.downloadFile')}
         </a>
@@ -1039,7 +1039,7 @@ export default function ProjectDetailPage() {
             )}
             {canDownloadProcessed && processedPdfUrl && (
               <Button asChild className="w-full">
-                <a href={processedPdfUrl} target="_blank" rel="noopener noreferrer">
+                <a href={processedPdfUrl} download={pdfDownloadName}>
                   <Download size={14} />
                   {t('project.downloadFinalPdf')}
                 </a>

@@ -35,11 +35,11 @@ const NON_TEXT_RUN_RE = /<w:(br|tab|drawing|object|pict|fldChar|instrText|footno
 const UNSAFE_PARAGRAPH_RE = /<w:hyperlink\b|<w:fldSimple\b|<w:fldChar\b|<w:instrText\b|<w:footnoteReference\b|<w:endnoteReference\b/
 
 /** A run reduced to plain text plus its formatting; or an opaque chunk we preserve verbatim. */
-type Item =
+export type Item =
   | { kind: 'text'; rPr: string; text: string }
   | { kind: 'anchor'; raw: string }
 
-interface ParsedParagraph {
+export interface ParsedParagraph {
   openTag: string
   pPr: string
   items: Item[]
@@ -70,7 +70,7 @@ const textOf = (run: string) =>
  * Parse a paragraph into ordered items, coalescing adjacent same-`rPr` text runs.
  * Returns null when the paragraph has no splice-able shape (self-closed / unsafe).
  */
-function parseParagraph(p: string): ParsedParagraph | null {
+export function parseParagraph(p: string): ParsedParagraph | null {
   if (!canSpliceParagraph(p)) return null
   const open = p.match(/^<w:p\b[^>]*>/)
   if (!open) return null

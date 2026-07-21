@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { stripe } from '../lib/stripe'
 import { supabase } from '../lib/supabase'
+import { checkoutLimiter } from '../lib/rateLimit'
 
 export type ServiceKey = 'formatting' | 'proofreading'
 
@@ -43,7 +44,7 @@ const router = Router()
 
 // ── Create payment intent ─────────────────────────────────────────────────────
 
-router.post('/create-payment-intent', async (req: Request, res: Response) => {
+router.post('/create-payment-intent', checkoutLimiter, async (req: Request, res: Response) => {
   const { services, pageCount, userId } = req.body as {
     services: ServiceKey[]
     pageCount: number
@@ -98,7 +99,7 @@ router.post('/create-payment-intent', async (req: Request, res: Response) => {
 
 // ── Complete free trial order (no payment) ────────────────────────────────────
 
-router.post('/complete-free-order', async (req: Request, res: Response) => {
+router.post('/complete-free-order', checkoutLimiter, async (req: Request, res: Response) => {
   const { services, pageCount, userId } = req.body as {
     services: ServiceKey[]
     pageCount: number
