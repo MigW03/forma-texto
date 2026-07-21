@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classifyPretextual, detectPretextual, applyPretextualHeadings, applyCoverAlignment, applyFolhaRostoAlignment, applyPretextualPageBreaks, applyCoverVerticalDistribution, suppressCoverPageNumber, coverBlockIndices } from './preTextual'
+import { classifyPretextual, detectPretextual, applyPretextualHeadings, applyCoverAlignment, applyFolhaRostoAlignment, applyPretextualPageBreaks, applyCoverVerticalDistribution, coverBlockIndices } from './preTextual'
 import { REFERENCES_HEADING_STYLE, COVER_STYLE, FOLHA_ROSTO_NATUREZA_STYLE } from './guidelines'
 import { getBlocks } from './blocks'
 
@@ -562,37 +562,5 @@ describe('applyCoverVerticalDistribution', () => {
     const xml = doc(['UNIVERSIDADE X', '2023', 'RESUMO', 'Texto.'])
     const { sections } = detectPretextual(xml)
     expect(applyCoverVerticalDistribution(xml, sections)).toBe(xml)
-  })
-})
-
-describe('suppressCoverPageNumber', () => {
-  it('adds titlePg to the final sectPr when a capa is present', () => {
-    const xml = docWithSectPr(['UNIVERSIDADE X', '2023', 'RESUMO', 'Texto.'])
-    const { sections } = detectPretextual(xml)
-    const out = suppressCoverPageNumber(xml, sections)
-    expect(out).toContain('<w:titlePg/>')
-    // still inside the final sectPr, immediately before its closing tag
-    expect(out).toMatch(/<w:titlePg\/><\/w:sectPr>/)
-  })
-
-  it('is idempotent — a second call does not add a duplicate titlePg', () => {
-    const xml = docWithSectPr(['UNIVERSIDADE X', '2023', 'RESUMO', 'Texto.'])
-    const { sections } = detectPretextual(xml)
-    const once = suppressCoverPageNumber(xml, sections)
-    const twice = suppressCoverPageNumber(once, sections)
-    expect(twice).toBe(once)
-    expect((twice.match(/<w:titlePg\/>/g) ?? []).length).toBe(1)
-  })
-
-  it('is a no-op when there is no capa or folha de rosto', () => {
-    const xml = docWithSectPr(['RESUMO', 'Texto.', '1 INTRODUÇÃO', 'Corpo.'])
-    const { sections } = detectPretextual(xml)
-    expect(suppressCoverPageNumber(xml, sections)).toBe(xml)
-  })
-
-  it('is a no-op when the document has no final sectPr', () => {
-    const xml = doc(['UNIVERSIDADE X', '2023', 'RESUMO', 'Texto.'])
-    const { sections } = detectPretextual(xml)
-    expect(suppressCoverPageNumber(xml, sections)).toBe(xml)
   })
 })

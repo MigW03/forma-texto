@@ -22,7 +22,8 @@
  */
 import { getBlocks, blockText, isParagraph, blockDescriptor, replaceBlocks } from './blocks'
 import { paragraphText, spliceCorrectedText, canSpliceParagraph } from './runs'
-import { CAPTION_STYLE } from './guidelines'
+import { isRateLimitError } from './ai/retry'
+import { CAPTION_STYLE, LONG_QUOTE_STYLE } from './guidelines'
 import type { Guideline } from './guidelines'
 
 /** The compact shape the AI sees for one paragraph: its index and full current text. */
@@ -111,7 +112,9 @@ export function chunkProofread(
       if (excludeIndices?.has(i)) return false // cover/identity pages — names must not be "corrected"
       if (!canSpliceParagraph(b)) return false // hyperlink/field/footnote — too risky
       const style = blockDescriptor(b, i).style
-      if (style === TITLE_STYLE || style === CAPTION_STYLE) return false // title + captions excluded
+      // Title + captions excluded; long quotations excluded too — a direct quotation is
+      // someone else's words and must not be grammar-"corrected".
+      if (style === TITLE_STYLE || style === CAPTION_STYLE || style === LONG_QUOTE_STYLE) return false
       return true
     })
 
@@ -191,6 +194,9 @@ async function proofreadResilient(
   try {
     return await decider.proofread(chunk)
   } catch (err) {
+    // A rate limit is account-wide and sticky — fail fast so the orchestrator requeues
+    // the whole job instead of splitting into more calls that all 429.
+    if (isRateLimitError(err)) throw err
     const msg = err instanceof Error ? err.message : String(err)
     if (chunk.blocks.length <= 1) {
       const i = chunk.blocks[0]?.i ?? -1

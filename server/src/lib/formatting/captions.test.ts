@@ -25,6 +25,30 @@ describe('formatCaptions', () => {
     expect(styleOf(blocks[4])).toBeNull() // ordinary body after the source — untouched
   })
 
+  it('keeps the caption group together across a page break via <w:keepNext/>', () => {
+    // Centered image paragraph (as the image pass leaves it) — a blank gap before it too.
+    const centeredImage = '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:drawing><wp:inline><a:blip r:embed="rId7"/></wp:inline></w:drawing></w:r></w:p>'
+    const out = formatCaptions(DOC(para('Figura 1 — Mapa') + para('') + centeredImage + para('Fonte: IBGE.')))
+    const blocks = getBlocks(out)
+    // The correct element is w:keepNext — NOT w:keepWithNext (which renderers ignore).
+    expect(out).not.toContain('keepWithNext')
+    expect(blocks[0]).toContain('<w:keepNext/>') // label keeps with what's below
+    expect(blocks[1]).toContain('<w:keepNext/>') // blank gap keeps the chain intact
+    expect(blocks[2]).toContain('<w:keepNext/>') // image keeps with the source line
+    // On the label, keepNext sits right after pStyle (schema order: pStyle → keepNext).
+    expect(blocks[0]).toMatch(/<w:pStyle w:val="Caption"\/><w:keepNext\/>/)
+    // On the centered image, keepNext must come BEFORE jc (or the renderer drops it).
+    expect(blocks[2]).toMatch(/<w:keepNext\/>[\s\S]*<w:jc/)
+    expect(blocks[2].indexOf('<w:keepNext/>')).toBeLessThan(blocks[2].indexOf('<w:jc'))
+  })
+
+  it('does not add keepNext to the source line (last of the group)', () => {
+    const out = formatCaptions(DOC(para('Figura 1 — Mapa') + imagePara + para('Fonte: IBGE.') + para('Body after.')))
+    const blocks = getBlocks(out)
+    expect(blocks[2]).toContain('Fonte') // the source paragraph
+    expect(blocks[2]).not.toContain('<w:keepNext/>') // nothing to keep it with below
+  })
+
   it('captions a "Figura N. " line (period separator instead of dash/colon)', () => {
     const out = formatCaptions(DOC(para('Figura 12. Respostas dos alunos.') + imagePara + para('Fonte: Imagem da autora.')))
     const blocks = getBlocks(out)

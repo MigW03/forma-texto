@@ -75,6 +75,33 @@ describe('formatImages', () => {
     expect(out).toContain('<w:jc w:val="center"/>')
   })
 
+  it('zeroes left/right/first-line indent on the image paragraph', () => {
+    // A real bug: an image paragraph with no direct override of its own still
+    // inherits the Normal style's first-line indent (ABNT 1.25cm) — since the image
+    // is already sized to exactly the content width, that inherited shift pushes it
+    // right and overflows the margin by the indent amount.
+    const xml = wrap(inlineImage(8000000, 6000000))
+    const out = formatImages(xml, 'apa')
+    expect(out).toContain('<w:ind w:left="0" w:right="0" w:firstLine="0"/>')
+  })
+
+  it('ind precedes jc in valid CT_PPr order', () => {
+    const xml = wrap(inlineImage(8000000, 6000000))
+    const out = formatImages(xml, 'apa')
+    expect(out.indexOf('<w:ind')).toBeLessThan(out.indexOf('<w:jc'))
+  })
+
+  it('replaces an inherited first-line indent even when the paragraph already has one', () => {
+    const img =
+      `<w:p><w:pPr><w:ind w:firstLine="709"/></w:pPr><w:r><w:drawing>` +
+      `<wp:inline><wp:extent cx="8000000" cy="6000000"/></wp:inline>` +
+      `</w:drawing></w:r></w:p>`
+    const out = formatImages(wrap(img), 'apa')
+    expect((out.match(/<w:ind\b/g) ?? []).length).toBe(1)
+    expect(out).toContain('<w:ind w:left="0" w:right="0" w:firstLine="0"/>')
+    expect(out).not.toContain('w:firstLine="709"')
+  })
+
   it('leaves effectExtent (l/t/r/b) untouched', () => {
     const xml = wrap(inlineImage(8000000, 6000000))
     const out = formatImages(xml, 'apa')

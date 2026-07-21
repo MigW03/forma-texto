@@ -39,14 +39,30 @@ const isEmptySourceText = (text: string): boolean => /^fonte\s*[:.\-–—]\s*$/
 // of a point = 1.5× (single = 240). Placed after <w:pStyle> per the OOXML pPr order.
 const SOURCE_SPACING = '<w:spacing w:line="360" w:lineRule="auto"/>'
 
+/**
+ * A caption line (figure_caption/table_caption) is always immediately followed by the
+ * image/table it labels, so it needs `<w:keepNext/>` to stay on the same page — the
+ * exact keep-together mechanism `captions.ts` uses for an author-provided caption
+ * (`addKeepNext`/`buildCaptionParagraph`). A source line never needs it (it's the last
+ * item in the group). Mutually exclusive with SOURCE_SPACING, so both slot into the
+ * same `${extra}` position right after `<w:pStyle>` — valid CT_PPr order either way.
+ *
+ * This was a real bug: a caption inserted or filled in HERE (the placeholder /
+ * finalize-inputs flow, `needs_input` documents) went through a completely separate
+ * builder from `captions.ts` and never got `keepNext` — so the label split from its
+ * image across a page break in the exported PDF even though `captions.ts`'s own
+ * keep-together logic was correct.
+ */
+const CAPTION_KEEP_NEXT = '<w:keepNext/>'
+
 function buildPlaceholderXml(kind: MissingInputKind): string {
-  const spacing = isSourceKind(kind) ? SOURCE_SPACING : ''
-  return `<w:p><w:pPr><w:pStyle w:val="${CAPTION_STYLE}"/>${spacing}</w:pPr><w:r><w:rPr><w:color w:val="FF0000"/></w:rPr><w:t>${PLACEHOLDER_TEXT[kind]}</w:t></w:r></w:p>`
+  const extra = isSourceKind(kind) ? SOURCE_SPACING : CAPTION_KEEP_NEXT
+  return `<w:p><w:pPr><w:pStyle w:val="${CAPTION_STYLE}"/>${extra}</w:pPr><w:r><w:rPr><w:color w:val="FF0000"/></w:rPr><w:t>${PLACEHOLDER_TEXT[kind]}</w:t></w:r></w:p>`
 }
 
 function buildCaptionXml(text: string, kind: MissingInputKind): string {
-  const spacing = isSourceKind(kind) ? SOURCE_SPACING : ''
-  return `<w:p><w:pPr><w:pStyle w:val="${CAPTION_STYLE}"/>${spacing}</w:pPr><w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`
+  const extra = isSourceKind(kind) ? SOURCE_SPACING : CAPTION_KEEP_NEXT
+  return `<w:p><w:pPr><w:pStyle w:val="${CAPTION_STYLE}"/>${extra}</w:pPr><w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`
 }
 
 /** ABNT label word for each caption kind. */

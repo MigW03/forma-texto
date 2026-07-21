@@ -49,6 +49,8 @@ export interface GuidelineSpec {
   }
   /** Image/figure captions — the lines immediately before/after an image. Centered; size + line spacing here. */
   caption: { sz: number; line: number } // sz half-points (20 = 10pt); line twentieths (240 = single)
+  /** Long/block quotations (ABNT NBR 10520: quotes over 3 lines). Indented from the left, smaller, single-spaced. */
+  longQuote: { sz: number; line: number; leftIndent: number; align: Align } // sz half-points; line twentieths; leftIndent twips
 }
 
 /** Word styleId used for the references section heading (REFERÊNCIAS / References / ...). */
@@ -56,6 +58,9 @@ export const REFERENCES_HEADING_STYLE = 'ReferencesHeading'
 
 /** Word styleId used for image/figure captions (centered, 10pt, single spacing). */
 export const CAPTION_STYLE = 'Caption'
+
+/** Word styleId for long (block) quotations — left-indented, 10pt, single spacing, justified (ABNT NBR 10520). */
+export const LONG_QUOTE_STYLE = 'LongQuote'
 
 /** Word styleId for cover (capa) paragraphs — centered, body font/size, no indent. */
 export const COVER_STYLE = 'CoverCentered'
@@ -84,6 +89,7 @@ const FALLBACK: Record<Guideline, GuidelineSpec> = {
     margins: { top: 1701, bottom: 1134, left: 1701, right: 1134 }, // 3/2/3/2 cm
     references: { entryAlign: 'left', entryLine: 240, entryAfter: 240, hangingIndent: 0 }, // single, blank line between, flush-left
     caption: { sz: 20, line: 240 }, // 10pt, single spacing, centered
+    longQuote: { sz: 20, line: 240, leftIndent: 2268, align: 'both' }, // 10pt, single, 4cm left, justified
   },
   apa: {
     accepted: ['Times New Roman', 'Arial', 'Calibri'],
@@ -96,6 +102,7 @@ const FALLBACK: Record<Guideline, GuidelineSpec> = {
     margins: { top: 1440, bottom: 1440, left: 1440, right: 1440 }, // 1in all
     references: { entryAlign: 'left', entryLine: 480, entryAfter: 0, hangingIndent: 720 }, // double, 0.5in hanging
     caption: { sz: 20, line: 240 },
+    longQuote: { sz: 24, line: 480, leftIndent: 720, align: 'left' }, // APA: 0.5in indent, same size, double-spaced
   },
   mla: {
     accepted: ['Times New Roman', 'Arial'],
@@ -108,6 +115,7 @@ const FALLBACK: Record<Guideline, GuidelineSpec> = {
     margins: { top: 1440, bottom: 1440, left: 1440, right: 1440 },
     references: { entryAlign: 'left', entryLine: 480, entryAfter: 0, hangingIndent: 720 },
     caption: { sz: 20, line: 240 },
+    longQuote: { sz: 24, line: 480, leftIndent: 720, align: 'left' }, // MLA: 0.5in indent, same size, double-spaced
   },
   chicago: {
     accepted: ['Times New Roman', 'Arial'],
@@ -120,6 +128,7 @@ const FALLBACK: Record<Guideline, GuidelineSpec> = {
     margins: { top: 1440, bottom: 1440, left: 1440, right: 1440 },
     references: { entryAlign: 'left', entryLine: 240, entryAfter: 240, hangingIndent: 720 }, // single within, blank line between, 0.5in hanging
     caption: { sz: 20, line: 240 },
+    longQuote: { sz: 20, line: 240, leftIndent: 720, align: 'left' }, // Chicago: block quote indented, smaller, single-spaced
   },
 }
 

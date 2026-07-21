@@ -727,34 +727,3 @@ function addPageBreakBefore(block: string): string {
   return block.replace(/(<w:p\b[^>]*>)/, '$1<w:pPr><w:pageBreakBefore/></w:pPr>')
 }
 
-/**
- * Suppress the page-number header on the capa's own first page — ABNT requires the capa
- * to show no page number at all, even though it IS counted in the total. Real documents
- * commonly carry a header with an auto `PAGE` field applied to every page uniformly
- * (confirmed on a real thesis: a single Word section, one `<w:headerReference>`, no
- * per-page override), which is not itself something this pipeline generates — it's
- * inherited from whatever template/export produced the original file.
- *
- * Uses OOXML's "different first page" flag, `<w:titlePg/>`, on the document's own
- * section: with no `w:type="first"` header/footer reference provided alongside it,
- * Word/LibreOffice render NO header on the section's first physical page, while every
- * later page keeps using the document's normal header untouched — exactly "hide the
- * capa's number, leave everything else numbered." A no-op when there's no cover section
- * (nothing to suppress a number for) or the flag is already present (idempotent).
- *
- * Scoped deliberately narrow: only the flag itself, nothing about the fuller pré-textual
- * roman-numeral / body-restarts-at-1 numbering convention some ABNT templates also use —
- * that's a separate, bigger feature (tracked in `docs`/`business_decisions`), not implied
- * by "the cover shouldn't show a number."
- */
-export function suppressCoverPageNumber(documentXml: string, sections: PretextualSection[]): string {
-  const hasCover = sections.some(s => DISTRIBUTE_KINDS.has(s.kind))
-  if (!hasCover) return documentXml
-
-  const finalSectPr = documentXml.match(/<w:sectPr\b[\s\S]*?<\/w:sectPr>(?=\s*<\/w:body>)/)?.[0]
-  if (!finalSectPr) return documentXml
-  if (/<w:titlePg\/>/.test(finalSectPr)) return documentXml
-
-  const updated = finalSectPr.replace(/<\/w:sectPr>$/, '<w:titlePg/></w:sectPr>')
-  return documentXml.replace(finalSectPr, updated)
-}

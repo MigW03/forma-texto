@@ -539,8 +539,17 @@ const DocxViewer = forwardRef<DocxViewerHandle, {
           <p className="text-xs text-muted max-w-xs">{t('project.loadingPreviewHint')}</p>
         </div>
       )}
-      {/* zoom held at 1 while loading — see TAB_STOP_SETTLE_MS above for why. */}
-      <div style={{ zoom: loading ? 1 : zoom, display: loading ? 'none' : undefined }}>
+      {/* The content stays in normal flow the WHOLE time — the opaque loading spinner
+          (absolute inset-0 above) is what hides it, NOT `display:none`. Two reasons:
+          (1) docx-preview's delayed tab-stop pass (see TAB_STOP_SETTLE_MS) sizes each
+          right tab by measuring `getBoundingClientRect()`; on a `display:none` element
+          every rect is 0, so it baked a giant tab word-spacing and wrapped the sumário's
+          page-number column onto a second line. (2) A `display:none`→shown OR
+          `visibility:hidden`→shown flip on this large, zoomed subtree can leave Chrome
+          laid-out-but-not-repainted (blank viewer). Keeping it always in flow avoids both.
+          Zoom is still held at 1 through the settle window so the tab measurement is
+          self-consistent (see the wrapper comment on TAB_STOP_SETTLE_MS). */}
+      <div style={{ zoom: loading ? 1 : zoom }}>
         <div ref={styleRef} />
         <div ref={bodyRef} className="docx-body" />
       </div>

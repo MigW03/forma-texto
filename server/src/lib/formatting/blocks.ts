@@ -212,7 +212,9 @@ export function setSpacingBefore(p: string, twips: number): string {
 /**
  * Inject a raw XML snippet into a paragraph's `<w:pPr>`, creating the element if
  * absent. Idempotent guard is the caller's responsibility (check before calling).
- * Example: addPPrProperty(block, '<w:keepWithNext/>')
+ * Appends at the END of the pPr children — fine for order-agnostic properties, but
+ * NOT for ones the schema requires early (use `addKeepNext` for `<w:keepNext/>`).
+ * Example: addPPrProperty(block, '<w:pageBreakBefore/>')
  */
 export function addPPrProperty(p: string, propXml: string): string {
   if (/<w:pPr\b[^>]*>/.test(p)) {
@@ -222,6 +224,26 @@ export function addPPrProperty(p: string, propXml: string): string {
     return p.replace(/<w:pPr\b[^>]*\/>/, `<w:pPr>${propXml}</w:pPr>`)
   }
   return p.replace(/(<w:p\b[^>]*>)/, `$1<w:pPr>${propXml}</w:pPr>`)
+}
+
+/**
+ * Add `<w:keepNext/>` (keep this paragraph on the same page as the next one) in a
+ * schema-valid position. `CT_PPr` orders `keepNext` right after `pStyle` and BEFORE
+ * `spacing`/`ind`/`jc` — appending it at the end of an existing pPr (which may already
+ * carry `jc`, e.g. a centered image paragraph) is out-of-order and renderers drop it.
+ * So insert it immediately after `<w:pStyle>` when present, else as the first pPr child.
+ * Idempotent: a no-op when the paragraph already keeps with the next.
+ *
+ * NOTE the element is `w:keepNext`, not `w:keepWithNext` — the latter is not a
+ * WordprocessingML element and is silently ignored (that was a real bug: figure
+ * captions "kept" with an element that never existed, so they split across pages).
+ */
+export function addKeepNext(p: string): string {
+  if (/<w:keepNext\b/.test(p)) return p
+  if (/<w:pStyle\b[^>]*\/>/.test(p)) return p.replace(/(<w:pStyle\b[^>]*\/>)/, '$1<w:keepNext/>')
+  if (/<w:pPr\b[^>]*>/.test(p)) return p.replace(/(<w:pPr\b[^>]*>)/, '$1<w:keepNext/>')
+  if (/<w:pPr\b[^>]*\/>/.test(p)) return p.replace(/<w:pPr\b[^>]*\/>/, '<w:pPr><w:keepNext/></w:pPr>')
+  return p.replace(/(<w:p\b[^>]*>)/, '$1<w:pPr><w:keepNext/></w:pPr>')
 }
 
 /**

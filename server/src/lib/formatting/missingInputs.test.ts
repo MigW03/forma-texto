@@ -54,6 +54,26 @@ describe('detectAndInsertPlaceholders', () => {
     expect(pending[1].insertedAt).toBe(3)
   })
 
+  it('gives the caption placeholder keepNext (so it stays with the image below) but not the source placeholder', () => {
+    // Real bug: a caption/source inserted here (needs_input flow) went through a
+    // builder completely separate from captions.ts's own keep-together logic and
+    // never got <w:keepNext/> — the label split from its image across a page break
+    // in the exported PDF once the user filled it in via finalize-inputs.
+    const doc = DOC(para('intro') + imagePara + para('body'))
+    const { xml } = detectAndInsertPlaceholders(doc)
+    const blocks = getBlocks(xml)
+    expect(blocks[1]).toContain('<w:keepNext/>')  // figure_caption placeholder
+    expect(blocks[3]).not.toContain('<w:keepNext/>') // figure_source placeholder — last of the group
+  })
+
+  it('gives the table caption placeholder keepNext but not the table source placeholder', () => {
+    const doc = DOC(para('intro') + tablePara + para('body'))
+    const { xml } = detectAndInsertPlaceholders(doc)
+    const blocks = getBlocks(xml)
+    expect(blocks[1]).toContain('<w:keepNext/>')  // table_caption placeholder
+    expect(blocks[3]).not.toContain('<w:keepNext/>') // table_source placeholder
+  })
+
   it('inserts caption and source placeholders around a table', () => {
     const doc = DOC(para('intro') + tablePara + para('body'))
     const { xml, pending } = detectAndInsertPlaceholders(doc)
@@ -234,6 +254,27 @@ describe('finalizeInputs', () => {
     expect(isRed(captionBlock)).toBe(false)
     // description first letter capitalised; label/number/em-dash canonical
     expect(blockText(captionBlock)).toBe('Figura 1 — Minha legenda')
+  })
+
+  it('the filled-in caption carries keepNext so it stays with the image in the exported PDF', () => {
+    // The actual real-world bug: the placeholder HAD keepNext (previous test's fix),
+    // but finalizeInputs used a separate builder that dropped it when swapping the
+    // placeholder for the user's real text — reproduced with a real LibreOffice
+    // render in this session before the fix (label and image split across pages).
+    const doc = DOC(imagePara)
+    const { xml: docWithPlaceholders, pending } = detectAndInsertPlaceholders(doc)
+    const filled = finalizeInputs(
+      docWithPlaceholders,
+      [
+        { id: pending[0].id, text: 'Figura 1 — minha legenda' },
+        { id: pending[1].id, text: 'Autor' },
+      ],
+      [],
+      pending,
+    )
+    const blocks = getBlocks(filled)
+    expect(blocks[pending[0].insertedAt]).toContain('<w:keepNext/>') // figure_caption
+    expect(blocks[pending[1].insertedAt]).not.toContain('<w:keepNext/>') // figure_source
   })
 
   it('removes a placeholder when its id is in removals', () => {

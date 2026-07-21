@@ -1,4 +1,4 @@
-import { getGuideline, REFERENCES_HEADING_STYLE, CAPTION_STYLE, COVER_STYLE, FOLHA_ROSTO_NATUREZA_STYLE, type Guideline, type GuidelineSpec } from './guidelines'
+import { getGuideline, REFERENCES_HEADING_STYLE, CAPTION_STYLE, LONG_QUOTE_STYLE, COVER_STYLE, FOLHA_ROSTO_NATUREZA_STYLE, type Guideline, type GuidelineSpec } from './guidelines'
 
 /**
  * Step A — rewrite styles.xml.
@@ -195,6 +195,30 @@ function captionBlock(g: GuidelineSpec): string {
   )
 }
 
+/**
+ * Long (block) quotation style (ABNT NBR 10520: quotes over three lines). Applied by
+ * the long-quote pass to paragraphs the author set apart as a block: left-indented
+ * (4 cm in ABNT), smaller (10 pt), single line spacing, justified, no first-line indent.
+ */
+function longQuoteBlock(g: GuidelineSpec): string {
+  return (
+    `<w:style w:type="paragraph" w:styleId="${LONG_QUOTE_STYLE}">` +
+    '<w:name w:val="Long Quote"/>' +
+    '<w:basedOn w:val="Normal"/>' +
+    '<w:next w:val="Normal"/>' +
+    '<w:pPr>' +
+    `<w:spacing w:before="0" w:after="0" w:line="${g.longQuote.line}" w:lineRule="auto"/>` +
+    `<w:ind w:left="${g.longQuote.leftIndent}" w:firstLine="0"/>` +
+    `<w:jc w:val="${g.longQuote.align}"/>` +
+    '</w:pPr>' +
+    '<w:rPr>' +
+    `<w:rFonts w:ascii="${g.body.font}" w:hAnsi="${g.body.font}" w:cs="${g.body.font}"/>` +
+    `<w:sz w:val="${g.longQuote.sz}"/><w:szCs w:val="${g.longQuote.sz}"/>` +
+    '</w:rPr>' +
+    '</w:style>'
+  )
+}
+
 /** Replace the <w:style> whose styleId matches, else insert before </w:styles>. */
 function upsertStyle(xml: string, styleId: string, block: string): string {
   const re = new RegExp(`<w:style\\b[^>]*\\bw:styleId="${styleId}"[\\s\\S]*?</w:style>`, 'i')
@@ -249,6 +273,7 @@ export function rewriteStyles(stylesXml: string | null, guideline: Guideline, fo
   xml = upsertStyle(xml, COVER_STYLE, coverBlock(g))
   xml = upsertStyle(xml, FOLHA_ROSTO_NATUREZA_STYLE, naturezaBlock(g))
   xml = upsertStyle(xml, CAPTION_STYLE, captionBlock(g))
+  xml = upsertStyle(xml, LONG_QUOTE_STYLE, longQuoteBlock(g))
 
   return xml
 }

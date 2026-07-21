@@ -63,6 +63,10 @@ const machineSchema = z.object({
   }),
   // Image/figure captions. Optional in the spec — defaults to 10pt / single below.
   caption: z.object({ sizeHalfPt: z.number(), lineTwentieths: z.number() }).optional(),
+  // Long/block quotations (NBR 10520). Optional in the spec — defaults to ABNT below.
+  longQuote: z
+    .object({ sizeHalfPt: z.number(), lineTwentieths: z.number(), leftIndentTwips: z.number(), align: alignSchema })
+    .optional(),
 })
 
 type Machine = z.infer<typeof machineSchema>
@@ -105,6 +109,12 @@ function toSpec(m: Machine): GuidelineSpec {
       hangingIndent,
     },
     caption: { sz: m.caption?.sizeHalfPt ?? 20, line: m.caption?.lineTwentieths ?? 240 },
+    longQuote: {
+      sz: m.longQuote?.sizeHalfPt ?? 20,
+      line: m.longQuote?.lineTwentieths ?? 240,
+      leftIndent: m.longQuote?.leftIndentTwips ?? 2268,
+      align: m.longQuote?.align ?? 'both',
+    },
   }
 }
 

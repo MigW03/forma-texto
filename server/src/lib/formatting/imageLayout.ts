@@ -44,23 +44,35 @@ function scaleExtents(drawing: string, scale: number): string {
   })
 }
 
-/** Set (or replace) a paragraph's justification, creating <w:pPr> if absent. */
+/**
+ * Center an image paragraph AND zero its left/right/first-line indent, creating
+ * `<w:pPr>` if absent.
+ *
+ * Centering alone is not enough: Step A's override-strip only removes the paragraph's
+ * own DIRECT `<w:ind>` — it does not touch the STYLE cascade. An image paragraph left
+ * with no override of its own still inherits the `Normal` style's first-line indent
+ * (ABNT: 1.25cm, `rewriteStyles.ts`'s `normalBlock`). The image is already sized to
+ * EXACTLY the content width (see `maxWidthEmu` above), so that inherited shift pushes
+ * it right by the indent amount and its already-full-width box overflows the right
+ * margin by the same amount — a real bug seen on a live document: the image rendered
+ * shifted right and cut off past the margin. `<w:ind>` is always rebuilt fresh
+ * (existing jc/ind stripped first) so a re-run is idempotent and the pair lands in
+ * valid CT_PPr order (`ind` before `jc`) regardless of what was there before.
+ */
 function centerParagraph(p: string): string {
-  const jc = '<w:jc w:val="center"/>'
-  if (/<w:jc\b[^>]*\/>/.test(p)) {
-    return p.replace(/<w:jc\b[^>]*\/>/, jc)
-  }
-  if (/<w:pPr\b[^>]*>/.test(p)) {
-    // jc precedes the paragraph-mark <w:rPr>; insert before it when present.
-    if (/<w:rPr\b/.test(p.slice(0, p.indexOf('</w:pPr>')))) {
-      return p.replace(/(<w:rPr\b)/, `${jc}$1`)
+  const stripped = p.replace(/<w:ind\b[^>]*\/>/, '').replace(/<w:jc\b[^>]*\/>/, '')
+  const props = '<w:ind w:left="0" w:right="0" w:firstLine="0"/><w:jc w:val="center"/>'
+  if (/<w:pPr\b[^>]*>/.test(stripped)) {
+    // jc/ind precede the paragraph-mark <w:rPr>; insert before it when present.
+    if (/<w:rPr\b/.test(stripped.slice(0, stripped.indexOf('</w:pPr>')))) {
+      return stripped.replace(/(<w:rPr\b)/, `${props}$1`)
     }
-    return p.replace('</w:pPr>', `${jc}</w:pPr>`)
+    return stripped.replace('</w:pPr>', `${props}</w:pPr>`)
   }
-  if (/<w:pPr\b[^>]*\/>/.test(p)) {
-    return p.replace(/<w:pPr\b[^>]*\/>/, `<w:pPr>${jc}</w:pPr>`)
+  if (/<w:pPr\b[^>]*\/>/.test(stripped)) {
+    return stripped.replace(/<w:pPr\b[^>]*\/>/, `<w:pPr>${props}</w:pPr>`)
   }
-  return p.replace(/(<w:p\b[^>]*>)/, `$1<w:pPr>${jc}</w:pPr>`)
+  return stripped.replace(/(<w:p\b[^>]*>)/, `$1<w:pPr>${props}</w:pPr>`)
 }
 
 /**

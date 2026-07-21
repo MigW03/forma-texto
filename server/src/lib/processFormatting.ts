@@ -9,6 +9,7 @@ import {
   formatReferences,
   formatCaptions,
   formatImages,
+  formatLongQuotes,
   normalizeFontPackaging,
   setRunFonts,
   setHeadingRunProps,
@@ -24,7 +25,7 @@ import {
   applyFolhaRostoAlignment,
   applyPretextualPageBreaks,
   applyCoverVerticalDistribution,
-  suppressCoverPageNumber,
+  applyAbntPageNumbering,
   coverBlockIndices,
   resolveGuideline,
   getGuideline,
@@ -37,11 +38,13 @@ import {
   createHeadingDecider,
   createReferenceDecider,
   createProofreadDecider,
+  isRateLimitError,
   pageForBlock,
   getBlocks,
   blockText,
   detectAndInsertPlaceholders,
   buildSumario,
+  bodyStartForPageNumbering,
   demoteImplausibleHeadings,
   applyHeadingNumbering,
   type HeadingDecision,
@@ -250,6 +253,12 @@ export async function processFormatting(projectId: string): Promise<void> {
         console.log(`[processFormatting] ${projectId} appendix/annex detected at block ${appendixStart} — formatted/proofread, but image passes (resize/caption/source) skipped`)
       }
 
+      // Long (block) quotations (NBR 10520) — tag the author's already-blocked quotes and
+      // over-long inline quotations with the LongQuote style BEFORE Step A, which strips the
+      // direct `<w:ind>` that is one of the detection signals. The style then carries the
+      // block geometry. Frozen in the appendix/annex (a reproduced document isn't re-blocked).
+      workingDocXml = formatLongQuotes(workingDocXml, appendixStart ?? Infinity)
+
       const a = applyStepA({ documentXml: workingDocXml, stylesXml: workingStylesXml, guideline }) // Step A
       workingStylesXml = a.stylesXml
       resolvedFont = a.font
@@ -317,6 +326,7 @@ export async function processFormatting(projectId: string): Promise<void> {
             }
             logReferences(projectId, result.decisions)
           } catch (err) {
+            if (isRateLimitError(err)) throw err // abort the whole job to a retriable state (see outer catch)
             console.error(`[processFormatting] Step C failed for ${projectId} (non-fatal, keeping deterministic result):`, err)
           }
         }
@@ -341,6 +351,7 @@ export async function processFormatting(projectId: string): Promise<void> {
           }
           logHeadings(projectId, workingDocXml, result.decisions, refInput.selectedPages)
         } catch (err) {
+          if (isRateLimitError(err)) throw err // abort the whole job to a retriable state (see outer catch)
           console.error(`[processFormatting] Step D failed for ${projectId} (non-fatal, keeping deterministic result):`, err)
         }
       }
@@ -437,6 +448,7 @@ export async function processFormatting(projectId: string): Promise<void> {
         }
         logProofread(projectId, preDocXml, result.decisions)
       } catch (err) {
+        if (isRateLimitError(err)) throw err // abort the whole job to a retriable state (see outer catch)
         console.error(`[processFormatting] Step P failed for ${projectId} (non-fatal, keeping prior result):`, err)
       }
     }
@@ -451,13 +463,25 @@ export async function processFormatting(projectId: string): Promise<void> {
     // indices). Formatting only; a proofreading-only doc never touches the cover.
     if (doFormatting) {
       workingDocXml = applyCoverVerticalDistribution(workingDocXml, detectPretextual(workingDocXml).sections)
-      // ABNT: the capa shows no page number at all, even though it IS counted in the
-      // total. Real uploads commonly inherit a header with an auto PAGE field applied
-      // uniformly to every page (a Google Docs/Word template default, not something this
-      // pipeline adds) — `<w:titlePg/>` on the document's own section blanks just the
-      // first physical page's header, leaving every later page numbered normally.
+      // ABNT NBR 14724: every page from the folha de rosto onward counts toward the
+      // total, but the printed page number stays hidden through the WHOLE pré-textual
+      // region — visible only from the textual part (Introdução) onward. Splits the
+      // document into a hidden front section + a numbered body section (real OOXML
+      // section break, not just a first-page-only flag) and registers a new header
+      // part with a right-aligned PAGE field. The correct start value isn't knowable
+      // until the document is rendered — `paginateSumario` (below) resolves the
+      // placeholder it stamps, in the same render pass as the sumário's own numbers.
       // Independent of the table-based vertical distribution above; does not touch it.
-      workingDocXml = suppressCoverPageNumber(workingDocXml, detectPretextual(workingDocXml).sections)
+      // The sumário's own TOC entries read like body headings once numbered (e.g.
+      // "1 INTRODUÇÃO"), so a fresh `detectPretextual` here can land `bodyStart` on the
+      // FIRST TOC entry — which would drop the section break between the SUMÁRIO label
+      // and its entries, splitting the title onto its own page. `bodyStartForPageNumbering`
+      // anchors past the sumário's structurally-identified entry run.
+      const detectedBodyStart = detectPretextual(workingDocXml).bodyStart
+      const numberingBodyStart = bodyStartForPageNumbering(workingDocXml, detectedBodyStart)
+      if (resolvedFont) {
+        workingDocXml = applyAbntPageNumbering(workingDocXml, files, numberingBodyStart, resolvedFont)
+      }
     }
 
     // Stamp the resolved family on every run as the LAST document transform (after Steps
@@ -473,15 +497,20 @@ export async function processFormatting(projectId: string): Promise<void> {
       workingDocXml = setHeadingRunProps(workingDocXml, getGuideline(guideline))
     }
 
-    // Sumário pagination — THE LAST content transform, by contract: it renders the
-    // final document (LibreOffice → PDF), reads which page each heading landed on, and
-    // stamps the numbers into the sumário entries. Anything running after it could
-    // shift pages and stale the numbers. Skipped for needs_input docs (the red
-    // placeholders inflate the layout); the finalize-inputs route paginates instead,
-    // after the user's fills produce the real final document. Non-fatal — a failure
-    // leaves the numbers blank.
+    // Sumário pagination + ABNT header page-number resolution — THE LAST content
+    // transform, by contract: it renders the final document (LibreOffice → PDF),
+    // reads which page each heading landed on, stamps the sumário entries, and
+    // resolves the placeholder header page-number start from `applyAbntPageNumbering`
+    // above. Anything running after it could shift pages and stale the numbers.
+    // Skipped for needs_input docs (the red placeholders inflate the layout); the
+    // finalize-inputs route paginates instead, after the user's fills produce the
+    // real final document. Non-fatal — a failure leaves the numbers blank/placeholder.
     if (doFormatting && pending.length === 0) {
-      workingDocXml = await paginateSumario(files, workingDocXml, workingStylesXml, projectId)
+      const finalPretextual = detectPretextual(workingDocXml)
+      workingDocXml = await paginateSumario(files, workingDocXml, workingStylesXml, projectId, {
+        sections: finalPretextual.sections,
+        bodyStart: finalPretextual.bodyStart,
+      })
     }
 
     const out = { documentXml: workingDocXml, stylesXml: workingStylesXml }
@@ -540,7 +569,17 @@ export async function processFormatting(projectId: string): Promise<void> {
 
     console.log(`[processFormatting] done: ${projectId} -> ${processedPath} (total ${since(startedAt)})`)
   } catch (err) {
-    console.error(`[processFormatting] FAILED ${projectId} (after ${since(startedAt)}):`, err)
+    // A rate limit is not a failure — the AI passes hit the provider's cap (e.g.
+    // OpenRouter's free-tier 50/day) and aborted BEFORE stamping `complete` or uploading
+    // a partial doc, exactly so a half-processed file never ships. Requeue to `pending`
+    // and let a retry (manual `/api/processing/start`, or the pending-retry cron) run it
+    // again once quota is available — same terminal state as a genuine error, but logged
+    // as an expected requeue, not an error.
+    if (isRateLimitError(err)) {
+      console.warn(`[processFormatting] ${projectId} rate-limited by the AI provider after ${since(startedAt)} — requeued as 'pending' (no partial output shipped, will retry when quota is available)`)
+    } else {
+      console.error(`[processFormatting] FAILED ${projectId} (after ${since(startedAt)}):`, err)
+    }
     // restore to pending so it can be retried
     await supabase
       .from('projects')

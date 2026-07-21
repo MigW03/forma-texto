@@ -1,5 +1,5 @@
 import { CAPTION_STYLE } from './guidelines'
-import { getBlocks, isParagraph, blockText, setParagraphStyle, replaceBlocks, addPPrProperty } from './blocks'
+import { getBlocks, isParagraph, blockText, setParagraphStyle, replaceBlocks, addKeepNext } from './blocks'
 import { escapeXml } from './xmlText'
 
 /**
@@ -92,9 +92,9 @@ function normalizeLabelDot(block: string, dotRe: RegExp): string {
 }
 
 /** Build a clean, single-run Caption-styled paragraph from plain text. */
-function buildCaptionParagraph(text: string, keepWithNext: boolean): string {
-  const kwn = keepWithNext ? '<w:keepWithNext/>' : ''
-  return `<w:p><w:pPr><w:pStyle w:val="${CAPTION_STYLE}"/>${kwn}</w:pPr><w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`
+function buildCaptionParagraph(text: string, keepNext: boolean): string {
+  const kn = keepNext ? '<w:keepNext/>' : '' // after pStyle → schema-valid CT_PPr order
+  return `<w:p><w:pPr><w:pStyle w:val="${CAPTION_STYLE}"/>${kn}</w:pPr><w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`
 }
 
 /** Rewrite a leading "Figura/Tabela N." or "Fonte." in PLAIN text to use a colon. */
@@ -142,7 +142,7 @@ function splitEmbeddedCaption(block: string): string | null {
   const pPr = pPrMatch ? pPrMatch[0] : ''
 
   let image = `${open}${pPr}${runs[imageRunIdx]}</w:p>`
-  if (hasSourceAfter && !/<w:keepWithNext\b/.test(image)) image = addPPrProperty(image, '<w:keepWithNext/>')
+  if (hasSourceAfter) image = addKeepNext(image) // keep the image with the source line below
 
   const before = hasCaptionBefore ? buildCaptionParagraph(normalizePlainLabelDot(beforeText, FIGURE_LABEL_WORDS), true) : ''
   const after = hasSourceAfter ? buildCaptionParagraph(normalizePlainLabelDot(afterText, null), false) : ''
@@ -291,26 +291,22 @@ export function formatCaptions(documentXml: string, stopAt = Infinity): string {
     captionIdxs.forEach((idx, pos) => {
       let block = pos === 0 ? normalizeLabelDot(blocks[idx], FIGURE_LABEL_DOT_RE) : blocks[idx]
       block = setParagraphStyle(block, CAPTION_STYLE)
-      if (!/<w:keepWithNext\b/.test(block)) block = addPPrProperty(block, '<w:keepWithNext/>')
+      block = addKeepNext(block) // each caption line keeps with the line/image below it
       byIndex.set(idx, block)
     })
 
-    // keepWithNext on every blank paragraph between the last caption line and the
-    // image — blank paragraphs break the keepWithNext chain, letting the page split
+    // keepNext on every blank paragraph between the last caption line and the image —
+    // a blank paragraph without keepNext breaks the chain, letting the page split
     // between the caption group and the image.
     if (captionIdxs.length > 0) {
       const lastCaptionIdx = captionIdxs[captionIdxs.length - 1]
       for (let k = lastCaptionIdx + 1; k < i; k++) {
-        const gap = byIndex.get(k) ?? blocks[k]
-        if (!/<w:keepWithNext\b/.test(gap)) byIndex.set(k, addPPrProperty(gap, '<w:keepWithNext/>'))
+        byIndex.set(k, addKeepNext(byIndex.get(k) ?? blocks[k]))
       }
     }
 
-    // Image paragraph: keepWithNext so it sticks to the source line below.
-    const imgBlock = byIndex.get(i) ?? b
-    if (!/<w:keepWithNext\b/.test(imgBlock)) {
-      byIndex.set(i, addPPrProperty(imgBlock, '<w:keepWithNext/>'))
-    }
+    // Image paragraph: keepNext so it sticks to the source line below.
+    byIndex.set(i, addKeepNext(byIndex.get(i) ?? b))
 
     // Below the image: source line ("Fonte: …"). Single-line only.
     const srcIdx = nearestCaptionLine(blocks, i + 1, +1, stopAt)
@@ -330,7 +326,7 @@ export function formatCaptions(documentXml: string, stopAt = Infinity): string {
     if (aboveIdx >= 0 && TABLE_LABEL_RE.test(blockText(blocks[aboveIdx]))) {
       let block = normalizeLabelDot(byIndex.get(aboveIdx) ?? blocks[aboveIdx], TABLE_LABEL_DOT_RE)
       block = setParagraphStyle(block, CAPTION_STYLE)
-      if (!/<w:keepWithNext\b/.test(block)) block = addPPrProperty(block, '<w:keepWithNext/>')
+      block = addKeepNext(block) // keep the "Tabela N —" label with the table below it
       byIndex.set(aboveIdx, block)
     }
 

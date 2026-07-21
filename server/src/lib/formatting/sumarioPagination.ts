@@ -1,20 +1,23 @@
-import { getBlocks, replaceBlocks } from './blocks'
+import { getBlocks, blockText, replaceBlocks } from './blocks'
 import { decodeXmlEntities } from './xmlText'
 import { detectPretextual } from './preTextual'
 
 /**
  * Sumário pagination — fills the page-number column of the TOC entries that
  * `buildSumario` created, using per-page text extracted from a REAL render of the
- * final document (LibreOffice → PDF, see `lib/paginateSumario.ts`).
+ * final document (LibreOffice → PDF, see `lib/paginateSumario.ts`). Also resolves
+ * the placeholder `<w:pgNumType w:start="1"/>` `applyAbntPageNumbering` (in
+ * `pageNumbering.ts`) stamps onto the body section, using the same render.
  *
  * This module is pure (XML + strings in, XML out) so it is unit-testable without
  * LibreOffice; the render/IO wrapper lives outside `formatting/`.
  *
- * Numbers are the PHYSICAL 1-based PDF page numbers: the document carries no printed
- * header page numbers yet, so the sumário must match what a reader actually sees in
- * the exported PDF viewer. The ABNT folha-de-rosto counting convention (capa excluded
- * from the count) should land together with the future header page-numbering pass —
- * the two must shift in lockstep or they contradict each other.
+ * Numbers shown to the reader — both the sumário's own entries and the header's
+ * printed page number — are the PHYSICAL 1-based PDF page number MINUS `offset`
+ * (1 when a capa is present, since NBR 14724 excludes it from the count; 0
+ * otherwise, since the folha de rosto legitimately IS page 1). The two must always
+ * shift by the same offset or they contradict each other — see
+ * `paginateSumario.ts` for where both are computed from one render pass.
  */
 
 export interface SumarioEntryRef {
@@ -51,6 +54,26 @@ export function findSumarioEntries(documentXml: string): SumarioEntryRef[] {
     if (text) out.push({ index: i, text })
   }
   return out
+}
+
+/**
+ * The block index where the textual part truly begins, for the ABNT section split.
+ *
+ * `detectPretextual`'s `bodyStart` can't be trusted for this once the sumário has been
+ * rebuilt: its TOC entries read like body headings (a numbered entry "1 INTRODUÇÃO"
+ * passes `isBodyHeading`, an unnumbered "Introdução" can pass the Introdução check), so
+ * a fresh detection may land `bodyStart` on the FIRST TOC entry — which would drop the
+ * page-numbering section break between the SUMÁRIO label and its own entries, stranding
+ * the title on its own page. This anchors past the sumário's structurally-identified
+ * entry run (`findSumarioEntries`, which keys on our unambiguous `buildTocEntry`
+ * signature, not on text that can look like a heading), taking whichever is later so a
+ * correctly-detected body start further down still wins. Falls back to `detectedBodyStart`
+ * when there is no sumário.
+ */
+export function bodyStartForPageNumbering(documentXml: string, detectedBodyStart: number): number {
+  const entries = findSumarioEntries(documentXml)
+  if (entries.length === 0) return detectedBodyStart
+  return Math.max(detectedBodyStart, entries[entries.length - 1].index + 1)
 }
 
 /** Uppercase, strip diacritics, collapse whitespace — tolerant text matching. */
@@ -130,11 +153,24 @@ export function assignEntryPages(entryTexts: string[], pageTexts: string[]): (nu
 /**
  * Replace (or append) the page-number run after an entry's tab run. Idempotent:
  * a re-run overwrites a previously stamped number instead of stacking a second one.
+ *
+ * The tab run is NOT necessarily the bare `<w:r><w:tab/></w:r>` `buildTocEntry`
+ * emits: the explicit-font pass runs after `buildSumario` and stamps an
+ * `<w:rPr><w:rFonts .../></w:rPr>` onto every run, the tab run included — so by the
+ * time this pass runs the tab run reads `<w:r><w:rPr>…</w:rPr><w:tab/></w:r>`. The
+ * regex therefore allows an optional `rPr` inside the tab run (a hard-coded
+ * `<w:r><w:tab/></w:r>` silently matched nothing → 0 numbers stamped → every sumário
+ * entry wrapped in the docx-preview). The stamped number run reuses the tab run's own
+ * `rPr` so the digit inherits the same font as the entry.
  */
 function setEntryPageNumber(entry: string, n: number): string {
-  const re = /(<w:r><w:tab\/><\/w:r>)(<w:r>(?:<w:rPr>[\s\S]*?<\/w:rPr>)?<w:t[^>]*>\d+<\/w:t><\/w:r>)?(<\/w:p>)$/
-  if (!re.test(entry)) return entry
-  return entry.replace(re, `$1<w:r><w:t>${n}</w:t></w:r>$3`)
+  // The optional rPr uses a `(?!</w:r>)` guard so its lazy body can't span across a
+  // run boundary — without it the leading `<w:r>` binds to the *title* run and the
+  // rPr stretches to the tab run's own rPr, swallowing (and duplicating) the title.
+  const rPr = '(<w:rPr>(?:(?!<\\/w:r>)[\\s\\S])*?<\\/w:rPr>)?'
+  const re = new RegExp(`(<w:r>${rPr}<w:tab\\/><\\/w:r>)(<w:r>${rPr}<w:t[^>]*>\\d+<\\/w:t><\\/w:r>)?(<\\/w:p>)$`)
+  return entry.replace(re, (_full, tabRun: string, tabRPr: string | undefined, _oldNum: string | undefined, _oldNumRPr: string | undefined, endP: string) =>
+    `${tabRun}<w:r>${tabRPr ?? ''}<w:t>${n}</w:t></w:r>${endP}`)
 }
 
 export interface SumarioPaginationResult {
@@ -147,10 +183,13 @@ export interface SumarioPaginationResult {
 
 /**
  * Stamp real page numbers into the sumário entries, given the final document's
- * per-page text (from the PDF render). Entries whose heading text is not found on
- * any body page keep a blank number. Block count never changes.
+ * per-page text (from the PDF render) and the ABNT display offset (see module doc).
+ * Entries whose heading text is not found on any body page, or that would resolve
+ * to a display number below 1 (shouldn't happen — the offset only ever accounts for
+ * the capa, which always precedes the sumário — but never guess), keep a blank
+ * number. Block count never changes.
  */
-export function applySumarioPageNumbers(documentXml: string, pageTexts: string[]): SumarioPaginationResult {
+export function applySumarioPageNumbers(documentXml: string, pageTexts: string[], offset = 0): SumarioPaginationResult {
   const entries = findSumarioEntries(documentXml)
   if (entries.length === 0) return { documentXml, assigned: 0, total: 0 }
 
@@ -158,8 +197,10 @@ export function applySumarioPageNumbers(documentXml: string, pageTexts: string[]
   const blocks = getBlocks(documentXml)
   const byIndex = new Map<number, string>()
   entries.forEach((e, k) => {
-    const n = pages[k]
-    if (n === null || n < 1) return
+    const physical = pages[k]
+    if (physical === null) return
+    const n = physical - offset
+    if (n < 1) return
     const next = setEntryPageNumber(blocks[e.index], n)
     if (next !== blocks[e.index]) byIndex.set(e.index, next)
   })
@@ -169,4 +210,46 @@ export function applySumarioPageNumbers(documentXml: string, pageTexts: string[]
     assigned: byIndex.size,
     total: entries.length,
   }
+}
+
+/**
+ * The physical 1-based PDF page where the body/textual part begins (the
+ * "Introdução" heading at `bodyStart`) — needed to resolve the placeholder
+ * `<w:pgNumType w:start="1"/>` `applyAbntPageNumbering` stamps onto the body
+ * section. Reuses the sumário's own first-entry lookup when a sumário exists (the
+ * first TOC entry, by construction of `buildSumario`, IS the `bodyStart` heading —
+ * no extra render-text scan needed); otherwise scans `pageTexts` directly for the
+ * heading's own text, since with no sumário there is no TOC-look-alike page to
+ * skip past. Returns null if the heading text can't be found on any page (render
+ * failed to produce recognizable text, or the block isn't a real paragraph).
+ */
+export function findBodyStartPage(documentXml: string, bodyStart: number, pageTexts: string[]): number | null {
+  const entries = findSumarioEntries(documentXml)
+  if (entries.length > 0) return assignEntryPages([entries[0].text], pageTexts)[0]
+
+  const blocks = getBlocks(documentXml)
+  const text = normalize(blockText(blocks[bodyStart] ?? ''))
+  if (!text) return null
+  const pageNorms = pageTexts.map(normalize)
+  const idx = pageNorms.findIndex(p => p.includes(text))
+  return idx < 0 ? null : idx + 1
+}
+
+/**
+ * How many physical pages precede the display count's page 1 (folha de rosto) —
+ * exactly the capa, when present, since NBR 14724 excludes it from the count and
+ * the rest of this pipeline already guarantees it renders as exactly one page.
+ */
+export function abntCapaOffset(sections: { kind: string }[]): number {
+  return sections.some(s => s.kind === 'capa') ? 1 : 0
+}
+
+/**
+ * Resolve the placeholder `<w:pgNumType w:start="1"/>` (stamped by
+ * `applyAbntPageNumbering`) with the real display start value, once known from a
+ * render. A no-op if the placeholder isn't present (e.g. `bodyStart === 0`, so
+ * `applyAbntPageNumbering` never ran).
+ */
+export function stampAbntPageNumberStart(documentXml: string, start: number): string {
+  return documentXml.replace(/(<w:pgNumType\b[^>]*\bw:start=")\d+(")/, `$1${Math.max(start, 1)}$2`)
 }

@@ -16,6 +16,7 @@
  */
 import { getBlocks, blockText, isParagraph, isListItem, blockDescriptor, setParagraphStyle, replaceBlocks, type BlockDescriptor } from './blocks'
 import { pageForBlock } from './references'
+import { isRateLimitError } from './ai/retry'
 import type { Guideline } from './guidelines'
 
 export type HeadingRole = 'title' | 'h1' | 'h2' | 'h3' | 'body'
@@ -199,6 +200,9 @@ async function classifyResilient(
   try {
     return await decider.classify(chunk)
   } catch (err) {
+    // A rate limit is account-wide and sticky — splitting/retrying would just 429 again
+    // and burn quota. Fail fast so the orchestrator requeues the whole job.
+    if (isRateLimitError(err)) throw err
     const msg = err instanceof Error ? err.message : String(err)
     if (chunk.blocks.length <= 1) {
       const i = chunk.blocks[0]?.i ?? -1

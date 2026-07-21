@@ -31,6 +31,30 @@
 | Margin — bottom (inferior) | 2 cm | 1134 |
 | Margin — right (direita) | 2 cm | 1134 |
 
+### Page numbering (NBR 14724)
+
+Every sheet from the folha de rosto onward counts toward the document's total page
+count, but the **printed** page number stays hidden through the entire pré-textual
+region — it only becomes visible starting on the first page of the textual part (the
+Introdução), continuing the running count. The **capa** is external to the count
+entirely (its one page is skipped, not counted). Position: upper right corner, 2 cm
+from the top edge (`w:pgMar w:header="1134"`), right-aligned so the last digit sits
+near the right margin; same font as body text, 10 pt (see §2 font-size table), no
+bold/italic/decoration.
+
+Implemented as a real OOXML section split at `bodyStart` (`pageNumbering.ts`
+`applyAbntPageNumbering`): the pré-textual region becomes its own section referencing
+an **empty** header and footer (nothing prints on any of its pages — an explicit empty
+reference, because a real upload almost always already carries a document-wide header
+with a `PAGE` field that must be actively overridden, not merely left inherited); the
+textual region keeps the document's own final section, with its existing
+header/footer/`titlePg`/`pgNumType` stripped and replaced by a right-aligned `PAGE`
+header + an explicit `<w:pgNumType w:start="…">`, while `cols`/`docGrid`/geometry are
+preserved. The correct start value isn't knowable until the document is actually
+rendered (DOCX carries no page metadata) — `paginateSumario.ts` resolves it in the
+same LibreOffice render pass that fills the sumário's own TOC page numbers, applying
+the same capa-exclusion offset to both so they always agree.
+
 ---
 
 ## 2. Fonts `[DET]`
@@ -266,11 +290,19 @@ These are **templates for the AI** (Step C). Each shows the abstract **pattern**
 ### Deterministic — image captions `[DET]`
 - [ ] Style the figure label before an image ("Figura N —") and the source line after it ("Fonte:") as captions (centered, 10 pt, single spacing). See §11.
 
+### Deterministic — long quotations (NBR 10520) `[DET]`
+- [x] Set a quotation longer than three lines as its own block: 4 cm left indent, 10 pt, single spacing, justified, no first-line indent, quotation marks dropped (`longQuotes.ts`, style `LongQuote`). Runs **before** Step A's override strip so the author's own indent survives as a detection signal. Two deterministic signals: (a) the author already indented the passage; (b) a wholly-quoted paragraph that runs past three lines — those get their surrounding quotation marks stripped (a trailing author-date citation is preserved). Long quotes are excluded from Step P proofreading (a quotation must not be grammar-"corrected"). **Limitation:** a quotation embedded mid-paragraph (not a standalone paragraph) is not yet split into its own block.
+
 ### AI — Step C `[AI]`
 - [ ] Reformat each reference entry per §7 (author order, punctuation, bold title, DOI).
 
 ### AI — Step D `[AI]`
 - [ ] Reclassify paragraphs that are really headings (typed as normal text) into the correct `Heading1/2/3` level.
+
+### Deterministic — page numbering (late pipeline, after Step D + sumário) `[DET]`
+- [ ] Pré-textual region (capa through the last labeled front-matter section): no printed page number on any page.
+- [ ] Textual part (Introdução onward, including appendices): printed page number, upper right, 2 cm from the top edge, continuing the count with the capa excluded.
+- [ ] Sumário TOC page numbers and the printed header numbers agree (same render pass, same offset).
 
 ---
 
@@ -307,3 +339,5 @@ A matched paragraph is given the `Caption` paragraph style:
 - `[DET]` An image is detected by an embedded `<w:drawing>`, `<w:pict>`, or `<w:object>` inside a paragraph. The caption pass swaps only the matched paragraph's `<w:pStyle>` to `Caption`; the layout values live in the style (built by `rewriteStyles`), so a paragraph stripped of direct overrides in Step A inherits the caption look.
 - A neighbor without the matching label is left as body text. Tables and stacked images carry no label and so are never captioned.
 - The pass runs last in the pipeline (after the AI heading pass), so a caption is never overridden by a heading promotion.
+- `[DET]` **Keep-together:** the caption group (label line[s] → any blank gap → image → source line) is chained with `<w:keepNext/>` so a page break never separates the figure from its caption or source — they always render on the same page. The element is `w:keepNext` (added via `addKeepNext`, which places it right after `<w:pStyle>` per `CT_PPr` order); an earlier version emitted the non-existent `w:keepWithNext`, which renderers silently ignore, so captions used to split across pages.
+- **Two independent code paths build a Caption-styled paragraph — both need `keepNext`.** `captions.ts`'s `formatCaptions` (an author-provided caption, detected from the raw text) is one; a caption the pipeline detected as MISSING (`needs_input`) and that the user later typed in through the fill-in UI is the other, built by `missingInputs.ts`'s `buildPlaceholderXml`/`buildCaptionXml` and applied via `POST /api/processing/finalize-inputs`, which zips straight to PDF export without ever re-running `formatCaptions`. Both builders stamp `keepNext` for a caption kind (never for a source kind — it's always the last item in the group).

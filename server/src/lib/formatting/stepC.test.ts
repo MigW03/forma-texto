@@ -196,4 +196,16 @@ describe('stepC (end to end with fake decider)', () => {
     expect(attempts).toHaveLength(2) // normal try + one escalated retry
     expect(attempts[1].escalated).toBe(true)
   })
+
+  it('fails fast on a rate limit — rethrows immediately without splitting or retrying', async () => {
+    let calls = 0
+    const rateLimited: ReferenceDecider = {
+      async reformat() {
+        calls++
+        throw Object.assign(new Error('Rate limit exceeded: free-models-per-day'), { statusCode: 429 })
+      },
+    }
+    await expect(stepC(DOC, 'abnt', rateLimited, REGION)).rejects.toThrow(/rate limit/i)
+    expect(calls).toBe(1)
+  })
 })

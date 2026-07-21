@@ -170,4 +170,18 @@ describe('stepProofread (end to end with fake decider)', () => {
     expect(attempts).toHaveLength(2) // normal try + one escalated retry (minimal reasoning)
     expect(attempts[1].escalated).toBe(true)
   })
+
+  it('fails fast on a rate limit — rethrows immediately without splitting or retrying', async () => {
+    let calls = 0
+    const rateLimited: ProofreadDecider = {
+      async proofread() {
+        calls++
+        throw Object.assign(new Error('Rate limit exceeded: free-models-per-day'), { statusCode: 429 })
+      },
+    }
+    await expect(
+      stepProofread(DOC, 'abnt', rateLimited, { refStartIndex: REF_START, maxChars: 100000, maxBlocks: 100 }),
+    ).rejects.toThrow(/rate limit/i)
+    expect(calls).toBe(1)
+  })
 })

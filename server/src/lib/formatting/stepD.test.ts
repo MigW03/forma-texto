@@ -200,4 +200,20 @@ describe('stepD (end to end with fake decider)', () => {
     expect(failedIndices).toEqual([])
     expect(getBlocks(out)[1]).toContain('<w:pStyle w:val="Heading1"/>')
   })
+
+  it('fails fast on a rate limit — rethrows immediately without splitting or retrying', async () => {
+    // A rate limit is account-wide/sticky: splitting would just 429 again. The pass must
+    // rethrow so the orchestrator requeues the whole job, NOT swallow it into failedIndices.
+    let calls = 0
+    const rateLimited: HeadingDecider = {
+      async classify() {
+        calls++
+        throw Object.assign(new Error('Rate limit exceeded: free-models-per-day'), { statusCode: 429 })
+      },
+    }
+    await expect(
+      stepD(DOC, 'abnt', rateLimited, { refStartIndex: REF_START, maxChars: 100000, maxBlocks: 100 }),
+    ).rejects.toThrow(/rate limit/i)
+    expect(calls).toBe(1) // no split-retry, no escalation — one call and out
+  })
 })

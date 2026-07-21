@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { supabase } from '../lib/supabase'
 import { processFormatting, exportPdfBeside } from '../lib/processFormatting'
-import { unzipDocx, zipDocx, finalizeInputs, type PendingInput } from '../lib/formatting'
+import { unzipDocx, zipDocx, finalizeInputs, detectPretextual, type PendingInput } from '../lib/formatting'
 import { paginateSumario } from '../lib/paginateSumario'
 import { sendProjectReadyEmail } from '../lib/notify'
 
@@ -133,7 +133,11 @@ router.post('/finalize-inputs', async (req: Request, res: Response) => {
   // the pipeline's LAST content transform — runs here for needs_input docs (the
   // processing pass skipped it to avoid baking placeholder-shifted page numbers).
   // Non-fatal: on failure the page numbers stay blank.
-  finalXml = await paginateSumario(files, finalXml, stylesXml, projectId)
+  const finalPretextual = detectPretextual(finalXml)
+  finalXml = await paginateSumario(files, finalXml, stylesXml, projectId, {
+    sections: finalPretextual.sections,
+    bodyStart: finalPretextual.bodyStart,
+  })
   const docxBuf = zipDocx(files, { documentXml: finalXml, stylesXml })
 
   // Real cacheControl TTL (not '0') — the client keys the URL on `completed_at`,

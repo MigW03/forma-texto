@@ -46,6 +46,7 @@ describe('abnt spec values', () => {
       margins: { top: 1701, bottom: 1134, left: 1701, right: 1134 },
       references: { entryAlign: 'left', entryLine: 240, entryAfter: 240, hangingIndent: 0 },
       caption: { sz: 20, line: 240 },
+      longQuote: { sz: 20, line: 240, leftIndent: 2268, align: 'both' },
     })
   })
 

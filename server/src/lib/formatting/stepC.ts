@@ -22,6 +22,7 @@
  */
 import { getBlocks, blockText, replaceBlocks } from './blocks'
 import { escapeXml } from './xmlText'
+import { isRateLimitError } from './ai/retry'
 import type { ReferenceRegion } from './references'
 import type { Guideline } from './guidelines'
 
@@ -220,6 +221,9 @@ async function reformatResilient(
   try {
     return await decider.reformat(chunk)
   } catch (err) {
+    // A rate limit is account-wide and sticky — fail fast so the orchestrator requeues
+    // the whole job instead of splitting into more calls that all 429.
+    if (isRateLimitError(err)) throw err
     const msg = err instanceof Error ? err.message : String(err)
     if (chunk.entries.length <= 1) {
       const i = chunk.entries[0]?.i ?? -1

@@ -39,6 +39,14 @@
 | `title` | `text` |  Nullable |
 | `pending_inputs` | `jsonb` | Nullable |
 | `removed_inputs` | `jsonb` | Nullable |
+| `processing_attempts` | `int4` | Not null, default 0 |
+
+> **`processing_attempts`** counts how many times the automated `retry-pending` job
+> (`server/sql/retry_pending_cron.sql`) has re-run a stalled `pending` project — most
+> often after an AI-provider rate limit requeued it. It caps automated retries
+> (`MAX_RETRY_ATTEMPTS` in `server/src/lib/retryPendingJobs.ts`); manual retries via
+> `POST /api/processing/start` don't touch it. **Migration (run once per environment):**
+> `alter table projects add column if not exists processing_attempts int not null default 0;`
 
 ## Table `user_profiles`
 

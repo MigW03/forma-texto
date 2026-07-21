@@ -13,19 +13,6 @@
 
 ---
 
-## Onboarding Flow
-
-- [ ] **HIGH PRIORITY — ABNT page-number display convention** (2026-07-15, user-reported, not yet
-      investigated or implemented). Per NBR 14724, the folha de rosto onward counts toward the total
-      page count, but the printed page number should stay hidden through the entire pré-textual region
-      — only becoming visible starting on the first page of the textual part (Introdução), at the
-      correct cumulative number (not restarted at 1). Today `suppressCoverPageNumber` only hides the
-      number on the capa's own physical first page (`<w:titlePg/>`); every other pré-textual page still
-      shows one, and nothing starts the visible numbering at `bodyStart`. See `HANDOFF.md`'s Open work
-      section for the full write-up and why this needs its own section-break-based design.
-
----
-
 ## Checkout & Payment
 
 - [ ] Migrate to Checkout Sessions API (deferred)
@@ -64,10 +51,12 @@
 
 ## Backend / AI Pipeline
 
-- [ ] PDF formatting function
-  - Read uploaded PDF, apply academic formatting rules (margins, fonts, heading hierarchy, spacing) per selected guideline, write formatted PDF back to Storage. (DOCX input is the only format the formatting pipeline handles today.)
-- [ ] PDF correction — apply corrected text to existing PDF
-  - After a proofreading pass produces corrected text, edit the original PDF in-place; preserve layout, fonts, and structure as much as possible.
+- [ ] Table formatting refinement (ABNT)
+  - Apply ABNT table styling: the label/title above the table ("Tabela N — …"), the source note ("Fonte: …") below it, open horizontal borders with no vertical rules, and centered placement. Confirm and refine how tables are currently handled in the pipeline.
+- [ ] Ficha catalográfica gets centered/distributed like the folha de rosto (bug)
+  - The ficha catalográfica isn't a recognized pré-textual element (`preTextual.ts` has no matcher/kind for it). It sits after the folha de rosto text and before the first labeled section (RESUMO/etc), so `classifyPretextual` lumps it into the `folhaDeRosto` section (`blockStart..firstLabeled-1`). Consequences: `applyFolhaRostoAlignment` stamps `COVER_STYLE` (centered) on its paragraphs — user saw the ficha *title* centered in the exported PDF — and `folhaDeRosto` is in `DISTRIBUTE_KINDS`, so it also gets full-page vertical distribution. Fix: detect the ficha as its own section, exclude it from cover centering + `DISTRIBUTE_KINDS` (ABNT: boxed, left-aligned, on the verso of the folha de rosto). Detection is the hard part — the ficha often has NO clean title line (bare library-generated box), though the reporting user's doc apparently did. **Anchor the fix on a real `.docx` (user to share next session) — this heuristic family has a long works-on-fixture/fails-on-real history.**
+- [ ] Output-validation backstop before stamping `complete` (launch-quality)
+  - Independent of AI success/failure, validate the final artifact and route a failure to a review state instead of shipping it: parses as XML (`xmllint`-equivalent), no leftover red placeholders, sumário entry count matches the heading count, references section present when `references_pages` was flagged, ABNT header page-number `pgNumType` start resolved (not the `1` placeholder). Complements the rate-limit fail-fast (2026-07-17) — that catches missing *AI* work; this catches the deterministic-bug class (the pré-textual/pagination family) that unit tests keep missing. The natural home is just before the `complete` stamp in `processFormatting`.
 
 ---
 
