@@ -32,13 +32,16 @@ Deeper docs (keep these as the real source of truth):
 
 ## Current status
 
-- **Branch:** `fable-fixes`.
+- **Branch:** `mvp-refinement` (branched off `main`, pushed to `origin/mvp-refinement`, not yet merged/PR'd
+  into `main`). `main` itself is current (received `fable-fixes` via a fast-forward merge + push earlier
+  today) and is ahead of the repo's GitHub-default branch `claude/thesis-correction-saas-fK68M` — treat
+  `main` as the real trunk, not that one.
 - **Build:** web production build **green**. The two unused-var errors in `ProjectDetailPage.tsx`
   (`fileName` in `PreviewError`, `pdfDownloadName`) were forgotten wiring, not dead code — both anchors
   were missing a `download` attribute their sibling "download original file" button already had. Fixed by
   wiring `download={fileName}` / `download={pdfDownloadName}` in rather than deleting the vars, which also
   fixes a small real bug (downloaded files got a random/ugly filename instead of the proper one).
-- **Tests:** server **485** passing (3 AI evals skipped); web **49** passing.
+- **Tests:** server **490** passing (3 AI evals skipped); web **52** passing.
 - **Working:** auth, onboarding flow, checkout (Stripe), dashboard, project detail/viewer, the DOCX
   formatting pipeline Steps A/B/C/D (both AI passes: reference reformatting + headings), pré-textual
   detection + formatting + sumário generation with real page numbers, ABNT header page numbering (NBR
@@ -138,12 +141,7 @@ Full breakdown: [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md). Su
 
 ### Needs code — sorted by priority (work this list top to bottom)
 
-1. [ ] **Handle a source document that already has its own sumário/TOC, without corrupting the file.**
-       Very common in real theses (students often build their own TOC before submitting) — need to
-       verify/build a reliable way to detect an existing sumário and either replace it cleanly or merge
-       with it, rather than risk producing a broken or duplicated TOC. Data-integrity risk, not just a
-       quality one — worth resolving before broad real-user testing, not after.
-2. [ ] **PDF export / LibreOffice has no production home.** Not just the "download PDF" button — the
+1. [ ] **PDF export / LibreOffice has no production home.** Not just the "download PDF" button — the
        sumário's real page numbers AND the ABNT header page-number start are both resolved by a LibreOffice
        render pass (`paginateSumario.ts`). No LibreOffice in prod means every document ships with blank
        page numbers, not just a missing PDF — affects 100% of documents, not a subset. LibreOffice is a
@@ -151,7 +149,7 @@ Full breakdown: [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md). Su
        binary in a Docker deploy image (`apt-get install libreoffice-writer fonts-liberation`) means
        `docxToPdf.ts` just works as-is. Only becomes a real code task if a Gotenberg sidecar is chosen
        instead (would swap the shell-out for a `GOTENBERG_URL` call). No host/approach chosen yet.
-3. [ ] **Processing queue — survive a server restart, and stagger jobs to save infra cost.** Today
+2. [ ] **Processing queue — survive a server restart, and stagger jobs to save infra cost.** Today
        `processFormatting` is fire-and-forget in-process; if the server process dies or restarts mid-job,
        that job just vanishes — no retry, no status update, and (once paid) a customer who's paid with no
        output and no explanation. Need a real queue (durable — Postgres table + polling worker, or a
@@ -159,22 +157,26 @@ Full breakdown: [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md). Su
        jobs can be processed one/few-at-a-time instead of all firing concurrently (reduces peak memory/CPU,
        relevant for a budget host). Ties into the existing `processing_attempts` retry-cron machinery but
        is a broader rework — that cron only catches rate-limited jobs today, not "the process died."
-4. [ ] **Accessibility pass.** Only 5 of 23 page/component `.tsx` files have any `aria-label`/`role`
+3. [ ] **Accessibility pass.** Only 5 of 23 page/component `.tsx` files have any `aria-label`/`role`
        attribute at all. shadcn/ui's Radix primitives give some baseline (focus trapping, keyboard nav on
        dialogs), but the custom flow (file upload, page-selection grid, checkout form) likely has real
        gaps — unlabeled icon-only buttons, missing focus states, no screen-reader text on status badges.
        A manual pass with a screen reader through signup → upload → checkout → dashboard would catch the
        worst of it. Broader/fuzzier scope than a single bug fix (an audit + many small fixes), so ranked
        below the correctness/reliability items above.
-5. [ ] **Ficha catalográfica gets centered/distributed like the folha de rosto (known bug, reported
+4. [ ] **Ficha catalográfica gets centered/distributed like the folha de rosto (known bug, reported
        2026-07-17).** It has no pré-textual kind, so it's absorbed into the `folhaDeRosto` section and
        gets `COVER_STYLE` centering + full-page vertical distribution it shouldn't. Full diagnosis in
        `PLAN.md` (Backend / AI Pipeline). Narrow scope (only docs with this specific pré-textual element)
        and currently **blocked — still waiting on a real `.docx` from the user to anchor the fix.**
-6. [ ] **Table formatting isn't ABNT-compliant yet** — label above ("Tabela N — …"), source below
+5. [ ] **Table formatting isn't ABNT-compliant yet** — label above ("Tabela N — …"), source below
        ("Fonte: …"), open horizontal borders (no vertical rules), centered placement. Scope depends on how
        common complex tables are in real target-user theses (unconfirmed); worth a quick look before
        deciding if it blocks broader launch.
+
+> A smaller, non-launch-blocking correctness item surfaced while fixing the sumário bugs below (a `blocks.ts`
+> regex matching `<w:tabs>` as if it were `<w:t>`) — tracked in `PLAN.md` (Backend / AI Pipeline), not
+> repeated in this curated list since it's confirmed not to affect anything today.
 
 ### No code needed — config / dashboard / billing actions (do whenever, not code work)
 
@@ -270,7 +272,8 @@ new project status or DB/frontend changes; reuses the same "genuinely broken job
 **Rate limiting**: added `express-rate-limit` (zero new transitive deps, confirmed via `npm audit` that no
 new vulnerabilities came in) — `processingLimiter` (20/15min) on `/api/processing/start`, `checkoutLimiter`
 (30/15min) on `/api/checkout/create-payment-intent` and `/complete-free-order`. `req.ip` is left on the
-un-proxied default (no `trust proxy` set) since no deploy host is chosen yet (item #2 below) — whoever
+un-proxied default (no `trust proxy` set) since no deploy host is chosen yet (item #1 below, LibreOffice
+hosting — the numbering has since shifted; it was #2 when this paragraph was written) — whoever
 picks one must set `trust proxy` to match its topology or the limit degrades to one shared budget behind
 an unconfigured reverse proxy.
 
