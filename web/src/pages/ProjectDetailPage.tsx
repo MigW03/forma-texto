@@ -939,7 +939,7 @@ export default function ProjectDetailPage() {
           {project.title && (
             <p className="text-xs text-muted truncate mb-3">{project.original_file_name}</p>
           )}
-          <Badge variant={STATUS_BADGE_VARIANT[status]}>
+          <Badge role="status" variant={STATUS_BADGE_VARIANT[status]}>
             {t(`dashboard.status.${status}`)}
           </Badge>
         </div>

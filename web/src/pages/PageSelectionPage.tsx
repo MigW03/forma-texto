@@ -316,7 +316,7 @@ export default function PageSelectionPage() {
                       key={`${s.kind}-${i}`}
                       className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg bg-amber-50/60"
                     >
-                      <div className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                      <div aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
                       <p className="text-sm leading-tight text-ink/80">{pretextualLabelFor(s)}</p>
                     </div>
                   ))}
@@ -332,6 +332,9 @@ export default function PageSelectionPage() {
               return (
                 <button
                   key={l.index}
+                  type="button"
+                  role="checkbox"
+                  aria-checked={isSel}
                   onClick={() => toggleLauda(l.index)}
                   className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors ${
                     isSel ? 'bg-forest/[0.06]' : 'hover:bg-[#F0EEE8]'
@@ -340,7 +343,7 @@ export default function PageSelectionPage() {
                   <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
                     isSel ? 'bg-forest border-forest' : 'border-border'
                   }`}>
-                    {isSel && <Check size={10} className="text-white" strokeWidth={3} />}
+                    {isSel && <Check size={10} className="text-white" strokeWidth={3} aria-hidden="true" />}
                   </div>
                   <div className="min-w-0">
                     <p className={`text-sm leading-tight ${isSel ? 'text-ink font-medium' : 'text-muted'}`}>
@@ -374,7 +377,7 @@ export default function PageSelectionPage() {
               }
             })}
           >
-            <ArrowLeft size={14} />
+            <ArrowLeft size={14} aria-hidden="true" />
             {t('pageSelection.backToProjects')}
           </Button>
         </div>
@@ -399,7 +402,7 @@ export default function PageSelectionPage() {
         <div className="flex-1 overflow-y-auto px-6 py-8 flex flex-col gap-6">
           {/* Info tip */}
           <div className="flex gap-2.5 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
-            <Info size={14} className="shrink-0 text-blue-500 mt-0.5" />
+            <Info size={14} className="shrink-0 text-blue-500 mt-0.5" aria-hidden="true" />
             <p className="text-xs text-blue-700 leading-relaxed">
               {t('laudas.tip')}
             </p>
@@ -414,6 +417,9 @@ export default function PageSelectionPage() {
               {(['proofreading', 'formatting'] as const).map(svc => (
                 <button
                   key={svc}
+                  type="button"
+                  role="checkbox"
+                  aria-checked={activeServices.has(svc)}
                   onClick={() => toggleService(svc)}
                   className="flex flex-col w-full px-3 py-2.5 bg-white hover:bg-[#F0EEE8] transition-colors text-left"
                 >
@@ -422,7 +428,7 @@ export default function PageSelectionPage() {
                       <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
                         activeServices.has(svc) ? 'bg-forest border-forest' : 'border-border'
                       }`}>
-                        {activeServices.has(svc) && <Check size={9} className="text-white" strokeWidth={3} />}
+                        {activeServices.has(svc) && <Check size={9} className="text-white" strokeWidth={3} aria-hidden="true" />}
                       </div>
                       <span className="text-sm text-ink">{t(`services.${svc}.label`)}</span>
                     </div>
@@ -439,11 +445,12 @@ export default function PageSelectionPage() {
 
             {activeServices.has('formatting') && (
               <div className="mt-3">
-                <label className="text-xs font-medium text-muted uppercase tracking-widest block mb-2">
+                <label htmlFor="guideline-select" className="text-xs font-medium text-muted uppercase tracking-widest block mb-2">
                   {t('pageSelection.guidelineLabel')}
                 </label>
                 <div className="relative">
                   <select
+                    id="guideline-select"
                     value={guideline}
                     onChange={e => setGuideline(e.target.value)}
                     className="w-full text-sm border border-border rounded-xl px-3 py-2.5 pr-8 bg-white focus:outline-none focus:ring-2 focus:ring-forest-mid/30 appearance-none cursor-pointer"
@@ -452,7 +459,7 @@ export default function PageSelectionPage() {
                       <option key={g.id} value={g.id}>{g.name}</option>
                     ))}
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+                  <ChevronDown size={14} aria-hidden="true" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
                 </div>
               </div>
             )}
@@ -463,7 +470,7 @@ export default function PageSelectionPage() {
             <p className="text-xs font-medium text-muted uppercase tracking-widest mb-3">
               {t('pageSelection.summary')}
             </p>
-            <div className="flex flex-col gap-2">
+            <div aria-live="polite" className="flex flex-col gap-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted">{t('laudas.totalLaudas')}</span>
                 <span className="font-medium text-ink">{total}</span>
@@ -483,8 +490,11 @@ export default function PageSelectionPage() {
             <p className="text-xs font-medium text-muted uppercase tracking-widest mb-3">
               {t('project.references.title')}
             </p>
-            <label
-              className="flex items-start gap-2.5 cursor-pointer w-fit"
+            <button
+              type="button"
+              role="checkbox"
+              aria-checked={hasReferences}
+              className="flex items-start gap-2.5 cursor-pointer w-fit text-left"
               onClick={() => {
                 const next = !hasReferences
                 setHasReferences(next)
@@ -494,10 +504,10 @@ export default function PageSelectionPage() {
               <div className={`mt-0.5 w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
                 hasReferences ? 'bg-forest border-forest' : 'border-border'
               }`}>
-                {hasReferences && <Check size={9} className="text-white" strokeWidth={3} />}
+                {hasReferences && <Check size={9} className="text-white" strokeWidth={3} aria-hidden="true" />}
               </div>
               <span className="text-sm text-ink leading-snug">{t('project.references.hasSection')}</span>
-            </label>
+            </button>
 
             {hasReferences && (
               <div className="flex flex-col gap-2 mt-3">
@@ -511,6 +521,8 @@ export default function PageSelectionPage() {
                       <button
                         key={String(value)}
                         type="button"
+                        role="radio"
+                        aria-checked={formatReferences === value}
                         onClick={() => setFormatReferences(value)}
                         className="flex items-center gap-2 px-1 py-1.5 rounded-lg transition-colors hover:bg-border/30"
                       >
@@ -518,7 +530,7 @@ export default function PageSelectionPage() {
                           formatReferences === value ? 'border-forest' : 'border-border'
                         }`}>
                           {formatReferences === value && (
-                            <div className="w-1.5 h-1.5 rounded-full bg-forest" />
+                            <div aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-forest" />
                           )}
                         </div>
                         <span className="text-sm text-ink">

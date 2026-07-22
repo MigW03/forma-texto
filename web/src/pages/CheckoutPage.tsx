@@ -39,7 +39,7 @@ function SuccessScreen({ free = false }: { free?: boolean }) {
   return (
     <div className="flex flex-col items-center gap-4 py-10">
       <div className="w-14 h-14 rounded-full bg-forest flex items-center justify-center">
-        <Check size={26} className="text-white" />
+        <Check size={26} className="text-white" aria-hidden="true" />
       </div>
       <p className="text-base font-semibold text-ink">
         {free ? 'Período gratuito ativado!' : 'Pagamento confirmado!'}
@@ -54,7 +54,7 @@ function SuccessScreen({ free = false }: { free?: boolean }) {
 function SavingScreen() {
   return (
     <div className="flex flex-col items-center gap-4 py-10">
-      <Loader2 size={32} className="text-forest animate-spin" />
+      <Loader2 size={32} className="text-forest animate-spin" aria-hidden="true" />
       <p className="text-base font-semibold text-ink">Salvando seu documento…</p>
       <p className="text-sm text-muted">Só um momento.</p>
     </div>
@@ -109,7 +109,7 @@ function PaymentForm({
       <PaymentElement options={{ layout: 'tabs', paymentMethodOrder: ['card'] }} />
 
       {error && (
-        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+        <p role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
           {error}
         </p>
       )}
@@ -117,6 +117,7 @@ function PaymentForm({
       <button
         type="submit"
         disabled={submitting || !stripe}
+        aria-busy={submitting}
         className={`w-full py-3 rounded-xl text-sm font-semibold transition-all bg-forest text-white ${
           submitting || !stripe ? 'opacity-40 cursor-not-allowed' : 'hover:bg-forest-mid cursor-pointer'
         }`}
@@ -164,21 +165,23 @@ function FreeOrderButton({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-start gap-3 rounded-xl bg-forest/[0.07] border border-forest/20 px-4 py-4">
-        <Gift size={16} className="text-forest shrink-0 mt-0.5" />
+        <Gift size={16} className="text-forest shrink-0 mt-0.5" aria-hidden="true" />
         <p className="text-sm text-forest leading-relaxed">
           Seu documento tem apenas 1 lauda. Com o período gratuito, você não paga nada agora.
         </p>
       </div>
 
       {error && (
-        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+        <p role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
           {error}
         </p>
       )}
 
       <button
+        type="button"
         onClick={handleFree}
         disabled={submitting}
+        aria-busy={submitting}
         className={`w-full py-3 rounded-xl text-sm font-semibold transition-all bg-forest text-white ${
           submitting ? 'opacity-40 cursor-not-allowed' : 'hover:bg-forest-mid cursor-pointer'
         }`}
@@ -397,7 +400,7 @@ export default function CheckoutPage() {
           <SuccessScreen />
         ) : (
           <>
-            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-center">
+            <p role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-center">
               {redirectStatus === 'failed' ? 'Pagamento recusado. Tente novamente.' : 'Pagamento pendente. Verifique seu e-mail.'}
             </p>
             <Link to={ROUTES.checkout} state={state} className="text-sm text-ink underline">Tentar novamente</Link>
@@ -448,15 +451,15 @@ export default function CheckoutPage() {
         to={ROUTES.getStarted}
         className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink transition-colors mb-8"
       >
-        <ArrowLeft size={14} />
+        <ArrowLeft size={14} aria-hidden="true" />
         Voltar
       </Link>
 
       <div className="flex items-center gap-3 mb-1">
         <h1 className="text-2xl font-semibold text-ink">Finalizar pedido</h1>
         {isTrial && (
-          <span className="inline-flex items-center gap-1 text-xs font-semibold text-forest bg-forest/10 border border-forest/20 rounded-full px-2.5 py-1">
-            <Gift size={11} />
+          <span role="status" className="inline-flex items-center gap-1 text-xs font-semibold text-forest bg-forest/10 border border-forest/20 rounded-full px-2.5 py-1">
+            <Gift size={11} aria-hidden="true" />
             Período gratuito
           </span>
         )}
@@ -485,7 +488,7 @@ export default function CheckoutPage() {
           {isTrial && !isFree && (
             <div className="flex items-center justify-between text-forest">
               <div className="flex items-center gap-1.5">
-                <Gift size={13} />
+                <Gift size={13} aria-hidden="true" />
                 <p className="text-sm">1 lauda grátis</p>
               </div>
               <span className="text-sm font-semibold">−{formatBRL(trialDiscountBRL(services))}</span>
@@ -495,7 +498,7 @@ export default function CheckoutPage() {
           {isFree && (
             <div className="flex items-center justify-between text-forest">
               <div className="flex items-center gap-1.5">
-                <Gift size={13} />
+                <Gift size={13} aria-hidden="true" />
                 <p className="text-sm">Período gratuito</p>
               </div>
               <span className="text-sm font-semibold">−100%</span>
@@ -513,7 +516,7 @@ export default function CheckoutPage() {
 
       {/* File deletion notice */}
       <div className="flex items-start gap-2.5 mb-6">
-        <Clock size={13} className="text-muted shrink-0 mt-0.5" />
+        <Clock size={13} className="text-muted shrink-0 mt-0.5" aria-hidden="true" />
         <p className="text-xs text-muted leading-relaxed">
           Seus arquivos (original e processado) serão excluídos automaticamente 30 dias após a conclusão do projeto.{' '}
           <a href={ROUTES.terms} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-ink transition-colors">
@@ -528,7 +531,7 @@ export default function CheckoutPage() {
         <p className="text-xs font-medium text-muted uppercase tracking-widest mb-5">Pagamento</p>
 
         {fetchError ? (
-          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">{fetchError}</p>
+          <p role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">{fetchError}</p>
         ) : !intentData ? (
           <div className="flex justify-center py-8">
             <div className="w-6 h-6 border-2 border-forest/30 border-t-forest rounded-full animate-spin" />

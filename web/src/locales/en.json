@@ -168,6 +168,7 @@
       "countingLaudas": "counting laudas…",
       "laudasUnknown": "— laudas",
       "replace": "Replace",
+      "remove": "Remove file",
       "invalidType": "Unsupported file type. Please upload a Word document (.docx).",
       "docConvert": "Old .doc format is not supported. Please convert your file to .docx before uploading."
     },

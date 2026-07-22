@@ -20,6 +20,9 @@ dist-ssr
 .claude/settings.local.json
 .claire/
 
+# Design reference assets (local only, not shared)
+behanceAssets/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

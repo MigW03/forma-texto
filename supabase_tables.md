@@ -40,6 +40,7 @@
 | `pending_inputs` | `jsonb` | Nullable |
 | `removed_inputs` | `jsonb` | Nullable |
 | `processing_attempts` | `int4` | Not null, default 0 |
+| `processing_started_at` | `timestamptz` | Nullable |
 
 > **`processing_attempts`** counts how many times the automated `retry-pending` job
 > (`server/sql/retry_pending_cron.sql`) has re-run a stalled `pending` project — most
@@ -47,6 +48,12 @@
 > (`MAX_RETRY_ATTEMPTS` in `server/src/lib/retryPendingJobs.ts`); manual retries via
 > `POST /api/processing/start` don't touch it. **Migration (run once per environment):**
 > `alter table projects add column if not exists processing_attempts int not null default 0;`
+
+> **`processing_started_at`** is a heartbeat stamped by `processFormatting.ts` the moment
+> a project's status flips to `processing`. `recoverStuckJobs()` (`server/src/lib/retryPendingJobs.ts`)
+> uses it to detect a job orphaned by a server crash/restart — a row still `processing` after
+> `STUCK_THRESHOLD_MINUTES` is reset to `pending` so it gets picked up again. **Migration
+> (run once per environment):** `alter table projects add column if not exists processing_started_at timestamptz;`
 
 ## Table `user_profiles`
 

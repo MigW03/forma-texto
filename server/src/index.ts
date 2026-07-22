@@ -9,6 +9,7 @@ import notificationsRouter from './routes/notifications'
 import processingRouter from './routes/processing'
 import guidelinesRouter from './routes/guidelines'
 import maintenanceRouter from './routes/maintenance'
+import { recoverStuckJobs } from './lib/retryPendingJobs'
 
 const app = express()
 const PORT = process.env.PORT ?? 3001
@@ -35,4 +36,12 @@ app.get('/health', (_req, res) => res.json({ ok: true }))
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)
+  // A prior process crash/restart can leave a job stuck 'processing' forever (no
+  // per-step checkpoint to resume from) — reset it back to 'pending' right away
+  // instead of waiting for the daily retry-pending cron to also pick it up.
+  recoverStuckJobs().then((result) => {
+    if (result.recovered > 0 || result.errors.length > 0) {
+      console.log(`[boot] recover-stuck: scanned ${result.scanned}, recovered ${result.recovered}, errors ${result.errors.length}`)
+    }
+  }).catch((err) => console.error('[boot] recover-stuck failed (non-fatal)', err))
 })

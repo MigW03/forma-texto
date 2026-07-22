@@ -13,6 +13,7 @@ export default function LanguageSwitcher() {
   const { i18n, t } = useTranslation()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   const current = (
     SUPPORTED_LANGUAGES.includes(i18n.resolvedLanguage as SupportedLanguage)
@@ -25,18 +26,30 @@ export default function LanguageSwitcher() {
     const handleClick = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
     document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleClick)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
   }, [open])
 
   const handleSelect = (lng: SupportedLanguage) => {
     i18n.changeLanguage(lng)
     setOpen(false)
+    triggerRef.current?.focus()
   }
 
   return (
     <div className="relative" ref={ref}>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label={t('languageSwitcher.label')}
@@ -44,7 +57,7 @@ export default function LanguageSwitcher() {
         aria-expanded={open}
         className="flex items-center gap-1.5 text-sm text-muted hover:text-ink transition-colors px-2 py-1.5 rounded-lg"
       >
-        <Globe size={15} />
+        <Globe size={15} aria-hidden="true" />
         <span className="text-xs font-medium">{LABELS[current].short}</span>
       </button>
 
@@ -66,7 +79,7 @@ export default function LanguageSwitcher() {
                 }`}
               >
                 {LABELS[lng].native}
-                {isActive && <Check size={14} className="text-forest-light" />}
+                {isActive && <Check size={14} className="text-forest-light" aria-hidden="true" />}
               </button>
             )
           })}

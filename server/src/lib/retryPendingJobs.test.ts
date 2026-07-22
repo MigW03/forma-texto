@@ -1,10 +1,14 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   retryPendingJobs,
   RETRY_GRACE_MINUTES,
   MAX_RETRY_ATTEMPTS,
+  recoverStuckJobs,
+  STUCK_THRESHOLD_MINUTES,
   type RetryPendingDeps,
   type RetriableJob,
+  type RecoverStuckDeps,
+  type StuckJob,
 } from './retryPendingJobs'
 
 /** Build injectable deps around a list of rows, recording bumps and processed ids. */
@@ -91,5 +95,75 @@ describe('retryPendingJobs', () => {
     expect(result.retried).toBe(1) // b still ran
     expect(deps.processed).toEqual(['b'])
     expect(result.errors).toEqual(['process a: boom'])
+  })
+})
+
+/** Build injectable deps around a list of stuck rows, recording resets. */
+function makeRecoverDeps(
+  rows: StuckJob[],
+  opts: { listError?: string; resetError?: string } = {},
+): RecoverStuckDeps & { reset: string[]; listArgs: string[] } {
+  const reset: string[] = []
+  const listArgs: string[] = []
+  return {
+    reset,
+    listArgs,
+    async listStuck(staleCutoffIso) {
+      listArgs.push(staleCutoffIso)
+      if (opts.listError) return { data: null, error: { message: opts.listError } }
+      return { data: rows, error: null }
+    },
+    async resetToPending(id) {
+      if (opts.resetError) return { error: { message: opts.resetError } }
+      reset.push(id)
+      return { error: null }
+    },
+  }
+}
+
+describe('recoverStuckJobs', () => {
+  it('resets every stuck job to pending', async () => {
+    const deps = makeRecoverDeps([{ id: 'a' }, { id: 'b' }])
+    const result = await recoverStuckJobs(deps)
+    expect(result).toEqual({ scanned: 2, recovered: 2, errors: [] })
+    expect(deps.reset).toEqual(['a', 'b'])
+  })
+
+  it('logs the project id as soon as a stuck job is caught, even if the reset later fails', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const deps = makeRecoverDeps([{ id: 'a' }], { resetError: 'db down' })
+    await recoverStuckJobs(deps)
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('a'))
+    expect(warnSpy).not.toHaveBeenCalled() // only logs success on an actual reset
+    logSpy.mockRestore()
+    warnSpy.mockRestore()
+  })
+
+  it('passes the stale cutoff to the query', async () => {
+    const now = new Date('2026-07-20T12:00:00.000Z')
+    const deps = makeRecoverDeps([])
+    await recoverStuckJobs(deps, now)
+    expect(new Date(deps.listArgs[0]).getTime()).toBe(now.getTime() - STUCK_THRESHOLD_MINUTES * 60_000)
+  })
+
+  it('returns early on a query error without resetting anything', async () => {
+    const deps = makeRecoverDeps([{ id: 'a' }], { listError: 'db down' })
+    const result = await recoverStuckJobs(deps)
+    expect(result.errors).toEqual(['query: db down'])
+    expect(result.recovered).toBe(0)
+    expect(deps.reset).toEqual([])
+  })
+
+  it('no rows → clean no-op', async () => {
+    const deps = makeRecoverDeps([])
+    expect(await recoverStuckJobs(deps)).toEqual({ scanned: 0, recovered: 0, errors: [] })
+  })
+
+  it('records a reset failure per job without sinking the batch', async () => {
+    const deps = makeRecoverDeps([{ id: 'a' }], { resetError: 'update failed' })
+    const result = await recoverStuckJobs(deps)
+    expect(result.recovered).toBe(0)
+    expect(result.errors).toEqual(['reset a: update failed'])
   })
 })

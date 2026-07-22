@@ -110,7 +110,7 @@ export default function DashboardPage() {
         </div>
         <Button asChild variant="default" size="default">
           <Link to={ROUTES.getStarted} onClick={clearGetStartedSession}>
-            <Plus size={15} />
+            <Plus size={15} aria-hidden="true" />
             {t('dashboard.newService')}
           </Link>
         </Button>
@@ -145,7 +145,7 @@ function ProjectRow({ project }: { project: Project }) {
       className="bg-white rounded-2xl border border-border px-6 py-5 flex items-center gap-4 hover:border-forest-mid/40 transition-colors group"
     >
       <div className="shrink-0 w-10 h-10 rounded-xl bg-sand flex items-center justify-center">
-        <FileText size={18} className="text-muted" />
+        <FileText size={18} className="text-muted" aria-hidden="true" />
       </div>
 
       <div className="flex-1 min-w-0">
@@ -167,10 +167,10 @@ function ProjectRow({ project }: { project: Project }) {
             guideline={service === 'formatting' ? project.guideline : undefined}
           />
         ))}
-        <Badge variant={STATUS_BADGE_VARIANT[project.status]}>
+        <Badge role="status" variant={STATUS_BADGE_VARIANT[project.status]}>
           {t(`dashboard.status.${project.status}`)}
         </Badge>
-        <ChevronRight size={14} className="text-muted/40 group-hover:text-muted transition-colors ml-1" />
+        <ChevronRight size={14} aria-hidden="true" className="text-muted/40 group-hover:text-muted transition-colors ml-1" />
       </div>
     </Link>
   )
@@ -204,13 +204,13 @@ function EmptyState() {
   return (
     <Card className="px-8 py-16 text-center shadow-sm">
       <div className="w-12 h-12 rounded-xl bg-sand flex items-center justify-center mx-auto mb-4">
-        <FileText size={22} className="text-muted" />
+        <FileText size={22} className="text-muted" aria-hidden="true" />
       </div>
       <h3 className="text-sm font-medium text-ink mb-1">{t('dashboard.emptyTitle')}</h3>
       <p className="text-sm text-muted mb-6">{t('dashboard.emptySubtitle')}</p>
       <Button asChild variant="default" size="lg">
         <Link to={ROUTES.getStarted} onClick={clearGetStartedSession}>
-          <Plus size={15} />
+          <Plus size={15} aria-hidden="true" />
           {t('dashboard.newService')}
         </Link>
       </Button>

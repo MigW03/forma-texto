@@ -191,7 +191,7 @@ export default function GetStartedPage() {
           to={ROUTES.dashboard}
           className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink transition-colors mb-4"
         >
-          <ArrowLeft size={14} />
+          <ArrowLeft size={14} aria-hidden="true" />
           {t('getStarted.backToDashboard')}
         </Link>
         <h1 className="text-2xl font-semibold text-ink">{t('getStarted.title')}</h1>
@@ -207,8 +207,14 @@ export default function GetStartedPage() {
         <div
           role="button"
           tabIndex={0}
+          aria-pressed={selectedServices.has('proofreading')}
           onClick={() => toggleService('proofreading')}
-          onKeyDown={(e) => e.key === 'Enter' && toggleService('proofreading')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              toggleService('proofreading')
+            }
+          }}
           className={`rounded-2xl border-2 p-6 flex flex-col gap-4 cursor-pointer transition-all ${
             selectedServices.has('proofreading')
               ? 'border-forest bg-forest/[0.07]'
@@ -233,7 +239,7 @@ export default function GetStartedPage() {
             </div>
             {selectedServices.has('proofreading') && (
               <div className="shrink-0 w-5 h-5 rounded-full bg-forest flex items-center justify-center">
-                <Check size={11} className="text-white" />
+                <Check size={11} className="text-white" aria-hidden="true" />
               </div>
             )}
           </div>
@@ -252,8 +258,14 @@ export default function GetStartedPage() {
         <div
           role="button"
           tabIndex={0}
+          aria-pressed={selectedServices.has('formatting')}
           onClick={() => toggleService('formatting')}
-          onKeyDown={(e) => e.key === 'Enter' && toggleService('formatting')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              toggleService('formatting')
+            }
+          }}
           className={`rounded-2xl border-2 p-6 flex flex-col gap-4 cursor-pointer transition-all ${
             selectedServices.has('formatting')
               ? 'border-forest bg-forest/[0.07]'
@@ -278,7 +290,7 @@ export default function GetStartedPage() {
             </div>
             {selectedServices.has('formatting') && (
               <div className="shrink-0 w-5 h-5 rounded-full bg-forest flex items-center justify-center">
-                <Check size={11} className="text-white" />
+                <Check size={11} className="text-white" aria-hidden="true" />
               </div>
             )}
           </div>
@@ -291,6 +303,8 @@ export default function GetStartedPage() {
               {guidelines.map((g) => (
                 <button
                   key={g.id}
+                  type="button"
+                  aria-pressed={selectedGuideline === g.id}
                   onClick={(e) => { e.stopPropagation(); setSelectedGuideline(g.id) }}
                   className={`flex items-center justify-between rounded-xl px-3 py-3 text-left transition-colors ${
                     selectedGuideline === g.id
@@ -307,7 +321,7 @@ export default function GetStartedPage() {
                     </p>
                   </div>
                   {selectedGuideline === g.id && (
-                    <Check size={14} className="shrink-0 ml-3" />
+                    <Check size={14} className="shrink-0 ml-3" aria-hidden="true" />
                   )}
                 </button>
               ))}
@@ -322,12 +336,15 @@ export default function GetStartedPage() {
               · mín. {formatBRL(PRICING.formatting.minimum)}
             </span>
             <button
+              type="button"
+              aria-expanded={guidelinesOpen}
               onClick={(e) => { e.stopPropagation(); setGuidelinesOpen(o => !o) }}
               className="ml-auto flex items-center gap-1 text-xs text-muted hover:text-ink transition-colors"
             >
               {t('getStarted.guidelineLabel')}
               <ChevronDown
                 size={14}
+                aria-hidden="true"
                 className={`transition-transform duration-200 ${guidelinesOpen ? 'rotate-180' : ''}`}
               />
             </button>
@@ -356,23 +373,29 @@ export default function GetStartedPage() {
           </div>
 
           {/* Tab switcher */}
-          <div className="flex rounded-lg border border-border overflow-hidden mb-4">
+          <div role="tablist" className="flex rounded-lg border border-border overflow-hidden mb-4">
             <button
+              type="button"
+              role="tab"
+              aria-selected={inputTab === 'upload'}
               onClick={() => setInputTab('upload')}
               className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors ${
                 inputTab === 'upload' ? 'bg-[#F0EEE8] text-ink' : 'text-muted hover:text-ink'
               }`}
             >
-              <Upload size={14} />
+              <Upload size={14} aria-hidden="true" />
               {t('hero.uploadTab')}
             </button>
             <button
+              type="button"
+              role="tab"
+              aria-selected={inputTab === 'link'}
               onClick={() => setInputTab('link')}
               className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors ${
                 inputTab === 'link' ? 'bg-[#F0EEE8] text-ink' : 'text-muted hover:text-ink'
               }`}
             >
-              <LinkIcon size={14} />
+              <LinkIcon size={14} aria-hidden="true" />
               {t('hero.linkTab')}
             </button>
           </div>
@@ -401,7 +424,7 @@ export default function GetStartedPage() {
                     }`}
                   >
                     <div className="shrink-0 w-9 h-9 rounded-lg bg-white border border-border flex items-center justify-center">
-                      <FileText size={16} className="text-forest" strokeWidth={1.5} />
+                      <FileText size={16} className="text-forest" strokeWidth={1.5} aria-hidden="true" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-ink truncate">{file.name}</p>
@@ -429,11 +452,12 @@ export default function GetStartedPage() {
                         {t('getStarted.fileCard.replace')}
                       </button>
                       <button
+                        type="button"
                         onClick={() => { setFile(null); setPageCount(null); setFileTypeError(null) }}
                         className="text-muted hover:text-ink transition-colors p-0.5"
-                        aria-label="Remove file"
+                        aria-label={t('getStarted.fileCard.remove')}
                       >
-                        <X size={14} />
+                        <X size={14} aria-hidden="true" />
                       </button>
                     </div>
                   </div>
@@ -453,12 +477,12 @@ export default function GetStartedPage() {
                           : 'border-border hover:border-forest-mid/50'
                     }`}
                   >
-                    <Upload size={24} className={fileTypeError ? 'text-red-400' : 'text-muted'} strokeWidth={1.5} />
+                    <Upload size={24} className={fileTypeError ? 'text-red-400' : 'text-muted'} strokeWidth={1.5} aria-hidden="true" />
                     <p className="text-sm font-medium text-ink">{t('hero.dropPrompt')}</p>
                     {fileTypeError === 'doc' ? (
-                      <p className="text-xs text-red-500 text-center px-6">{t('getStarted.fileCard.docConvert')}</p>
+                      <p role="alert" className="text-xs text-red-500 text-center px-6">{t('getStarted.fileCard.docConvert')}</p>
                     ) : fileTypeError === 'invalid' ? (
-                      <p className="text-xs text-red-500 text-center px-6">{t('getStarted.fileCard.invalidType')}</p>
+                      <p role="alert" className="text-xs text-red-500 text-center px-6">{t('getStarted.fileCard.invalidType')}</p>
                     ) : (
                       <p className="text-xs text-muted">{t('hero.fileLimit')}</p>
                     )}
@@ -472,7 +496,7 @@ export default function GetStartedPage() {
               </>
             ) : fetchingLink ? (
               <div className="h-32 rounded-xl border border-border bg-[#F0EEE8] flex flex-col items-center justify-center gap-3">
-                <Loader2 size={20} className="text-forest animate-spin" />
+                <Loader2 size={20} className="text-forest animate-spin" aria-hidden="true" />
                 <p className="text-sm font-medium text-ink">{t('getStarted.fetchingDocument')}</p>
                 <p className="text-xs text-muted">Google Docs → .docx</p>
               </div>
@@ -489,7 +513,7 @@ export default function GetStartedPage() {
                   className="rounded-lg py-2.5"
                 />
                 {linkError ? (
-                  <p className="text-xs text-red-500">{linkError}</p>
+                  <p role="alert" className="text-xs text-red-500">{linkError}</p>
                 ) : (
                   <p className="text-xs text-muted">{t('hero.linksSupported')}</p>
                 )}
@@ -502,7 +526,7 @@ export default function GetStartedPage() {
 
       {/* File deletion notice */}
       <div className="mt-4 flex items-start gap-2.5">
-        <Clock size={13} className="text-muted shrink-0 mt-0.5" />
+        <Clock size={13} className="text-muted shrink-0 mt-0.5" aria-hidden="true" />
         <p className="text-xs text-muted leading-relaxed">
           {t('getStarted.fileDeletionNotice')}{' '}
           <a href={ROUTES.terms} target="_blank" rel="noopener noreferrer" className="text-ink underline underline-offset-2 hover:text-forest transition-colors">
@@ -523,7 +547,7 @@ export default function GetStartedPage() {
           />
           <div className="w-4 h-4 rounded border border-border bg-white peer-checked:bg-forest peer-checked:border-forest transition-colors group-hover:border-forest-mid/60" />
           {agreedToTerms && (
-            <Check size={10} className="absolute inset-0 m-auto text-white pointer-events-none" />
+            <Check size={10} className="absolute inset-0 m-auto text-white pointer-events-none" aria-hidden="true" />
           )}
         </div>
         <p className="text-xs text-muted leading-relaxed">

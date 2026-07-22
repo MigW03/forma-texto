@@ -1,10 +1,11 @@
 import { Router, Request, Response } from 'express'
 import { supabase } from '../lib/supabase'
-import { processFormatting, exportPdfBeside } from '../lib/processFormatting'
+import { exportPdfBeside } from '../lib/processFormatting'
 import { unzipDocx, zipDocx, finalizeInputs, detectPretextual, type PendingInput } from '../lib/formatting'
 import { paginateSumario } from '../lib/paginateSumario'
 import { sendProjectReadyEmail } from '../lib/notify'
 import { processingLimiter } from '../lib/rateLimit'
+import { enqueueProcessing } from '../lib/jobQueue'
 
 const router = Router()
 
@@ -47,8 +48,8 @@ router.post('/start', processingLimiter, async (req: Request, res: Response) => 
     return
   }
 
-  // Fire-and-forget: in-process async job. Respond 202 right away.
-  void processFormatting(projectId)
+  // Queue the job (concurrency-limited, see jobQueue.ts) and respond right away.
+  enqueueProcessing(projectId)
   res.status(202).json({ accepted: true, projectId })
 })
 
@@ -232,8 +233,8 @@ router.post('/recover-file', async (req: Request, res: Response) => {
     return
   }
 
-  // Re-trigger the pipeline (fire-and-forget, same as /start).
-  void processFormatting(projectId)
+  // Re-trigger the pipeline through the same concurrency-limited queue as /start.
+  enqueueProcessing(projectId)
   res.json({ ok: true })
 })
 

@@ -6,7 +6,7 @@
 > bottom, and adjust **Open work** as things land. Keep it short and current —
 > deep reference lives in the docs linked below and in `git log`, not here.
 
-**Last updated:** 2026-07-21
+**Last updated:** 2026-07-22
 
 ---
 
@@ -32,16 +32,15 @@ Deeper docs (keep these as the real source of truth):
 
 ## Current status
 
-- **Branch:** `mvp-refinement` (branched off `main`, pushed to `origin/mvp-refinement`, not yet merged/PR'd
-  into `main`). `main` itself is current (received `fable-fixes` via a fast-forward merge + push earlier
-  today) and is ahead of the repo's GitHub-default branch `claude/thesis-correction-saas-fK68M` — treat
-  `main` as the real trunk, not that one.
+- **Branch:** `mvp-refinement` merged into `main` via fast-forward (2026-07-22) and pushed. `main` is the
+  real trunk — the repo's GitHub-default branch `claude/thesis-correction-saas-fK68M` is a separate,
+  deliberately-ignored pointer, not where work lands.
 - **Build:** web production build **green**. The two unused-var errors in `ProjectDetailPage.tsx`
   (`fileName` in `PreviewError`, `pdfDownloadName`) were forgotten wiring, not dead code — both anchors
   were missing a `download` attribute their sibling "download original file" button already had. Fixed by
   wiring `download={fileName}` / `download={pdfDownloadName}` in rather than deleting the vars, which also
   fixes a small real bug (downloaded files got a random/ugly filename instead of the proper one).
-- **Tests:** server **490** passing (3 AI evals skipped); web **52** passing.
+- **Tests:** server **499** passing (3 AI evals skipped); web **52** passing.
 - **Working:** auth, onboarding flow, checkout (Stripe), dashboard, project detail/viewer, the DOCX
   formatting pipeline Steps A/B/C/D (both AI passes: reference reformatting + headings), pré-textual
   detection + formatting + sumário generation with real page numbers, ABNT header page numbering (NBR
@@ -149,30 +148,15 @@ Full breakdown: [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md). Su
        binary in a Docker deploy image (`apt-get install libreoffice-writer fonts-liberation`) means
        `docxToPdf.ts` just works as-is. Only becomes a real code task if a Gotenberg sidecar is chosen
        instead (would swap the shell-out for a `GOTENBERG_URL` call). No host/approach chosen yet.
-2. [ ] **Processing queue — survive a server restart, and stagger jobs to save infra cost.** Today
-       `processFormatting` is fire-and-forget in-process; if the server process dies or restarts mid-job,
-       that job just vanishes — no retry, no status update, and (once paid) a customer who's paid with no
-       output and no explanation. Need a real queue (durable — Postgres table + polling worker, or a
-       proper queue service) so an in-flight job resumes from where it left off after a restart, AND so
-       jobs can be processed one/few-at-a-time instead of all firing concurrently (reduces peak memory/CPU,
-       relevant for a budget host). Ties into the existing `processing_attempts` retry-cron machinery but
-       is a broader rework — that cron only catches rate-limited jobs today, not "the process died."
-3. [ ] **Accessibility pass.** Only 5 of 23 page/component `.tsx` files have any `aria-label`/`role`
-       attribute at all. shadcn/ui's Radix primitives give some baseline (focus trapping, keyboard nav on
-       dialogs), but the custom flow (file upload, page-selection grid, checkout form) likely has real
-       gaps — unlabeled icon-only buttons, missing focus states, no screen-reader text on status badges.
-       A manual pass with a screen reader through signup → upload → checkout → dashboard would catch the
-       worst of it. Broader/fuzzier scope than a single bug fix (an audit + many small fixes), so ranked
-       below the correctness/reliability items above.
-4. [ ] **Ficha catalográfica gets centered/distributed like the folha de rosto (known bug, reported
-       2026-07-17).** It has no pré-textual kind, so it's absorbed into the `folhaDeRosto` section and
-       gets `COVER_STYLE` centering + full-page vertical distribution it shouldn't. Full diagnosis in
-       `PLAN.md` (Backend / AI Pipeline). Narrow scope (only docs with this specific pré-textual element)
-       and currently **blocked — still waiting on a real `.docx` from the user to anchor the fix.**
-5. [ ] **Table formatting isn't ABNT-compliant yet** — label above ("Tabela N — …"), source below
-       ("Fonte: …"), open horizontal borders (no vertical rules), centered placement. Scope depends on how
-       common complex tables are in real target-user theses (unconfirmed); worth a quick look before
-       deciding if it blocks broader launch.
+
+> Table formatting compliance (borders, tabela/quadro distinction) and lista de tabelas/ilustrações
+> generation were both decided post-MVP on 2026-07-22 — tracked in `POST_MVP.md`, not repeated here.
+>
+> The ficha catalográfica mis-centering bug (previously item 2 here) was pulled off the list entirely on
+> 2026-07-22: the ficha is conventionally prepared by the institution's librarian, not authored by the
+> student in their submitted manuscript — so it's unclear this is worth pipeline-level handling at all,
+> not just low priority. Not tracked in `POST_MVP.md` either; revisit only if real user documents show it
+> mattering in practice.
 
 > A smaller, non-launch-blocking correctness item surfaced while fixing the sumário bugs below (a `blocks.ts`
 > regex matching `<w:tabs>` as if it were `<w:t>`) — tracked in `PLAN.md` (Backend / AI Pipeline), not
@@ -207,6 +191,12 @@ Full breakdown: [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md). Su
       can't get the free discount, a second trial can't be triggered after the first is consumed, and
       manipulating client-side `isFree`/`isTrial` flags has no effect (should already be re-verified
       server-side in `checkout.ts` — confirm by hand). Only becomes a code task if the test finds a gap.
+- [ ] **Manual screen-reader pass through signup → upload → checkout → dashboard.** The static-analysis
+      accessibility fixes are in (custom controls now carry `aria-pressed`/`aria-checked`/tab semantics,
+      decorative icons are `aria-hidden`, async errors use `role="alert"`, `<html lang>` syncs to the
+      active locale, `LanguageSwitcher` closes on Escape with focus returned) — what's left is exercising
+      the real flow with VoiceOver/NVDA to catch what a code read can't (reading order, live-region
+      timing, focus-visible contrast). Only becomes a code task if that pass finds a gap.
 
 ### Explicitly post-MVP — not required for this launch
 
@@ -233,10 +223,12 @@ Full breakdown: [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md). Su
 
 ### Deploy steps (when going to production)
 
-- [ ] Run the `processing_attempts` migration (`supabase_tables.md`) and the retry cron
-      (`server/sql/retry_pending_cron.sql`). **Leave the retry cron OFF during free-tier testing** — it
-      would consume fresh daily quota on old jobs; the manual `POST /api/processing/start` retry is what to
-      use while testing.
+- [ ] Run the `processing_attempts` AND `processing_started_at` migrations (`supabase_tables.md`) and the
+      retry cron (`server/sql/retry_pending_cron.sql`). **Leave the retry cron OFF during free-tier
+      testing** — it would consume fresh daily quota on old jobs; the manual `POST /api/processing/start`
+      retry is what to use while testing. Note: `recoverStuckJobs()` (crash recovery, no AI calls) also
+      runs on every server boot regardless of the cron, so orphaned `processing` jobs still self-heal on
+      restart even with the cron off.
 - [ ] Run `server/sql/cleanup_cron.sql` (file auto-deletion) + its two Vault secrets, once per environment.
 
 ### Minor / optional
@@ -251,7 +243,29 @@ Full breakdown: [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md). Su
 > Older entries are compressed to a one-line index — see `git log -p -- HANDOFF.md` for full narrative
 > detail on any of them.
 
-### 2026-07-21 — Output-validation backstop, API rate limiting, embedded long-quote splitting
+### 2026-07-22 — Processing queue (crash recovery + concurrency limit), accessibility pass
+
+Worked items 2 and 3 off the "Needs code" list.
+
+**Processing queue**: `processFormatting` had no per-step checkpointing (everything lives in local
+variables inside one function call), so true mid-pipeline resume would be a much bigger rewrite than fits
+here. Landed the achievable version instead: a `processing_started_at` heartbeat column (migration
+documented in `supabase_tables.md`, not yet run against Supabase), a `recoverStuckJobs()` sweep
+(`retryPendingJobs.ts`) that resets a project stuck `processing` past `STUCK_THRESHOLD_MINUTES` (2 hours —
+bumped up from an initial 30min guess after a real document took ~30min to process, which didn't leave
+enough margin) back to `pending` — run on every server boot and piggybacked on the daily retry-pending
+cron — and an in-process concurrency-limited `JobQueue` (`jobQueue.ts`, max 2 concurrent) replacing the old
+unbounded `void processFormatting(id)` fire-and-forget calls in `processing.ts`. Logs the project id the
+moment a stuck job is caught (before attempting the reset), separately from the success confirmation.
+20 new tests, all green.
+
+**Accessibility pass**: fixed the concrete gaps from a file-by-file audit — `aria-pressed`/`aria-checked`
+on custom toggle/checkbox/radio controls across `GetStartedPage`, `PageSelectionPage`, `CheckoutPage`;
+`role="tablist"`/`tab` on the upload/link switcher; `role="alert"` on async error text; decorative icons
+`aria-hidden`; `role="status"` on status badges; `<html lang>` now syncs to the active i18next locale
+(`i18n.ts`); `LanguageSwitcher` closes on Escape and returns focus to its trigger (verified in-browser).
+Remaining: a manual screen-reader pass (see Open work) — a code read can't catch everything (reading
+order, live-region timing).
 
 Worked the top of the "Needs code" list for the items that didn't need user input (the rest — LibreOffice
 hosting, the processing queue, ficha catalográfica, table formatting — genuinely need a decision or a real

@@ -168,6 +168,7 @@
       "countingLaudas": "a contar laudas…",
       "laudasUnknown": "— laudas",
       "replace": "Substituir",
+      "remove": "Remover ficheiro",
       "invalidType": "Formato não suportado. Envie um documento Word (.docx).",
       "docConvert": "O formato .doc antigo não é suportado. Converta o seu ficheiro para .docx antes de enviar."
     },

@@ -200,8 +200,9 @@ export async function processFormatting(projectId: string): Promise<void> {
       return
     }
 
-    // 3. Mark processing
-    await supabase.from('projects').update({ status: 'processing' }).eq('id', projectId)
+    // 3. Mark processing. processing_started_at is a heartbeat consumed by
+    // recoverStuckJobs() to detect a job orphaned by a server crash/restart.
+    await supabase.from('projects').update({ status: 'processing', processing_started_at: new Date().toISOString() }).eq('id', projectId)
 
     // 4. Download original (.zip-renamed docx)
     const { data: blob, error: dlError } = await supabase.storage

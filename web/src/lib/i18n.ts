@@ -33,4 +33,12 @@ i18n
     },
   })
 
+// Keep <html lang> in sync so screen readers use the right pronunciation/voice —
+// index.html hardcodes "en" and nothing else ever updates it otherwise.
+const syncHtmlLang = (lng: string) => {
+  document.documentElement.lang = lng
+}
+syncHtmlLang(i18n.language)
+i18n.on('languageChanged', syncHtmlLang)
+
 export default i18n

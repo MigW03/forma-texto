@@ -111,3 +111,82 @@ export async function retryPendingJobs(
 
   return result
 }
+
+/**
+ * Recover jobs orphaned by a server crash/restart.
+ *
+ * `processFormatting` runs entirely in-process with no per-step checkpoint — if the
+ * server dies mid-job, the project is left `status='processing'` forever with nothing
+ * watching that state (the retry-pending job above only scans `pending`). This sweep
+ * catches that: any project still `processing` past `STUCK_THRESHOLD_MINUTES` since its
+ * `processing_started_at` heartbeat is reset to `pending`, so it flows back through the
+ * normal retry path (manual `/api/processing/start`, or the pending-retry cron).
+ *
+ * 2 hours is well past how long even a large (~40-lauda) document's sequential AI
+ * passes take in normal operation (observed ~30min on a real document, so this leaves
+ * a wide margin), so a false-positive reset of a genuinely in-flight job should not
+ * happen in practice.
+ */
+export const STUCK_THRESHOLD_MINUTES = 120
+
+export interface StuckJob {
+  id: string
+}
+
+export interface RecoverStuckResult {
+  scanned: number
+  recovered: number
+  errors: string[]
+}
+
+export interface RecoverStuckDeps {
+  /** Projects still 'processing' with a heartbeat older than the stale cutoff. */
+  listStuck(staleCutoffIso: string): Promise<{ data: StuckJob[] | null; error: { message: string } | null }>
+  /** Reset one orphaned job back to 'pending'. */
+  resetToPending(id: string): Promise<{ error: { message: string } | null }>
+}
+
+function defaultRecoverDeps(): RecoverStuckDeps {
+  const { supabase } = require('./supabase') as { supabase: any }
+  return {
+    async listStuck(staleCutoffIso) {
+      return supabase
+        .from('projects')
+        .select('id')
+        .eq('status', 'processing')
+        .lt('processing_started_at', staleCutoffIso)
+    },
+    async resetToPending(id) {
+      return supabase.from('projects').update({ status: 'pending' }).eq('id', id)
+    },
+  }
+}
+
+export async function recoverStuckJobs(
+  deps: RecoverStuckDeps = defaultRecoverDeps(),
+  now: Date = new Date(),
+): Promise<RecoverStuckResult> {
+  const result: RecoverStuckResult = { scanned: 0, recovered: 0, errors: [] }
+  const staleCutoffIso = new Date(now.getTime() - STUCK_THRESHOLD_MINUTES * 60_000).toISOString()
+
+  const { data: rows, error } = await deps.listStuck(staleCutoffIso)
+  if (error) {
+    result.errors.push(`query: ${error.message}`)
+    return result
+  }
+  if (!rows || rows.length === 0) return result
+  result.scanned = rows.length
+
+  for (const row of rows) {
+    console.log(`[recoverStuckJobs] caught stuck job ${row.id} — status='processing' past ${STUCK_THRESHOLD_MINUTES}min, resetting to 'pending'`)
+    const { error: resetErr } = await deps.resetToPending(row.id)
+    if (resetErr) {
+      result.errors.push(`reset ${row.id}: ${resetErr.message}`)
+      continue
+    }
+    console.warn(`[recoverStuckJobs] ${row.id} reset to 'pending' (likely an orphaned job from a server crash/restart)`)
+    result.recovered += 1
+  }
+
+  return result
+}
