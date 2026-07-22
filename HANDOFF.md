@@ -286,6 +286,96 @@ correctly stays inline. 6 new tests.
 Server suite 485 passing (was 463), `tsc --noEmit` clean. `PLAN.md`/`HANDOFF.md`'s "Needs code" list
 trimmed to the 6 remaining items.
 
+**Follow-up, same day — client-side laudas mis-detection on a document with its own sumário/TOC** (user
+report, anchored on a real Google Docs upload the user shared). Reported symptom: an existing summary's own
+entries showing up as billable laudas on the page-selection screen. Root-caused with the real file (rendered
+through the actual `docx-preview` pipeline via a temporary debug route, not guessed): the summary ITEMS were
+never the problem — `docx-preview` already renders each TOC line as its own correctly-spaced block
+(`"SUMÁRIO 1"`, `"Os personagens Principais 1"`, …). The real cause is `web/src/lib/pretextual.ts`'s
+`isBodyHeading`, which only recognizes a real chapter start via a **leading number** — this document's
+chapters aren't numbered yet (numbering is itself something the paid pipeline adds, so a fresh upload
+commonly arrives without it), so the search for `bodyStart` never matches anything and fell back to
+"immediately after the SUMÁRIO label" — meaning the TOC's own entries AND the entire real body all counted
+as laudas. Fix: skip a leading run of blank lines and TOC-entry-shaped lines (`isTocEntry` — dot leaders or
+a trailing page number) right after the last pré-textual signal before searching for a heading; this is a
+no-op for other labeled sections (resumo/abstract/…, guarded by a new test) but gives a correct fallback —
+"right after the summary's own paginated entry list" — instead of "right after the label" when nothing in
+the body is numbered. Verified on the real file both via unit tests (3 new, `pretextual.test.ts`) and by
+re-running the actual render pipeline against it: `bodyStart` now correctly lands on the first real chapter
+(index 6), sumário section correctly spans the label + all 3 entries + trailing blanks. Web suite 52
+passing (was 49), `tsc -b` clean. Two related findings, deliberately NOT fixed in this pass: (1) the
+*server-side* half of "handle an existing sumário" — replacing it during `buildSumario` without corrupting
+the file; (2) a latent regex bug in the server's `blockText()` (`blocks.ts`) where `<w:t[^>]*>` also matches
+`<w:tabs>`/`<w:tab …/>` and swallows content up to the next real `</w:t>` — doesn't affect this screen
+(which renders via real DOM, not that regex), tracked separately in `PLAN.md`.
+
+**Immediate follow-up, same day — server-side duplicate sumário bug, fixed.** User then actually processed
+a document with its own sumário through the full pipeline: the final file had TWO summary sections. Desired
+policy confirmed with the user: if the original has a summary, replace it with the generated one; if not,
+keep current behavior (`buildSumario` already no-ops when none is detected — untouched). Root-caused against
+the real file (compiled the relevant server modules standalone and ran them against the actual
+`document.xml`, not guessed): `classifyPretextual` (server) is a straight port of the client detector and
+had the *exact* same unnumbered-heading gap fixed above — `bodyStart` fell back to right after the label, so
+the detected `sumario` section spanned only the label itself. `buildSumario`'s replacement logic was already
+correct — it just trusted that (too-short) section extent, so it glued the freshly-built entries onto the
+label's own block while the original TOC (a `<w:sdt>`-wrapped Word/Google-Docs auto-TOC field) survived
+completely untouched immediately after: two sumário-looking listings back to back. Fix: applied the same
+`isTocEntry`-skip to `classifyPretextual` (`server/src/lib/formatting/preTextual.ts`) — an `<w:sdt>` block
+reads as blank here (`detectPretextual` only computes `blockText` for real `<w:p>` blocks), so it gets
+skipped the same way blank lines do, needing no separate handling. Verified against the real file (same
+standalone-compile approach): `bodyStart` now correctly lands past the whole original TOC, and
+`buildSumario`'s output is clean — new entries immediately followed by the real body, zero leftover
+`<w:sdt>`/field-code content. 3 new tests (`preTextual.test.ts`, including an XML-level
+`detectPretextual`+`buildSumario` integration test built from the real bug's shape). Server suite 488
+passing (was 485), `tsc --noEmit` clean.
+
+**Third follow-up, same day — placeholder detection silently not firing, fixed.** User: processed a file
+selecting both formatting and proofreading and it never asked for missing caption/source input, though the
+doc has an uncaptioned image. User's own hypothesis ("could the appendix label in the summary be
+interfering with images?") was directionally right, one layer removed — traced end-to-end by running the
+real deterministic pipeline (Steps A/B, pré-textual, heading numbering, `buildSumario`, image/caption
+passes — AI steps skipped, they don't touch this path) against the actual file via a throwaway vitest test.
+Root cause: this document's real appendix heading is literally "Apêndices" — same as this thesis's
+appendix — and `buildSumario` rebuilds a TOC entry for every real heading, so the sumário gets its own
+"Apêndices" entry, with NO page number yet (filled in much later by `paginateSumario`). `processFormatting`
+re-runs `locateAppendixStart` right after `buildSumario` (block count changed), and a bare, un-paginated
+"Apêndices" entry satisfies `looksLikeAppendixHeading` exactly as well as the real heading — so it locked
+onto the sumário's own echo (block 2) instead of the real appendix (block 29), freezing image/caption/
+placeholder detection for nearly the entire document. **Fires on any document with both a sumário and an
+appendix — standard ABNT shape, not an edge case** — almost certainly why this was never caught before now.
+First attempt (excluding blocks inside `detectPretextual`'s own sumário section) wasn't sufficient on its
+own — that section's own boundary has the identical blind spot (its `isTocEntry` check needs a page number
+the fresh entry doesn't have yet). Fixed by reusing `sumarioPagination.ts`'s `findSumarioEntries` instead —
+it recognizes `buildTocEntry`'s structural signature (right-tab + suppressAutoHyphens) independent of
+whether a page number is present, so it correctly covers every rebuilt entry. Verified against the real
+file: `appendixStart` now correctly lands at 28 (was wrongly 2), and placeholder detection correctly flags
+the body image's missing caption/source while still excluding the real appendix's own image. 1 new test
+(`postTextual.test.ts`, built via the real `buildSumario` output, not a hand-written fixture). Server suite
+489 passing (was 488), `tsc --noEmit` clean.
+
+**Fourth follow-up, same day — sumário lines wrap in the `needs_input` preview, fixed.** User: when a doc
+needs input, the sumário renders broken (lines wrapping) in the preview; after the user fills the inputs
+and the doc reprocesses to final, it renders correctly. Same root cause as the 2026-07-17 "sumário entries
+wrapping" bug, just a different trigger: `buildSumario`'s freshly-built entries leave the page-number column
+completely blank — a bare `<w:r><w:tab/></w:r>` — because real numbers are only stamped by `paginateSumario`,
+the pipeline's last step, which `needs_input` docs never reach (deliberately, to avoid baking
+placeholder-shifted numbers). docx-preview's right-tab-stop word-spacing calibration blows up specifically
+when NOTHING follows the tab, wrapping the entry onto extra lines. Confirmed empirically end-to-end against
+the real file: reproduced the exact `needs_input` document via the real deterministic pipeline (a throwaway
+vitest test, AI steps skipped), rendered it through the *actual* `DocxViewer` sequence (`TAB_STOP_SETTLE_MS`
+zoom-hold, `DOCX_PAGE_STYLES`, the same 600ms settle) in the browser pane — entries measured 65px/43px tall
+(wrapped) vs. a correct 22px. Tested the fix hypothesis the same way before touching source: patching in
+ANY character after the tab (not necessarily a real number) fixed it immediately (22px, single line) — so
+this is a genuine fix, not a workaround. Implemented: `buildTocEntry` now stamps a placeholder
+(`SUMARIO_PAGE_PLACEHOLDER = '—'`, exported from `sumario.ts`) after the tab instead of leaving it bare;
+`setEntryPageNumber` (`sumarioPagination.ts`) now recognizes and overwrites that placeholder (previously its
+regex only matched an existing *digit* run) once the real page number is known, same as it already did for
+a re-run. Never reaches a final PDF (LibreOffice/`paginateSumario` always resolves it before any PDF export)
+— the only place it's ever visible is the preview, and only before pagination has run. Re-verified against
+the real file with the actual (fixed) production code end-to-end: all entries render single-line. 3 existing
+tests updated for the new entry shape (they now include the placeholder), 1 new test locking in the
+placeholder itself. Server suite 490 passing (was 489), `tsc --noEmit` clean.
+
 ### 2026-07-19 — MVP launch checklist + web production build fix
 
 Reworked `HANDOFF.md`'s "Open work" section into a single priority-sorted MVP launch checklist per the

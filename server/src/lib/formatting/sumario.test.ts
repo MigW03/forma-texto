@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildSumario, sumarioTabPos } from './sumario'
+import { buildSumario, sumarioTabPos, SUMARIO_PAGE_PLACEHOLDER } from './sumario'
 import { getBlocks, blockText } from './blocks'
 import { classifyPretextual, type PretextualResult } from './preTextual'
 
@@ -63,6 +63,18 @@ describe('buildSumario', () => {
     expect(isBold(blocks[2])).toBe(false)  // H2 → not bold
     expect(hasTab(blocks[1])).toBe(true)   // tab for blank page number
     expect(hasTab(blocks[2])).toBe(true)
+  })
+
+  it('stamps a page-number placeholder after the tab, never a bare run', () => {
+    // Real bug: with NOTHING after a right tab-stop, docx-preview's tab-stop
+    // word-spacing calibration blows up and wraps the entry onto extra lines —
+    // confirmed against a real document. A placeholder (any content) avoids it;
+    // `paginateSumario`/`setEntryPageNumber` overwrites it once real numbers exist.
+    const doc = DOC(sumarioLabel + para('old') + h1('1 INTRODUÇÃO'))
+    const result = buildSumario(doc, pretextualWith(0, 1, 2))
+    const entry = getBlocks(result)[1]
+    expect(entry).toContain(`<w:r><w:tab/></w:r><w:r><w:t>${SUMARIO_PAGE_PLACEHOLDER}</w:t></w:r></w:p>`)
+    expect(blockText(entry)).toBe(`1 INTRODUÇÃO${SUMARIO_PAGE_PLACEHOLDER}`)
   })
 
   it('indents H2 and H3 entries', () => {
@@ -175,7 +187,9 @@ describe('buildSumario', () => {
     // label(0), entryBEATRIZ(1), entryINTRO(2), then the untouched body: h2(3), h3 longBio(4), h1(5)
     expect(blocks).toHaveLength(6)
     const entryTexts = [blocks[1], blocks[2]].map(blockText)
-    expect(entryTexts).toEqual(['BEATRIZ MILHAZES', '1 INTRO'])
+    // Trailing "—" is the page-number placeholder (SUMARIO_PAGE_PLACEHOLDER) — real
+    // pagination hasn't run on this doc yet.
+    expect(entryTexts).toEqual(['BEATRIZ MILHAZES—', '1 INTRO—'])
     // The long paragraph stays in the body (untouched) but must not be duplicated as a TOC entry.
     expect(blockText(blocks[1])).not.toContain('Milhazes, 1960')
     expect(blockText(blocks[2])).not.toContain('Milhazes, 1960')

@@ -153,3 +153,47 @@ describe('detectPretextual — unnumbered "Introdução" heading', () => {
     expect(r.bodyStart).toBe(1)
   })
 })
+
+describe('detectPretextual — unnumbered chapters + a paginated auto-TOC (real-doc regression)', () => {
+  // Reproduces a real Google Docs upload: an automatic Table of Contents field
+  // (paginated — each entry ends in its own page number) whose chapter titles were
+  // never numbered by the author. Before the `isTocEntry`-skip fix, `bodyStart`
+  // never found any numbered heading anywhere in the document and fell back to
+  // "immediately after the SUMÁRIO label" — so the TOC's own entries AND the whole
+  // real body (chapters, references, appendix) all counted as laudas.
+  const doc = [
+    b('SUMÁRIO'),                     // 0 label
+    b('SUMÁRIO 1'),                   // 1 TOC entry (self-referential, common auto-TOC quirk)
+    b('Os personagens Principais 1'), // 2 TOC entry
+    b('Apêndices 4'),                 // 3 TOC entry (stale — doesn't list every chapter)
+    b(''),                            // 4 blank
+    b(''),                            // 5 blank
+    b('a sociedade do anel'),         // 6 real first chapter — UNNUMBERED
+    b('Texto do primeiro capítulo.'), // 7
+    b('Os personagens Principais'),   // 8 real second chapter — UNNUMBERED, same text as its TOC entry
+    b('Texto do segundo capítulo.'),  // 9
+  ]
+
+  it('places bodyStart at the first real (unnumbered) chapter, not inside the TOC', () => {
+    const r = detectPretextual(doc)
+    expect(r.bodyStart).toBe(6)
+  })
+
+  it('keeps the whole paginated entry list inside the sumário section', () => {
+    const r = detectPretextual(doc)
+    expect(r.sections).toEqual([{ kind: 'sumario', blockStart: 0, blockEnd: 5 }])
+  })
+
+  it('is a no-op skip for a non-sumário label followed by ordinary prose', () => {
+    // Guards the "harmless for other sections" claim: resumo's own body text must
+    // not be mistaken for TOC-entry-shaped content and skipped.
+    const r = detectPretextual([
+      b('RESUMO'),                                        // 0
+      b('Este resumo apresenta os resultados em 2024.'),   // 1 ends in a bare number — must NOT be skipped as a TOC entry
+      b('1 INTRODUÇÃO'),                                   // 2 real heading
+      b('Corpo.'),                                         // 3
+    ])
+    expect(r.bodyStart).toBe(2)
+    expect(r.sections).toEqual([{ kind: 'resumo', blockStart: 0, blockEnd: 1 }])
+  })
+})

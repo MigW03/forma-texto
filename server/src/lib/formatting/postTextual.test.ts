@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { locateAppendixStart, looksLikeAppendixHeading } from './postTextual'
 import { autoLocateReferences } from './references'
+import { detectPretextual } from './preTextual'
+import { buildSumario } from './sumario'
+import { getBlocks, blockText } from './blocks'
 
 const wp = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`
 const doc = (...paras: string[]) =>
@@ -67,6 +70,38 @@ describe('locateAppendixStart', () => {
   it('is not fooled by a body mention of the word', () => {
     const d = doc(wp('O anexo A traz os dados completos.'), wp('Conclusão'))
     expect(locateAppendixStart(d)).toBeNull()
+  })
+
+  it('is not fooled by the sumário\'s own freshly-rebuilt TOC entry for the appendix heading (real-doc regression)', () => {
+    // Real bug: when the real appendix heading is literally "Apêndices", buildSumario's
+    // rebuilt TOC entry for it is bare text with NO page number yet (filled in much
+    // later by paginateSumario) — so it satisfies looksLikeAppendixHeading just as well
+    // as the real heading. processFormatting re-runs locateAppendixStart right after
+    // buildSumario (block count changed), so without excluding the sumário's own
+    // (structurally-recognized) entries, it locks onto the echo instead of the real
+    // heading — freezing image/caption detection for nearly the whole document.
+    const p = (text: string, style?: string) => {
+      const pPr = style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : ''
+      return `<w:p>${pPr}<w:r><w:t>${text}</w:t></w:r></w:p>`
+    }
+    const xml =
+      '<w:document><w:body>' +
+      p('SUMÁRIO') +                 // 0 label
+      p('Capítulo Um', 'Heading1') + // 1 real first chapter — becomes a TOC entry too
+      p('Texto do capítulo.') +      // 2
+      p('Apêndices', 'Heading1') +   // 3 real appendix heading
+      p('Conteúdo do apêndice.') +   // 4
+      '</w:body></w:document>'
+
+    const pretextual = detectPretextual(xml)
+    const rebuilt = buildSumario(xml, pretextual)
+
+    // The real (Heading1-styled) appendix heading, further down in the actual body —
+    // distinct from the sumário's own plain-text rebuilt entry of the same title.
+    const blocks = getBlocks(rebuilt)
+    const realAppendixIdx = blocks.findIndex(b => blockText(b) === 'Apêndices' && /<w:pStyle\b[^>]*w:val="Heading1"/.test(b))
+
+    expect(locateAppendixStart(rebuilt)).toBe(realAppendixIdx)
   })
 })
 

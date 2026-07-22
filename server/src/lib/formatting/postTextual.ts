@@ -1,4 +1,6 @@
 import { getBlocks, isParagraph, blockText } from './blocks'
+import { detectPretextual } from './preTextual'
+import { findSumarioEntries } from './sumarioPagination'
 
 /**
  * Post-textual section detection — ABNT "Apêndice" (appendix) and "Anexo" (annex /
@@ -35,10 +37,37 @@ export function looksLikeAppendixHeading(text: string): boolean {
  * Find the first appendix/annex heading in the document, or null if there is none.
  * Scans the whole document (the stored file may be sliced to a few laudas, so an
  * appendix can appear early); the uppercase heading test keeps false positives away.
+ *
+ * Skips any block inside a detected sumário section. Real bug this guards against:
+ * `buildSumario` rebuilds its TOC entries from the real body headings, so a document
+ * whose appendix heading is literally "Apêndices" gets a matching sumário entry —
+ * with NO page number yet (that's filled in much later, by `paginateSumario`). That
+ * bare "Apêndices" entry alone satisfies `looksLikeAppendixHeading` just as well as
+ * the real heading does. `processFormatting` re-runs this function right after
+ * `buildSumario` specifically because block count changed — without this exclusion
+ * it locks onto the sumário's own echo instead of the real heading deep in the body,
+ * freezing image/caption/placeholder detection for nearly the whole document. This
+ * fires on any document that has BOTH a sumário and an appendix — standard ABNT
+ * shape, not an edge case.
+ *
+ * `detectPretextual`'s own section boundary isn't trusted for the sumário's END: its
+ * `bodyStart` heuristic only recognizes a TOC entry by trailing dot-leaders/a page
+ * number, which a *freshly built* entry doesn't have yet — so right after
+ * `buildSumario` the detected section can be too short, covering only the label.
+ * `findSumarioEntries` recognizes `buildTocEntry`'s own structural signature instead
+ * (right-tab + suppressAutoHyphens), independent of whether a page number is present,
+ * so it correctly extends the exclusion range over every rebuilt entry.
  */
 export function locateAppendixStart(documentXml: string): number | null {
   const blocks = getBlocks(documentXml)
+  const sumario = detectPretextual(documentXml).sections.find(s => s.kind === 'sumario')
+  let skipEnd = sumario?.blockEnd ?? -1
+  if (sumario) {
+    const entries = findSumarioEntries(documentXml)
+    if (entries.length > 0) skipEnd = Math.max(skipEnd, entries[entries.length - 1].index)
+  }
   for (let i = 0; i < blocks.length; i++) {
+    if (sumario && i >= sumario.blockStart && i <= skipEnd) continue
     if (isParagraph(blocks[i]) && looksLikeAppendixHeading(blockText(blocks[i]))) return i
   }
   return null

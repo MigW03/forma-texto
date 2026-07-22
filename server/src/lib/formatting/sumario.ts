@@ -16,6 +16,18 @@ const FALLBACK_TAB_POS = 9061
 /** Safety inset (twips) so rounding in any renderer never pushes the tab past the margin. */
 const TAB_INSET = 10
 
+/**
+ * Placeholder shown in the page-number column before real pagination runs (a
+ * `needs_input` preview, or any state before `paginateSumario` reaches this entry).
+ * Confirmed empirically (real document, real docx-preview render): with NOTHING
+ * after a right tab-stop, docx-preview's tab-stop word-spacing calibration blows up
+ * and wraps the whole entry onto extra lines (a giant fixed word-spacing, ~261pt) —
+ * ANY content after the tab, not specifically a digit, avoids it. `setEntryPageNumber`
+ * (`sumarioPagination.ts`) recognizes and overwrites this exact placeholder once the
+ * real page number is known.
+ */
+export const SUMARIO_PAGE_PLACEHOLDER = '—'
+
 /** Left indent in twips per heading level (level 1 = flush left). */
 const LEVEL_INDENT: Record<number, number> = { 1: 0, 2: 709, 3: 1418 }
 
@@ -50,11 +62,11 @@ export function sumarioTabPos(documentXml: string): number {
 }
 
 /**
- * Build one TOC entry paragraph for `text` at `level`. Page number left blank —
- * `paginateSumario` fills it at the very end of the pipeline, once real page
- * numbers exist. The tab is a plain right tab (no dot leader): docx-preview
- * renders leader dots poorly (they read as dashes spilling off the page), and the
- * user asked for them gone.
+ * Build one TOC entry paragraph for `text` at `level`. The page number itself is
+ * `SUMARIO_PAGE_PLACEHOLDER` — `paginateSumario` overwrites it at the very end of the
+ * pipeline, once real page numbers exist. The tab is a plain right tab (no dot
+ * leader): docx-preview renders leader dots poorly (they read as dashes spilling off
+ * the page), and the user asked for them gone.
  *
  * Explicitly resets justification and first-line indent — the entry carries no
  * `w:pStyle`, so it would otherwise inherit the body style (ABNT: justified, 1.25cm
@@ -75,6 +87,7 @@ function buildTocEntry(text: string, level: number, tabPos: number): string {
     '</w:pPr>' +
     `<w:r>${rPr}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>` +
     '<w:r><w:tab/></w:r>' +
+    `<w:r><w:t>${SUMARIO_PAGE_PLACEHOLDER}</w:t></w:r>` +
     '</w:p>'
   )
 }

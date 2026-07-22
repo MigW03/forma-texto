@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { classifyPretextual, detectPretextual, applyPretextualHeadings, applyCoverAlignment, applyFolhaRostoAlignment, applyPretextualPageBreaks, applyCoverVerticalDistribution, coverBlockIndices } from './preTextual'
 import { REFERENCES_HEADING_STYLE, COVER_STYLE, FOLHA_ROSTO_NATUREZA_STYLE } from './guidelines'
-import { getBlocks } from './blocks'
+import { getBlocks, blockText } from './blocks'
+import { buildSumario } from './sumario'
 
 const styleOf = (b: string) => b.match(/<w:pStyle\b[^>]*w:val="([^"]*)"/)?.[1] ?? null
 
@@ -79,6 +80,74 @@ describe('classifyPretextual', () => {
       'Introdução',   // 1 TOC entry only, nothing else in the doc
     ])
     expect(r.bodyStart).toBe(1)
+  })
+
+  it('places bodyStart at the first real (unnumbered) chapter, not inside a paginated TOC', () => {
+    // Reproduces a real Google Docs upload: chapter titles never numbered by the
+    // author. Before the isTocEntry-skip, bodyStart fell back to right after the
+    // SUMÁRIO label, so the TOC's own paginated entries — and the whole real body —
+    // counted as laudas/body content.
+    const r = classifyPretextual([
+      'SUMÁRIO',                     // 0 label
+      'SUMÁRIO 1',                   // 1 TOC entry (self-referential, common auto-TOC quirk)
+      'Os personagens Principais 1', // 2 TOC entry
+      'Apêndices 4',                 // 3 TOC entry (stale — doesn't list every chapter)
+      '',                            // 4 blank
+      'a sociedade do anel',         // 5 real first chapter — UNNUMBERED
+      'Texto do primeiro capítulo.', // 6
+    ])
+    expect(r.bodyStart).toBe(5)
+    expect(r.sections).toEqual([{ kind: 'sumario', blockStart: 0, blockEnd: 4 }])
+  })
+
+  it('is a no-op skip for a non-sumário label followed by ordinary prose', () => {
+    // Guards the "harmless for other sections" claim: resumo's own body text must not
+    // be mistaken for TOC-entry-shaped content and skipped.
+    const r = classifyPretextual([
+      'RESUMO',                                      // 0
+      'Este resumo apresenta os resultados em 2024.', // 1 ends in a bare number — must NOT be skipped
+      '1 INTRODUÇÃO',                                 // 2 real heading
+      'Corpo.',                                       // 3
+    ])
+    expect(r.bodyStart).toBe(2)
+    expect(r.sections).toEqual([{ kind: 'resumo', blockStart: 0, blockEnd: 1 }])
+  })
+})
+
+describe('detectPretextual + buildSumario — Word/Google-Docs automatic TOC (real-doc regression)', () => {
+  it('replaces the whole original auto-TOC — no leftover content, no duplicate sumário', () => {
+    // Real bug: a Google Docs automatic Table of Contents (one <w:sdt>, chapter titles
+    // never numbered) survived buildSumario's replacement untouched, sitting right after
+    // the freshly-built entries — two sumário-looking sections in the final document.
+    const autoToc =
+      '<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents"/></w:docPartObj></w:sdtPr>' +
+      '<w:sdtContent>' +
+      '<w:p><w:r><w:fldChar w:fldCharType="begin"/>' +
+      '<w:instrText xml:space="preserve"> TOC \\h \\z \\t &quot;Heading 1,1&quot;</w:instrText>' +
+      '<w:fldChar w:fldCharType="separate"/></w:r>' +
+      '<w:r><w:t>Capítulo Um</w:t></w:r><w:r><w:t>1</w:t></w:r></w:p>' +
+      '</w:sdtContent></w:sdt>'
+    const p = (text: string, style?: string) => {
+      const pPr = style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : ''
+      return `<w:p>${pPr}<w:r><w:t>${text}</w:t></w:r></w:p>`
+    }
+    const xml =
+      '<w:document><w:body>' +
+      p('SUMÁRIO') +                 // 0 label
+      autoToc +                      // 1 original auto-TOC (one sdt block)
+      p('') +                        // 2 blank
+      p('Capítulo Um', 'Heading1') + // 3 real chapter — UNNUMBERED
+      p('Texto do capítulo.') +      // 4
+      '</w:body></w:document>'
+
+    const pretextual = detectPretextual(xml)
+    const out = buildSumario(xml, pretextual)
+
+    expect(out).not.toContain('<w:sdt')
+    expect(out).not.toContain('instrText')
+    // Trailing "—" on the rebuilt entry is the page-number placeholder
+    // (SUMARIO_PAGE_PLACEHOLDER) — pagination hasn't run on this doc yet.
+    expect(getBlocks(out).map(blockText)).toEqual(['SUMÁRIO', 'Capítulo Um—', 'Capítulo Um', 'Texto do capítulo.'])
   })
 })
 

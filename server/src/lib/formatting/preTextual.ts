@@ -173,8 +173,30 @@ export function classifyPretextual(texts: string[]): PretextualResult {
   const firstLabeled = labeled.length ? labeled[0].index : -1
   if (lastSignal === -1) return { sections: [], bodyStart: 0 }
 
-  let bodyStart = lastSignal + 1
-  for (let i = lastSignal + 1; i < trimmed.length; i++) {
+  // Skip a leading run of blank lines and TOC-entry-shaped lines (dot leaders or a
+  // trailing page number — `isTocEntry`) right after the last signal, before
+  // searching for a real body heading. When that signal is the sumário label, this
+  // run is almost always its own paginated entry list — skipping it gives a far
+  // better default than "immediately after the label" for a document whose real
+  // chapters aren't numbered yet (numbering is itself something this pipeline adds,
+  // so a fresh upload commonly arrives without it). Also covers a Word/Google-Docs
+  // automatic TOC field, which lives in one `<w:sdt>` block: `texts[i]` for it is
+  // always '' here (blockText is only computed for real `<w:p>` blocks above), so it
+  // reads as blank and is skipped the same way. Without this, `bodyStart` falls back
+  // to right after the label, and the WHOLE sumário's own listing (and the entire
+  // real body) counts as laudas — and, worse, `buildSumario`'s replacement (which
+  // trusts this section's extent) then only overwrites the label, leaving the
+  // original TOC content behind right after it: two sumário-looking sections in the
+  // output. Harmless for other labeled sections (resumo/abstract/…): their own body
+  // prose essentially never ends in a bare trailing number or dot leaders, so the
+  // skip is a no-op there. Mirrors `web/src/lib/pretextual.ts`.
+  let afterEntries = lastSignal + 1
+  while (afterEntries < trimmed.length && (!trimmed[afterEntries] || isTocEntry(trimmed[afterEntries]))) {
+    afterEntries++
+  }
+
+  let bodyStart = afterEntries < trimmed.length ? afterEntries : lastSignal + 1
+  for (let i = afterEntries; i < trimmed.length; i++) {
     if (isBodyHeading(trimmed[i])) { bodyStart = i; break }
     if (isIntroducaoWord(trimmed[i])) {
       let j = i + 1

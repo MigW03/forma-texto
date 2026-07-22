@@ -173,7 +173,7 @@ describe('applySumarioPageNumbers', () => {
     expect({ assigned, total }).toEqual({ assigned: 1, total: 3 })
     const blocks = getBlocks(documentXml)
     expect(blocks[1]).toContain('<w:t>2</w:t>')
-    expect(blocks[2]).toContain('<w:r><w:tab/></w:r></w:p>') // blank number kept
+    expect(blocks[2]).toContain('<w:r><w:tab/></w:r><w:r><w:t>—</w:t></w:r></w:p>') // placeholder kept, never guessed
   })
 
   it('no sumário → unchanged', () => {

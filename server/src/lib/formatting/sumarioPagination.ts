@@ -1,6 +1,7 @@
 import { getBlocks, blockText, replaceBlocks } from './blocks'
 import { decodeXmlEntities } from './xmlText'
 import { detectPretextual } from './preTextual'
+import { SUMARIO_PAGE_PLACEHOLDER } from './sumario'
 
 /**
  * Sumário pagination — fills the page-number column of the TOC entries that
@@ -162,13 +163,18 @@ export function assignEntryPages(entryTexts: string[], pageTexts: string[]): (nu
  * `<w:r><w:tab/></w:r>` silently matched nothing → 0 numbers stamped → every sumário
  * entry wrapped in the docx-preview). The stamped number run reuses the tab run's own
  * `rPr` so the digit inherits the same font as the entry.
+ *
+ * The "existing number run" the regex overwrites is either a real digit run (a
+ * re-run stamping over an already-paginated entry) or `buildTocEntry`'s own
+ * `SUMARIO_PAGE_PLACEHOLDER` — both must be recognized, or the placeholder survives
+ * as extra text right before the real number gets appended after it.
  */
 function setEntryPageNumber(entry: string, n: number): string {
   // The optional rPr uses a `(?!</w:r>)` guard so its lazy body can't span across a
   // run boundary — without it the leading `<w:r>` binds to the *title* run and the
   // rPr stretches to the tab run's own rPr, swallowing (and duplicating) the title.
   const rPr = '(<w:rPr>(?:(?!<\\/w:r>)[\\s\\S])*?<\\/w:rPr>)?'
-  const re = new RegExp(`(<w:r>${rPr}<w:tab\\/><\\/w:r>)(<w:r>${rPr}<w:t[^>]*>\\d+<\\/w:t><\\/w:r>)?(<\\/w:p>)$`)
+  const re = new RegExp(`(<w:r>${rPr}<w:tab\\/><\\/w:r>)(<w:r>${rPr}<w:t[^>]*>(?:\\d+|${SUMARIO_PAGE_PLACEHOLDER})<\\/w:t><\\/w:r>)?(<\\/w:p>)$`)
   return entry.replace(re, (_full, tabRun: string, tabRPr: string | undefined, _oldNum: string | undefined, _oldNumRPr: string | undefined, endP: string) =>
     `${tabRun}<w:r>${tabRPr ?? ''}<w:t>${n}</w:t></w:r>${endP}`)
 }

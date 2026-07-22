@@ -175,8 +175,25 @@ export function detectPretextual(blocks: { text: string }[]): PretextualResult {
   if (lastSignal === -1) return { sections: [], bodyStart: 0 }
 
   // 2. Find where the body begins.
-  let bodyStart = lastSignal + 1
-  for (let i = lastSignal + 1; i < texts.length; i++) {
+  //
+  // First, skip a leading run of blank lines and TOC-entry-shaped lines (dot
+  // leaders or a trailing page number — `isTocEntry`) right after the last signal.
+  // When that signal is the sumário label, this run is almost always its own
+  // paginated entry list — skipping it gives a far better default than
+  // "immediately after the label" for a document whose real chapters aren't
+  // numbered yet (heading numbering is itself something the pipeline adds, so a
+  // fresh upload commonly arrives without it). Without this skip, every TOC entry
+  // AND the entire real body would fall through `isBodyHeading`'s numbered-heading
+  // check, find nothing, and get counted as laudas. Harmless for other labeled
+  // sections (resumo/abstract/…): their own body prose essentially never ends in a
+  // bare trailing number or dot leaders, so the skip is a no-op there.
+  let afterEntries = lastSignal + 1
+  while (afterEntries < texts.length && (!texts[afterEntries] || isTocEntry(texts[afterEntries]))) {
+    afterEntries++
+  }
+
+  let bodyStart = afterEntries < texts.length ? afterEntries : lastSignal + 1
+  for (let i = afterEntries; i < texts.length; i++) {
     if (isBodyHeading(texts[i])) { bodyStart = i; break }
     if (isIntroducaoWord(texts[i])) {
       let j = i + 1
