@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Check, Upload, Link as LinkIcon, ChevronDown, FileText, X, Clock, Loader2 } from 'lucide-react'
 import { ROUTES } from '../lib/routes'
+import { supabase } from '../lib/supabase'
 import { PRICING, formatBRL, type ServiceKey } from '../lib/pricing'
 import { getLaudas } from '../lib/laudas'
 import { decodeFilename } from '../lib/filename'
@@ -583,7 +584,10 @@ export default function GetStartedPage() {
             if (inputTab === 'link') {
               setFetchingLink(true)
               try {
-                const res = await fetch(`${API_URL}/api/documents/fetch?url=${encodeURIComponent(pasteUrl)}`)
+                const linkToken = (await supabase.auth.getSession()).data.session?.access_token
+                const res = await fetch(`${API_URL}/api/documents/fetch?url=${encodeURIComponent(pasteUrl)}`, {
+                  headers: linkToken ? { Authorization: `Bearer ${linkToken}` } : {},
+                })
                 if (!res.ok) {
                   const data = await res.json()
                   setLinkError(data.error ?? 'Failed to fetch document')

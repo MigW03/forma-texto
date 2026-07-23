@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express'
 import { supabase } from '../lib/supabase'
+import { stripe } from '../lib/stripe'
 import { exportPdfBeside } from '../lib/processFormatting'
 import { unzipDocx, zipDocx, finalizeInputs, detectPretextual, type PendingInput } from '../lib/formatting'
 import { paginateSumario } from '../lib/paginateSumario'
@@ -9,29 +10,90 @@ import { enqueueProcessing } from '../lib/jobQueue'
 
 const router = Router()
 
+type AuthMode = 'secret' | 'owner' | null
+
 /**
  * Authorize a processing trigger. Two accepted callers:
- *  1. Server-to-server / manual (curl, n8n): shared `x-webhook-secret`.
- *  2. The frontend: a Supabase access token (Bearer) belonging to the
- *     project's owner. Prevents triggering processing on someone else's project.
+ *  1. Server-to-server / manual (curl, n8n): shared `x-webhook-secret` → 'secret'
+ *     (trusted; skips the payment gate — used for manual retriggers/recovery).
+ *  2. The frontend: a Supabase access token (Bearer) belonging to the project's
+ *     owner → 'owner'. Prevents triggering processing on someone else's project,
+ *     and is subject to the payment gate below.
+ * Returns which path authorized (or null), so the caller can require payment only
+ * for the untrusted owner path.
  */
-async function authorize(req: Request, projectId: string): Promise<boolean> {
+async function authorize(req: Request, projectId: string): Promise<AuthMode> {
   const secret = process.env.WEBHOOK_SECRET
-  if (secret && req.headers['x-webhook-secret'] === secret) return true
+  if (secret && req.headers['x-webhook-secret'] === secret) return 'secret'
 
   const auth = req.headers.authorization
   const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null
-  if (!token) return false
+  if (!token) return null
 
   const { data: userData, error: userErr } = await supabase.auth.getUser(token)
-  if (userErr || !userData.user) return false
+  if (userErr || !userData.user) return null
 
   const { data: project } = await supabase
     .from('projects')
     .select('user_id')
     .eq('id', projectId)
     .single()
-  return !!project && project.user_id === userData.user.id
+  return project && project.user_id === userData.user.id ? 'owner' : null
+}
+
+/**
+ * Payment gate for the owner path: the project must be backed by a real payment,
+ * otherwise any logged-in user could create a project and run the (paid) AI
+ * pipeline for free. The project's `order_id` must point to an order that is
+ * `paid` or `free_trial`, owned by the same user, AND that actually *covers* the
+ * project — the client controls the project row (direct RLS insert), so it could
+ * otherwise attach a 2-page order to a 500-page project (pay for 2, process 500)
+ * or a proofreading-only order to a formatting+proofreading project. We require the
+ * order's page_count/services to be a superset of what the project asks for.
+ *
+ * The Stripe webhook flips the order `pending → paid` asynchronously, so it may
+ * not have landed yet when the client fires this right after payment. To stay
+ * race-free we ask Stripe directly for a still-`pending` order and accept it if
+ * the PaymentIntent already succeeded (opportunistically flipping our row).
+ */
+async function hasValidPayment(projectId: string): Promise<boolean> {
+  const { data: project } = await supabase
+    .from('projects')
+    .select('user_id, order_id, page_count, services')
+    .eq('id', projectId)
+    .single()
+  if (!project?.order_id) return false
+
+  const { data: order } = await supabase
+    .from('orders')
+    .select('status, user_id, page_count, services, stripe_payment_intent_id')
+    .eq('id', project.order_id)
+    .single()
+  if (!order || order.user_id !== project.user_id) return false
+
+  // The order must cover the work: at least as many pages, and every requested
+  // service. Guards against a small/cheap order being reattached to a bigger job.
+  const projectPages = project.page_count ?? 0
+  const orderPages = order.page_count ?? 0
+  if (projectPages > orderPages) return false
+  const orderServices = new Set((order.services ?? []) as string[])
+  const projectServices = (project.services ?? []) as string[]
+  if (!projectServices.every(s => orderServices.has(s))) return false
+
+  if (order.status === 'paid' || order.status === 'free_trial') return true
+
+  if (order.status === 'pending' && order.stripe_payment_intent_id) {
+    try {
+      const pi = await stripe.paymentIntents.retrieve(order.stripe_payment_intent_id)
+      if (pi.status === 'succeeded') {
+        await supabase.from('orders').update({ status: 'paid' }).eq('id', project.order_id)
+        return true
+      }
+    } catch (err) {
+      console.error('[processing] PaymentIntent verify failed:', err)
+    }
+  }
+  return false
 }
 
 // POST /api/processing/start  { projectId }
@@ -43,8 +105,15 @@ router.post('/start', processingLimiter, async (req: Request, res: Response) => 
     return
   }
 
-  if (!(await authorize(req, projectId))) {
+  const mode = await authorize(req, projectId)
+  if (!mode) {
     res.status(401).json({ error: 'Unauthorized' })
+    return
+  }
+  // Owner-triggered runs must be backed by a real payment. The trusted secret path
+  // (manual retrigger / recovery) is exempt.
+  if (mode === 'owner' && !(await hasValidPayment(projectId))) {
+    res.status(402).json({ error: 'Payment required' })
     return
   }
 
@@ -193,8 +262,14 @@ router.post('/recover-file', async (req: Request, res: Response) => {
     return
   }
 
-  if (!(await authorize(req, projectId))) {
+  const mode = await authorize(req, projectId)
+  if (!mode) {
     res.status(401).json({ error: 'Unauthorized' })
+    return
+  }
+  // Re-triggers the pipeline, so it needs the same payment gate as /start.
+  if (mode === 'owner' && !(await hasValidPayment(projectId))) {
+    res.status(402).json({ error: 'Payment required' })
     return
   }
 

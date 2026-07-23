@@ -243,6 +243,50 @@ Full breakdown: [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md). Su
 > Older entries are compressed to a one-line index — see `git log -p -- HANDOFF.md` for full narrative
 > detail on any of them.
 
+### 2026-07-22 — Launch guide + marketing playbook (no app code)
+
+Deployment/infra walkthrough delivered in-session: static frontend (Vercel-class, free) + a single
+persistent Docker backend with LibreOffice installed (Railway-class, ~US$10–25/mo) + Supabase Pro when
+real users arrive — a Dockerfile for `server/` is the one missing artifact. New decision record:
+`business_decisions/marketing-playbook.html` — researched marketing/sales strategy (community
+embedding → SEO content → social/referral, paid ads only after conversion + per-doc margin validate).
+
+### 2026-07-22 — Security pass: payment-bypass gate + checkout auth (branch `security-testing`)
+
+Ran the `audit-codebase` + `vibe-security` skills. Two confirmed code-level fixes:
+- **Payment bypass on `/api/processing/start`**: the pipeline never checked payment, so any logged-in
+  user could create a project and run the paid AI pipeline for free. Now the order is created as
+  `pending` at payment-intent time (`checkout.ts`), bound to the project via the existing unique
+  `order_id`, and flipped to `paid` by the webhook (update-then-insert-fallback). `/start` and
+  `/recover-file` gate the **owner** path on `hasValidPayment()` (order `paid`/`free_trial` + owner
+  match; falls back to a live Stripe `PaymentIntent.retrieve` when the webhook hasn't landed yet, so
+  it's race-free). The `x-webhook-secret` path stays exempt (manual retrigger/recovery).
+- **Checkout trusted client `userId`**: `create-payment-intent` and `complete-free-order` took `userId`
+  from the body (could burn another user's trial). Now derived from the verified Bearer token
+  (`getUserIdFromRequest`); both client callers send the token instead of a body `userId`.
+
+Hardening in the same pass: baseline security headers + `x-powered-by` disabled + 1mb JSON body
+cap (`index.ts`); `trust proxy` now driven by the `TRUST_PROXY` env var (off by default — must be set
+to the hop count once a host is chosen, or per-IP limits collapse behind a proxy); `/documents/fetch`
+now requires a valid session (was an open Google-Docs fetch proxy) and is rate-limited; the
+password-change email endpoint is rate-limited too (new shared `sensitiveLimiter`). The supabase client
+is imported lazily in `documents.ts` so its pure helpers stay unit-testable.
+
+Live pentest against the running app (test-mode Stripe, `:free` AI model — no real billing) confirmed
+the fixes hold: unpaid project → `/start` 402; forged/`alg=none` JWT → 401; maintenance/webhook secret
+gates → 401/400; SSRF host-control on `/documents/fetch` → 400; SQLi via projectId → parameterized;
+minting a `paid` order via PostgREST → 403 RLS; cross-user reads → RLS-scoped; order replay → 409
+unique constraint. **One new finding fixed:** the payment gate verified an order was paid+owned but not
+that it *covered* the project — a 2-page order could be reattached to a 500-page job (RLS lets the client
+set project fields). `hasValidPayment()` now also requires `order.page_count >= project.page_count` and
+`project.services ⊆ order.services`. Verified: 500pg-on-2pg-order → 402, matching 2pg → 202.
+Also tightened checkout input via a shared `parseOrderInput()` — dedupes services (a crafted
+duplicate would double-count price) and caps pageCount at `MAX_PAGE_COUNT` (5000). Storage-bucket RLS
+separately confirmed folder-scoped (cross-user upload → 403, cross-prefix read → not-found): no file IDOR.
+
+RLS confirmed safe by the owner (not code-verifiable). Server + web typecheck clean, 499 server tests
++ 52 web tests pass. Pre-existing web lint errors (shadcn `ui/`, set-state-in-effect) left untouched.
+
 ### 2026-07-22 — Processing queue (crash recovery + concurrency limit), accessibility pass
 
 Worked items 2 and 3 off the "Needs code" list.

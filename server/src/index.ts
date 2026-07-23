@@ -14,6 +14,32 @@ import { recoverStuckJobs } from './lib/retryPendingJobs'
 const app = express()
 const PORT = process.env.PORT ?? 3001
 
+// Don't advertise the framework.
+app.disable('x-powered-by')
+
+// Trust proxy is OFF by default: blindly trusting X-Forwarded-For lets a client spoof
+// its IP and sidestep the per-IP rate limits. Once a host is chosen, set TRUST_PROXY to
+// the number of proxy hops in front of the app (e.g. `1` for Vercel/Render/one nginx) so
+// `req.ip` resolves to the real client. `TRUST_PROXY=true` trusts all hops — only safe
+// when every upstream is under your control.
+const trustProxy = process.env.TRUST_PROXY
+if (trustProxy) {
+  app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy === 'true')
+}
+
+// Baseline security headers for the JSON API (no HTML is served, so CSP isn't needed here).
+app.use((_req, res, next) => {
+  res.set('X-Content-Type-Options', 'nosniff')
+  res.set('X-Frame-Options', 'DENY')
+  res.set('Referrer-Policy', 'no-referrer')
+  res.set('Cross-Origin-Resource-Policy', 'same-origin')
+  // Only advertise HSTS when actually served over HTTPS (behind a TLS-terminating proxy).
+  if (process.env.TRUST_PROXY) {
+    res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  }
+  next()
+})
+
 // Webhook must receive raw body for Stripe signature verification
 app.use('/api/webhook', express.raw({ type: 'application/json' }), webhookRouter)
 
@@ -22,7 +48,9 @@ app.use((req, res, next) => {
   next()
 })
 app.use(cors({ origin: process.env.FRONTEND_URL ?? 'http://localhost:5173' }))
-app.use(express.json())
+// Cap JSON body size — finalize-inputs/recover-file bodies are small; the large payloads
+// (documents) travel as multipart to Supabase Storage directly, not through this API.
+app.use(express.json({ limit: '1mb' }))
 
 app.use('/api/checkout', checkoutRouter)
 app.use('/api/documents', documentsRouter)

@@ -1109,7 +1109,10 @@ function RecoverUpload({
     setLinkError(null)
     setFetching(true)
     try {
-      const res = await fetch(`${API_URL}/api/documents/fetch?url=${encodeURIComponent(url)}`)
+      const linkToken = (await supabase.auth.getSession()).data.session?.access_token
+      const res = await fetch(`${API_URL}/api/documents/fetch?url=${encodeURIComponent(url)}`, {
+        headers: linkToken ? { Authorization: `Bearer ${linkToken}` } : {},
+      })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         setLinkError((data as { error?: string }).error ?? t('project.recover.error'))

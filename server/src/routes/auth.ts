@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { supabase } from '../lib/supabase'
 import { resend } from '../lib/resend'
 import { passwordChangedHtml } from '../emails/passwordChanged'
+import { sensitiveLimiter } from '../lib/rateLimit'
 
 const router = Router()
 
@@ -14,7 +15,7 @@ async function getUserFromRequest(req: Request) {
   return data.user
 }
 
-router.post('/notify-password-change', async (req: Request, res: Response) => {
+router.post('/notify-password-change', sensitiveLimiter, async (req: Request, res: Response) => {
   const user = await getUserFromRequest(req)
   if (!user?.email) {
     res.status(401).json({ error: 'Unauthorized' })

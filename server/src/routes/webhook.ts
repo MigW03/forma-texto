@@ -37,19 +37,31 @@ router.post('/', async (req: Request, res: Response) => {
 
     const { services, pageCount, userId, isTrial } = intent.metadata
 
-    const { error } = await supabase.from('orders').insert({
-      stripe_payment_intent_id: intent.id,
-      user_id: userId,
-      services: services ? services.split(',') : [],
-      page_count: pageCount ? parseInt(pageCount) : null,
-      amount_brl: intent.amount / 100,
-      status: 'paid',
-      is_trial: isTrial === 'true',
-    })
+    // The pending order was created at payment-intent time (checkout.ts). Flip it to
+    // `paid`. If nothing matched (an intent from the old flow that never created a
+    // pending row), fall back to inserting the order so records are never lost.
+    const { data: updated, error: updErr } = await supabase
+      .from('orders')
+      .update({ status: 'paid' })
+      .eq('stripe_payment_intent_id', intent.id)
+      .select('id')
 
-    if (error) {
-      console.error('Failed to insert order:', error)
-      // Return 200 so Stripe does not retry — handle separately
+    if (updErr) {
+      console.error('Failed to mark order paid:', updErr)
+    } else if (!updated || updated.length === 0) {
+      const { error: insErr } = await supabase.from('orders').insert({
+        stripe_payment_intent_id: intent.id,
+        user_id: userId,
+        services: services ? services.split(',') : [],
+        page_count: pageCount ? parseInt(pageCount) : null,
+        amount_brl: intent.amount / 100,
+        status: 'paid',
+        is_trial: isTrial === 'true',
+      })
+      if (insErr) {
+        console.error('Failed to insert order:', insErr)
+        // Return 200 so Stripe does not retry — handle separately
+      }
     }
 
     if (isTrial === 'true' && userId) {

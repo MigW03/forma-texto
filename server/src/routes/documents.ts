@@ -1,8 +1,23 @@
 import { Router, Request, Response } from 'express'
+import { sensitiveLimiter } from '../lib/rateLimit'
 
 const router = Router()
 
 const GDOC_PATTERN = /docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/
+
+/** Require a valid Supabase session — this endpoint proxies outbound fetches, so it
+ *  shouldn't be an open proxy for anonymous callers. The supabase client is imported
+ *  lazily so the module's pure helpers (tested in documents.test.ts) don't pull in the
+ *  env-gated client at load time. */
+async function requireUser(req: Request): Promise<boolean> {
+  const token = req.headers.authorization?.startsWith('Bearer ')
+    ? req.headers.authorization.slice(7)
+    : null
+  if (!token) return false
+  const { supabase } = await import('../lib/supabase')
+  const { data, error } = await supabase.auth.getUser(token)
+  return !error && !!data.user
+}
 
 /**
  * Pull the document filename out of a Content-Disposition header. Google sends BOTH a plain
@@ -36,7 +51,12 @@ function countPdfPages(buf: Buffer): number {
   return counts.length > 0 ? Math.max(...counts) : 0
 }
 
-router.get('/fetch', async (req: Request, res: Response) => {
+router.get('/fetch', sensitiveLimiter, async (req: Request, res: Response) => {
+  if (!(await requireUser(req))) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return
+  }
+
   const { url } = req.query as { url?: string }
 
   if (!url) {

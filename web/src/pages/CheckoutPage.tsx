@@ -133,12 +133,10 @@ function PaymentForm({
 function FreeOrderButton({
   services,
   pageCount,
-  userId,
   onSuccess,
 }: {
   services: ServiceKey[]
   pageCount: number
-  userId: string
   onSuccess: (orderId: string) => void
 }) {
   const [submitting, setSubmitting] = useState(false)
@@ -148,10 +146,15 @@ function FreeOrderButton({
     setSubmitting(true)
     setError(null)
     try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token
       const res = await fetch(`${API_URL}/api/checkout/complete-free-order`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ services, pageCount, userId }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        // userId is derived server-side from the token; no longer sent in the body.
+        body: JSON.stringify({ services, pageCount }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Erro')
@@ -210,7 +213,9 @@ interface CheckoutState {
 
 type IntentResponse =
   | { isFree: true; isTrial: true }
-  | { clientSecret: string; isTrial: boolean; discountBRL: number }
+  // orderId is present for a freshly created intent; absent only on the redirect-return
+  // reconstruction (which shows a status screen and never creates a project).
+  | { clientSecret: string; orderId?: string; isTrial: boolean; discountBRL: number }
   | { error: string }
 
 type PageStatus = 'idle' | 'saving' | 'done'
@@ -259,11 +264,17 @@ export default function CheckoutPage() {
       formatReferences: state?.formatReferences,
     }))
 
-    fetch(`${API_URL}/api/checkout/create-payment-intent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ services, pageCount, userId: user.id }),
-    })
+    supabase.auth.getSession().then(({ data: { session } }) =>
+      fetch(`${API_URL}/api/checkout/create-payment-intent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        // userId is derived server-side from the token; no longer sent in the body.
+        body: JSON.stringify({ services, pageCount }),
+      })
+    )
       .then(r => r.json())
       .then((data: IntentResponse) => {
         if ('error' in data) setFetchError(data.error)
@@ -444,6 +455,7 @@ export default function CheckoutPage() {
 
   const isFree = intentData && 'isFree' in intentData && intentData.isFree
   const clientSecret = intentData && 'clientSecret' in intentData ? intentData.clientSecret : null
+  const paidOrderId = intentData && 'orderId' in intentData ? intentData.orderId : undefined
 
   return (
     <div className="max-w-lg mx-auto px-6 py-12">
@@ -540,7 +552,6 @@ export default function CheckoutPage() {
           <FreeOrderButton
             services={services}
             pageCount={pageCount}
-            userId={user!.id}
             onSuccess={(orderId) => {
               setIsFreeOrder(true)
               handleSuccess(orderId)
@@ -550,7 +561,7 @@ export default function CheckoutPage() {
           <Elements stripe={stripePromise} options={{ clientSecret, appearance }}>
             <PaymentForm
               totalBRL={finalTotal}
-              onSuccess={() => handleSuccess()}
+              onSuccess={() => handleSuccess(paidOrderId)}
             />
           </Elements>
         ) : null}

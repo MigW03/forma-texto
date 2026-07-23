@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Playbook · Marketing &amp; Sales for FormaTexto</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:ital,opsz@1,18&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --sand: #F0EEE8;
+    --paper: #FBFAF7;
+    --ink: #1A1A18;
+    --muted: #6B6B60;
+    --border: #DDDBD3;
+    --forest: #1A3C2E;
+    --forest-mid: #2D5A3F;
+    --forest-light: #3D7A57;
+    --forest-tint: #EAF0EC;
+    --amber: #92702A;
+    --amber-tint: #F6F0E2;
+    --red: #8A3B2E;
+    --red-tint: #F5E9E6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--ink);
+    background: var(--sand);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    padding: 40px 16px 80px;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+
+  /* ---------- Header band ---------- */
+  header {
+    background: var(--ink);
+    color: var(--sand);
+    border-radius: 24px;
+    padding: 44px 48px 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  header::after {
+    content: "";
+    position: absolute;
+    right: -80px; top: -80px;
+    width: 280px; height: 280px;
+    background: radial-gradient(circle, rgba(61,122,87,0.35), transparent 70%);
+    pointer-events: none;
+  }
+  .eyebrow {
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--forest-light);
+  }
+  header .eyebrow { color: #7FB492; }
+  h1 {
+    font-size: 2.1rem; font-weight: 700; line-height: 1.15;
+    letter-spacing: -0.02em; margin: 10px 0 14px; max-width: 26ch;
+  }
+  .header-meta {
+    display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+    font-size: 0.88rem; color: rgba(240,238,232,0.7);
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--forest-light); color: #fff;
+    font-size: 0.8rem; font-weight: 600;
+    padding: 5px 14px; border-radius: 999px;
+  }
+
+  /* ---------- Verdict + scorecard ---------- */
+  .verdict {
+    display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px;
+    margin: 18px 0;
+  }
+  @media (max-width: 680px) { .verdict { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--paper);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 26px 28px;
+  }
+  .verdict-card {
+    background: var(--forest);
+    color: #fff; border: none;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .verdict-card .eyebrow { color: #8FC3A1; }
+  .verdict-card h2 { color: #fff; border: none; padding: 0; margin: 0; font-size: 1.3rem; }
+  .verdict-card p { color: rgba(255,255,255,0.85); font-size: 0.95rem; margin: 0; }
+  .verdict-card strong { color: #fff; }
+
+  .scorecard { display: flex; flex-direction: column; justify-content: center; gap: 14px; }
+  .score-row { display: flex; align-items: center; gap: 14px; }
+  .score-num {
+    font-size: 1.6rem; font-weight: 700; line-height: 1;
+    width: 72px; text-align: right; letter-spacing: -0.02em;
+    color: var(--forest-mid); flex-shrink: 0;
+  }
+  .score-label { font-size: 0.86rem; color: var(--muted); line-height: 1.3; }
+  .score-label b { color: var(--ink); font-weight: 600; display: block; }
+
+  /* ---------- Generic section ---------- */
+  section { margin-top: 44px; }
+  h2 {
+    font-size: 1.4rem; font-weight: 700; letter-spacing: -0.01em;
+    margin: 6px 0 4px;
+  }
+  .section-head { margin-bottom: 18px; }
+  .section-head p { margin: 6px 0 0; }
+  h3 { font-size: 1.05rem; font-weight: 600; }
+  p { margin: 12px 0; color: #2E2E2A; }
+  .lead { font-size: 1.06rem; color: var(--ink); }
+  em.serif { font-family: "Newsreader", Georgia, serif; font-style: italic; }
+
+  /* ---------- Tags / chips ---------- */
+  .tag {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em;
+    padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+  }
+  .tag.go   { background: var(--forest-tint); color: var(--forest-mid); }
+  .tag.wait { background: var(--amber-tint); color: var(--amber); }
+  .tag.skip { background: #fff; color: var(--muted); border: 1px solid var(--border); }
+  .tag.risk { background: var(--red-tint); color: var(--red); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .tag.go .dot   { background: var(--forest-light); }
+  .tag.wait .dot { background: #C49A4A; }
+  .tag.skip .dot { background: var(--muted); }
+  .tag.risk .dot { background: var(--red); }
+
+  /* ---------- Stat band ---------- */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  @media (max-width: 680px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+  .stat { background: var(--paper); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; }
+  .stat .num { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; color: var(--forest-mid); }
+  .stat .lbl { font-size: 0.78rem; color: var(--muted); line-height: 1.35; margin-top: 4px; }
+
+  /* ---------- Case cards ---------- */
+  .case { position: relative; margin-bottom: 14px; padding-right: 120px; }
+  .case .tag { position: absolute; top: 24px; right: 24px; }
+  .case h3 { margin-bottom: 2px; }
+  .case .who { font-size: 0.8rem; color: var(--muted); margin-bottom: 8px; }
+  .case p { margin: 8px 0 0; font-size: 0.93rem; }
+  .case .apply {
+    margin-top: 12px; padding: 12px 16px; border-radius: 12px;
+    background: var(--forest-tint); font-size: 0.9rem; color: var(--forest);
+  }
+  .case .apply b { color: var(--forest); }
+  @media (max-width: 680px) {
+    .case { padding-right: 28px; }
+    .case .tag { position: static; margin-bottom: 8px; }
+  }
+
+  /* ---------- Mistake cards ---------- */
+  .mistakes { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 680px) { .mistakes { grid-template-columns: 1fr; } }
+  .mistake { padding: 20px 22px; }
+  .mistake h3 { font-size: 0.95rem; margin-bottom: 6px; }
+  .mistake p { font-size: 0.88rem; margin: 4px 0 0; color: var(--muted); }
+  .mistake .fix { color: var(--forest-mid); font-weight: 500; }
+
+  /* ---------- Comparison table ---------- */
+  .table-card { padding: 8px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; min-width: 640px; }
+  thead th {
+    text-align: left; font-size: 0.74rem; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+    padding: 14px 16px 10px;
+  }
+  tbody td { padding: 13px 16px; border-top: 1px solid var(--border); vertical-align: top; }
+  tbody tr { transition: background 0.15s ease; }
+  tbody tr:hover { background: var(--sand); }
+  .dim { font-weight: 600; color: var(--ink); }
+  td.note { color: var(--muted); font-size: 0.86rem; }
+
+  /* ---------- Timeline ---------- */
+  .timeline { position: relative; padding-left: 30px; }
+  .timeline::before {
+    content: ""; position: absolute; left: 8px; top: 8px; bottom: 8px;
+    width: 2px; background: var(--border);
+  }
+  .t-item { position: relative; padding: 0 0 26px 14px; }
+  .t-item:last-child { padding-bottom: 0; }
+  .t-item::before {
+    content: ""; position: absolute; left: -28px; top: 6px;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--forest-light); border: 3px solid var(--sand);
+  }
+  .t-item.later::before { background: #C49A4A; }
+  .t-when { font-size: 0.74rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--forest-mid); }
+  .t-item.later .t-when { color: var(--amber); }
+  .t-item h3 { margin: 2px 0 6px; }
+  .t-item p { margin: 4px 0; font-size: 0.92rem; }
+  .t-item ul { margin: 8px 0 0 18px; font-size: 0.92rem; color: #2E2E2A; }
+  .t-item li { margin: 5px 0; }
+
+  /* ---------- Callout ---------- */
+  .callout {
+    background: var(--forest-tint); border: 1px solid rgba(45,90,63,0.25);
+    border-radius: 16px; padding: 20px 24px; margin: 18px 0;
+  }
+  .callout p { margin: 4px 0; font-size: 0.94rem; }
+  .callout .eyebrow { color: var(--forest-mid); }
+
+  /* ---------- Sources ---------- */
+  .sources { font-size: 0.85rem; }
+  .sources ul { margin: 10px 0 0 18px; }
+  .sources li { margin: 6px 0; color: var(--muted); }
+  .sources a { color: var(--forest-mid); text-decoration: none; border-bottom: 1px solid rgba(45,90,63,0.3); }
+  .sources a:hover { border-bottom-color: var(--forest-mid); }
+
+  footer { margin-top: 48px; font-size: 0.8rem; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Playbook · FormaTexto · July 2026</div>
+    <h1>Marketing &amp; sales: how to win your first customers</h1>
+    <div class="header-meta">
+      <span class="pill">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" width="14" height="14"><path d="M20 6L9 17l-5-5"/></svg>
+        Strategy: embed in the niche, let SEO compound
+      </span>
+      <span>Based on published lessons from bootstrapped SaaS founders</span>
+    </div>
+  </header>
+
+  <!-- ============ VERDICT ============ -->
+  <div class="verdict">
+    <div class="card verdict-card">
+      <div class="eyebrow">The verdict</div>
+      <h2>Don't market like a subscription SaaS. Market like a graduation service.</h2>
+      <p>Your customer buys once, graduates, and leaves — <strong>by design</strong>. Retention-led growth doesn't apply. What replaces it: a <strong>fresh cohort of ~1.3&nbsp;million students arrives every year</strong>, all Googling the same ABNT questions and hitting the same deadlines. The winning engine is evergreen SEO content + campus word-of-mouth + founder-led presence in student communities — the exact combination your direct competitor Mettzer used to reach 1.7M students. Paid ads come <strong>only after</strong> the funnel converts organically.</p>
+    </div>
+    <div class="card scorecard">
+      <div class="score-row"><div class="score-num">1º</div><div class="score-label"><b>Community embedding</b>first 100 customers, by hand</div></div>
+      <div class="score-row"><div class="score-num">2º</div><div class="score-label"><b>SEO content (ABNT guides)</b>the compounding channel — proven in this niche</div></div>
+      <div class="score-row"><div class="score-num">3º</div><div class="score-label"><b>Instagram/TikTok + referral</b>where Brazilian students actually live</div></div>
+      <div class="score-row"><div class="score-num" style="color:var(--amber)">4º</div><div class="score-label"><b>Paid ads — later</b>only once conversion &amp; pricing are validated</div></div>
+    </div>
+  </div>
+
+  <!-- ============ MARKET ============ -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">The market you're selling into</div>
+      <h2>A renewable market with a built-in deadline</h2>
+      <p>Every number below favors you: the market renews itself every semester, the pain is universal, and demand spikes are predictable.</p>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="num">1.33M</div><div class="lbl">higher-ed graduates in Brazil in 2024 — a new cohort every single year</div></div>
+      <div class="stat"><div class="num">2×/year</div><div class="lbl">demand spikes: TCC deadlines cluster in Jun–Jul and Nov–Dec</div></div>
+      <div class="stat"><div class="num">1.7M</div><div class="lbl">students claimed by Mettzer — proof this niche pays for formatting</div></div>
+      <div class="stat"><div class="num">R$0</div><div class="lbl">cost of the three channels that matter first (community, SEO, social)</div></div>
+    </div>
+    <div class="callout">
+      <div class="eyebrow">Why "customers who leave" is actually good news</div>
+      <p>In classic SaaS, churn kills you. Here, churn is the product working: the student graduates. That flips the playbook — instead of investing in retention, you invest in <strong>capture</strong> (SEO that meets each new cohort at the moment of panic) and <strong>referral</strong> (a delighted senior tells the juniors, a WhatsApp group shares the link, an orientador recommends you to next semester's class). Advisors and academic Instagram pages are the only "recurring customers" in this market — treat them as your real long-term accounts.</p>
+    </div>
+  </section>
+
+  <!-- ============ FOUNDER LESSONS ============ -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">Evidence · what successful founders actually did</div>
+      <h2>Five playbooks worth stealing</h2>
+      <p>Each card is a real company, the move that worked for them, and how it translates to FormaTexto.</p>
+    </div>
+
+    <div class="card case">
+      <span class="tag go"><span class="dot"></span>Copy now</span>
+      <h3>FeedbackPanda — live in the community before you sell to it</h3>
+      <div class="who">Arvid Kahl &amp; Danielle Simpson · bootstrapped to US$55k MRR with 2 people, zero paid ads, sold in 2 years</div>
+      <p>They spent months inside online-teacher forums and Facebook groups before launching — learning the slang, the fears, the shared enemies. After launch, ~30 minutes a day of genuinely helping people (not pitching) made teachers themselves become the sales force. Their stated mistakes: building features nobody asked for, and "tourist" participation — showing up only to promote.</p>
+      <div class="apply"><b>For FormaTexto:</b> join the TCC/ABNT Facebook groups, WhatsApp/Telegram study groups, and university subreddits. Answer formatting questions genuinely for 30 min/day. Your signature move: "send me one page, I'll format it free" — which is literally your product's trial.</div>
+    </div>
+
+    <div class="card case">
+      <span class="tag go"><span class="dot"></span>Copy now</span>
+      <h3>Mettzer — SEO content in this exact niche</h3>
+      <div class="who">Your direct competitor · claims 1.7M students · Brazil, ABNT formatting</div>
+      <p>Mettzer's dominant acquisition asset is its blog: long evergreen guides for "normas ABNT", "como formatar TCC", "capa ABNT", updated yearly ("Normas ABNT: guia 2026"). Students search these queries at the exact moment of need, land on the guide, and meet the product. FastFormat runs the same play. This is the strongest possible signal: <em class="serif">the channel is already proven, in your niche, in your language, with your buyer.</em></p>
+      <div class="apply"><b>For FormaTexto:</b> publish 1–2 deep guides per week targeting the same query space ("sumário ABNT", "citação longa ABNT", "margens ABNT", "referências ABNT 2026"…). Your differentiator inside every post: a before/after of a real (anonymized) page processed by the pipeline. SEO takes 6–12 months to compound — which is exactly why it must start now, not later.</div>
+    </div>
+
+    <div class="card case">
+      <span class="tag go"><span class="dot"></span>Copy now</span>
+      <h3>Grammarly — own the micro-moment of panic</h3>
+      <div class="who">Consumer writing SaaS · near-universal recognition among students</div>
+      <p>Grammarly's student growth came from a generous free tier plus ads and micro-influencer content aimed at "micro-moments" — finishing a thesis, submitting an application. TikTok micro-influencers and YouTube pre-roll, always anchored on the moment of stress, converting free users into paid ones.</p>
+      <div class="apply"><b>For FormaTexto:</b> your micro-moment is brutal and specific: <b>"entrego o TCC semana que vem e a formatação está um caos."</b> Build all messaging around it. The 1-page free trial is your freemium hook — make it the primary CTA everywhere. Content format that fits: 20-second before/after reels ("seu TCC formatado nas normas ABNT em minutos").</div>
+    </div>
+
+    <div class="card case">
+      <span class="tag go"><span class="dot"></span>Copy now</span>
+      <h3>The first-100-customers consensus — founder-led, manual, unscalable</h3>
+      <div class="who">Instantly, Canny, SaaS Club interviews · repeated across dozens of founder stories</div>
+      <p>The pattern across founder retrospectives is remarkably consistent: the first 100 customers come from direct founder outreach and niche communities, not ads. Manual onboarding of every early user. Treating the first customers as your R&amp;D department — founder-led conversations reveal positioning gaps "in days, not months". Canny's sharpest lesson: trying to serve two audiences at once made messaging worse for both.</p>
+      <div class="apply"><b>For FormaTexto:</b> one audience only for now — <b>the graduating student writing a TCC under ABNT</b>. Not professors, not companies, not APA users. Personally message and onboard your first 20 paying customers; ask each one where they looked for help before finding you (that answer *is* your channel strategy).</div>
+    </div>
+
+    <div class="card case">
+      <span class="tag wait"><span class="dot"></span>Framework</span>
+      <h3>Rob Walling — one channel at a time, matched to awareness</h3>
+      <div class="who">MicroConf / TinySeed · "The SaaS Playbook" · wasted thousands at Drip on the wrong marketing first</div>
+      <p>Walling's core warnings: founders burn money marketing to people who don't know they have the problem, and they dilute themselves across five channels doing none well. His framework — the 5 stages of customer awareness — says match the message to how aware the buyer is. Your buyers are unusually easy: a student Googling "como formatar TCC" is <em class="serif">already problem-aware and solution-seeking</em>. You don't need to educate the market; you need to be findable at the moment of search.</p>
+      <div class="apply"><b>For FormaTexto:</b> master one channel per phase (community → SEO → social → paid), and write copy for the aware buyer: skip "why formatting matters", lead with "seu arquivo pronto nas normas, em minutos, a partir de R$5".</div>
+    </div>
+  </section>
+
+  <!-- ============ MISTAKES ============ -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">Anti-patterns · what kills early SaaS</div>
+      <h2>The mistake graveyard</h2>
+      <p>Recurring failure modes from founder post-mortems — each with the inversion that protects you.</p>
+    </div>
+    <div class="mistakes">
+      <div class="card mistake">
+        <span class="tag risk"><span class="dot"></span>Fatal</span>
+        <h3>Building and launching in silence</h3>
+        <p>The single most-cited regret. Months of code, zero user conversations, launch to nobody. <span class="fix">Inversion: talk to students weekly from day one; every conversation is a shortcut to product-market fit.</span></p>
+      </div>
+      <div class="card mistake">
+        <span class="tag risk"><span class="dot"></span>Fatal</span>
+        <h3>Paid ads before validation</h3>
+        <p>Ads amplify a funnel — they can't fix one. Founders burn their budget discovering their landing page doesn't convert. <span class="fix">Inversion: ads only after organic visitors convert at a known rate and unit economics (AI cost per doc!) are validated.</span></p>
+      </div>
+      <div class="card mistake">
+        <span class="tag risk"><span class="dot"></span>Expensive</span>
+        <h3>Chasing every channel at once</h3>
+        <p>Blog + TikTok + ads + partnerships + PR simultaneously = everything done badly, no signal on what works. <span class="fix">Inversion: one channel per phase, measured, then add the next.</span></p>
+      </div>
+      <div class="card mistake">
+        <span class="tag risk"><span class="dot"></span>Expensive</span>
+        <h3>Unfocused audience</h3>
+        <p>Canny's lesson: serving two audiences made product and messaging worse for both. <span class="fix">Inversion: TCC + ABNT + Brazil. Say no to everything else until this segment is won.</span></p>
+      </div>
+      <div class="card mistake">
+        <span class="tag skip"><span class="dot"></span>Distraction</span>
+        <h3>Vanity launches</h3>
+        <p>Product Hunt-style launches produce a traffic spike, vanity metrics, and near-zero retained users — and your buyer (a Brazilian student) isn't even there. <span class="fix">Inversion: "launch" quietly inside the communities where your buyer already asks for help.</span></p>
+      </div>
+      <div class="card mistake">
+        <span class="tag risk"><span class="dot"></span>Niche-specific</span>
+        <h3>Ignoring the trust barrier</h3>
+        <p>A student pays for an unseen result on the most important document of their degree. Skepticism is the default; one bad experience in a WhatsApp group travels fast. <span class="fix">Inversion: guarantee (reprocess or refund), visible before/afters, real testimonials, verified email domain — trust assets before traffic.</span></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CHANNELS ============ -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">Channel scorecard</div>
+      <h2>Every channel, ranked for FormaTexto</h2>
+    </div>
+    <div class="card table-card">
+      <table>
+        <thead>
+          <tr><th>Channel</th><th>Cost</th><th>Time to results</th><th>Notes</th><th>Verdict</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="dim">Community embedding<br><span style="font-weight:400;color:var(--muted);font-size:0.82rem">Facebook/WhatsApp/Telegram TCC groups</span></td>
+            <td>Free (time)</td><td>Days</td>
+            <td class="note">Highest-quality first users; doubles as market research. The FeedbackPanda play.</td>
+            <td><span class="tag go"><span class="dot"></span>Start now</span></td>
+          </tr>
+          <tr>
+            <td class="dim">SEO content<br><span style="font-weight:400;color:var(--muted);font-size:0.82rem">ABNT guides, TCC how-tos</span></td>
+            <td>Free (time)</td><td>6–12 months</td>
+            <td class="note">The compounding asset. Proven by Mettzer/FastFormat in this exact niche. Lowest long-term CAC of any channel.</td>
+            <td><span class="tag go"><span class="dot"></span>Start now</span></td>
+          </tr>
+          <tr>
+            <td class="dim">Instagram / TikTok organic<br><span style="font-weight:400;color:var(--muted);font-size:0.82rem">before/after reels, dicas ABNT</span></td>
+            <td>Free (time)</td><td>Weeks</td>
+            <td class="note">Instagram, TikTok and YouTube are where Brazilian students live. Visual product = native fit for before/after content.</td>
+            <td><span class="tag go"><span class="dot"></span>Start now</span></td>
+          </tr>
+          <tr>
+            <td class="dim">Referral / indicação</td>
+            <td>Discount cost</td><td>Weeks (needs users first)</td>
+            <td class="note">Ask at the delivery moment — the happiest point. E.g. "indique um colega, ganhe X páginas". Top SaaS firms lean on advocacy 2–3× more than peers.</td>
+            <td><span class="tag wait"><span class="dot"></span>Phase 2</span></td>
+          </tr>
+          <tr>
+            <td class="dim">Orientador / coordenador partnerships</td>
+            <td>Free (time)</td><td>1–2 semesters</td>
+            <td class="note">The only recurring buyer in the market: advisors get a fresh batch of desperate students every semester. One convinced orientador = a channel forever.</td>
+            <td><span class="tag wait"><span class="dot"></span>Phase 2</span></td>
+          </tr>
+          <tr>
+            <td class="dim">Education micro-influencers</td>
+            <td>Low (free processing / small fees)</td><td>Weeks</td>
+            <td class="note">Brazilian edu micro-influencers are affordable and trusted in-niche. Seed them with free documents; authentic demos beat ads.</td>
+            <td><span class="tag wait"><span class="dot"></span>Phase 2</span></td>
+          </tr>
+          <tr>
+            <td class="dim">Paid ads<br><span style="font-weight:400;color:var(--muted);font-size:0.82rem">Google "formatação ABNT", Instagram/TikTok ads</span></td>
+            <td>R$$$</td><td>Immediate (if funnel converts)</td>
+            <td class="note">High-intent keywords exist and work — but only pour money in after organic conversion and per-doc margin are proven. Time with seasonal peaks.</td>
+            <td><span class="tag wait"><span class="dot"></span>Later</span></td>
+          </tr>
+          <tr>
+            <td class="dim">Launch platforms (Product Hunt etc.)</td>
+            <td>Free</td><td>1 day spike</td>
+            <td class="note">Wrong audience, wrong country, vanity metrics.</td>
+            <td><span class="tag skip"><span class="dot"></span>Skip</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 90 DAY PLAN ============ -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">Execution · the first 90 days</div>
+      <h2>A sequenced plan, not a buffet</h2>
+      <p>Each phase has one job. Don't start the next channel until the current one is producing.</p>
+    </div>
+    <div class="card">
+      <div class="timeline">
+        <div class="t-item">
+          <div class="t-when">Weeks 1–2 · Trust assets</div>
+          <h3>Make the site sell before sending anyone to it</h3>
+          <ul>
+            <li><b>Before/after demo</b> front and center: a real anonymized page, raw vs. formatted. This is your single best sales asset — the product is visual, show it.</li>
+            <li><b>3–5 testimonials</b> from beta users (process documents free/cheap for friends-of-friends finishing their TCC now, in exchange for an honest quote + permission to show the result).</li>
+            <li><b>Guarantee on the page</b>: "não ficou certo, reprocessamos ou devolvemos" — directly answers the pay-for-unseen-result fear (this is also the open refund-path item in HANDOFF).</li>
+            <li>Verified email domain (no more <code>onboarding@resend.dev</code>), PIX visible at checkout, LGPD/auto-delete privacy note near the upload button.</li>
+            <li>Create the Instagram profile now (it will be your social proof hub), even before posting consistently.</li>
+          </ul>
+        </div>
+        <div class="t-item">
+          <div class="t-when">Weeks 3–6 · First 20 paying customers, by hand</div>
+          <h3>Embed in the communities and sell founder-to-student</h3>
+          <ul>
+            <li>Join every active TCC/ABNT community you can find: Facebook groups, WhatsApp/Telegram study groups, university subreddits, Discord servers.</li>
+            <li>30 min/day answering formatting questions <b>genuinely</b> — the Kahl rule: serve first, never drive-by promote.</li>
+            <li>Your natural offer when relevant: "manda 1 página que eu formato de graça" — the trial page, in human form.</li>
+            <li>Personally talk to every user: where did they look for help first? What almost stopped them from paying? Fix the funnel with those answers.</li>
+            <li>Ask every satisfied customer for (a) a testimonial and (b) a share in their class WhatsApp group.</li>
+          </ul>
+        </div>
+        <div class="t-item">
+          <div class="t-when">Weeks 7–12 · Content engine on</div>
+          <h3>Start the compounding channels</h3>
+          <ul>
+            <li><b>SEO</b>: 1–2 deep guides/week on the Mettzer query space — "normas ABNT 2026", "como formatar TCC", "sumário ABNT", "citação longa", "referências ABNT", "margens e espaçamento". Every post embeds a before/after and the free-page CTA.</li>
+            <li><b>Reels</b>: 2–3/week, 20-second before/after transformations + quick ABNT dicas. Repost to TikTok. Trend-driven and light — that's what converts with Brazilian students.</li>
+            <li><b>Influencer seeding</b>: give 3–5 education micro-influencers free document processing; ask only for an honest story if they like it.</li>
+            <li>Turn on the referral ask at the delivery email/screen: "gostou? indique um colega".</li>
+          </ul>
+        </div>
+        <div class="t-item later">
+          <div class="t-when">Ongoing · Seasonal &amp; scale</div>
+          <h3>Ride the deadline calendar</h3>
+          <ul>
+            <li>Push hardest <b>Oct–Nov and Apr–Jun</b> — the weeks before TCC deadlines, when panic (and willingness to pay) peaks. Plan content and any paid tests around these windows.</li>
+            <li>Between semesters (quiet months): orientador outreach, guide updates ("ABNT 2027"), testimonial collection, funnel fixes.</li>
+            <li>Only once organic conversion is known and per-document margin is validated: test Google Ads on high-intent ABNT keywords with a small budget, during a peak window.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CONVERSION ============ -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">Sales mechanics · on-site conversion</div>
+      <h2>What the page itself must say</h2>
+    </div>
+    <div class="card">
+      <p class="lead">Your buyer is already convinced they need formatting — they're deciding <em class="serif">whom to trust and how much to pay</em>. The page's job, in order:</p>
+      <table style="min-width:0">
+        <tbody>
+          <tr><td class="dim" style="width:30%">Show, don't tell</td><td class="note">Before/after above the fold. A student instantly recognizes their own messy document in the "before".</td></tr>
+          <tr><td class="dim">De-risk the first step</td><td class="note">The 1-page free trial is the hero CTA — "experimente com uma página grátis" beats any feature list.</td></tr>
+          <tr><td class="dim">Anchor the price</td><td class="note">Human formatting services charge many times more and take days; you deliver in minutes from R$5. Say both halves explicitly.</td></tr>
+          <tr><td class="dim">Kill the risk</td><td class="note">Guarantee + testimonials + secure payment (PIX!) + "seus arquivos são excluídos automaticamente em 30 dias".</td></tr>
+          <tr><td class="dim">Honest urgency</td><td class="note">Deadline seasonality is real urgency — "entrega semana que vem?" copy during peak windows isn't a dark pattern, it's their actual situation.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ METRICS ============ -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">Measurement · know what's working</div>
+      <h2>Six numbers, checked weekly</h2>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="num">Visits → trial</div><div class="lbl">landing conversion to the free page — the funnel's first honest signal</div></div>
+      <div class="stat"><div class="num">Trial → paid</div><div class="lbl">does the free result convince? If low, the product demo — not marketing — is the problem</div></div>
+      <div class="stat"><div class="num">CAC by channel</div><div class="lbl">ask every customer "como nos encontrou?" until analytics can answer it</div></div>
+      <div class="stat"><div class="num">Margin / doc</div><div class="lbl">price minus AI + infra cost per document — validate before any paid spend</div></div>
+      <div class="stat"><div class="num">Referral share</div><div class="lbl">% of new customers from indicação — the health metric of a word-of-mouth business</div></div>
+      <div class="stat"><div class="num">Complaint rate</div><div class="lbl">% of documents needing reprocess/refund — the trust engine's warning light</div></div>
+    </div>
+  </section>
+
+  <!-- ============ SOURCES ============ -->
+  <section>
+    <div class="section-head">
+      <div class="eyebrow">Appendix</div>
+      <h2>Sources</h2>
+    </div>
+    <div class="card sources">
+      <ul>
+        <li><a href="https://instantly.ai/blog/first-100-customers-boostrapped-saas/">Instantly — First 100 customers: a bootstrapped SaaS lead-gen playbook</a></li>
+        <li><a href="https://canny.io/blog/lessons-learned-bootstrapping-saas/">Canny — Lessons learned bootstrapping our SaaS startup</a></li>
+        <li><a href="https://saasclub.io/podcast/listener-stories-300/">SaaS Club — 8 early-stage SaaS founders share what they learned</a></li>
+        <li><a href="https://www.indiehackers.com/post/saas-founders-dont-fall-for-these-8-mistakes-in-the-early-stages-710a3a3a39">Indie Hackers — 8 mistakes in the early stages</a></li>
+        <li><a href="https://www.indiehackers.com/post/the-saas-graveyard-is-paved-with-cool-ideas-8-brutal-mistakes-indie-founders-make-686390baa2">Indie Hackers — The SaaS graveyard: 8 brutal mistakes</a></li>
+        <li><a href="https://robwalling.com/">Rob Walling — MicroConf / The SaaS Playbook (5 stages of awareness, channel focus)</a></li>
+        <li><a href="https://medium.com/@zack_liu/the-feedbackpanda-blueprint-9-lessons-on-how-arvid-kahl-built-and-sold-a-2-person-empire-a9a049c1c296">The FeedbackPanda Blueprint — 9 lessons (Arvid Kahl)</a></li>
+        <li><a href="https://www.amazon.com/Embedded-Entrepreneur-Build-Audience-Driven-Business/dp/3982195764">Arvid Kahl — The Embedded Entrepreneur</a></li>
+        <li><a href="https://www.youngurbanproject.com/grammarly-case-study/">Grammarly growth case study (freemium, micro-moments, student influencers)</a></li>
+        <li><a href="https://www.mettzer.com/">Mettzer</a> · <a href="https://blog.mettzer.com/normas-abnt/">Mettzer blog — Normas ABNT guide (the SEO play in action)</a> · <a href="https://fastformat.co/en/">FastFormat</a></li>
+        <li><a href="https://www.poweredbysearch.com/blog/b2b-saas-seo-playbook/">Powered by Search — The B2B SaaS SEO playbook</a></li>
+        <li><a href="https://www.trade.gov/country-commercial-guides/brazil-education-and-training-snapshot">US ITA — Brazil education snapshot (student platforms: Instagram, TikTok, YouTube)</a></li>
+        <li><a href="https://abres.org.br/estatisticas/">ABRES — higher-education statistics (1.33M concluintes, 2024)</a></li>
+        <li><a href="https://dev.to/lightningdev123/beyond-product-hunt-practical-strategies-to-win-your-first-100-saas-users-in-2026-41o7">Beyond Product Hunt — practical first-100 strategies</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>FormaTexto · business_decisions/marketing-playbook.html · researched &amp; compiled July 2026</footer>
+</div>
+</body>
+</html>
