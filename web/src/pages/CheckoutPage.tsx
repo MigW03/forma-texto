@@ -254,6 +254,18 @@ export default function CheckoutPage() {
     if (returnedClientSecret) return
     if (!user || services.length === 0 || pageCount < 1) return
 
+    // Guard against StrictMode's double-invoke (and any other re-run before this
+    // effect's request lands): without it, two PaymentIntents/orders can be created
+    // for one checkout, and — since Stripe's <Elements> only binds to whichever
+    // clientSecret was set on its first mount — a later run's response can silently
+    // overwrite `intentData` with an order the payment form was never actually shown
+    // for. The project then gets stamped with an unpaid order and the payment gate
+    // (rightfully) blocks processing forever. Checking `cancelled` before the fetch
+    // call (not just before the setState) also means a cancelled run never reaches
+    // the server at all in the common case, so no orphaned PaymentIntent/order is
+    // created for it either.
+    let cancelled = false
+
     sessionStorage.setItem(SESSION_KEY, JSON.stringify({
       services,
       pageCount,
@@ -264,8 +276,9 @@ export default function CheckoutPage() {
       formatReferences: state?.formatReferences,
     }))
 
-    supabase.auth.getSession().then(({ data: { session } }) =>
-      fetch(`${API_URL}/api/checkout/create-payment-intent`, {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled) return undefined
+      return fetch(`${API_URL}/api/checkout/create-payment-intent`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -274,13 +287,16 @@ export default function CheckoutPage() {
         // userId is derived server-side from the token; no longer sent in the body.
         body: JSON.stringify({ services, pageCount }),
       })
-    )
-      .then(r => r.json())
-      .then((data: IntentResponse) => {
+    })
+      .then(r => r?.json())
+      .then((data?: IntentResponse) => {
+        if (cancelled || !data) return
         if ('error' in data) setFetchError(data.error)
         else setIntentData(data)
       })
-      .catch(() => setFetchError('Não foi possível conectar ao servidor'))
+      .catch(() => { if (!cancelled) setFetchError('Não foi possível conectar ao servidor') })
+
+    return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

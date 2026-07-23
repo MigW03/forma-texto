@@ -1,17 +1,17 @@
-import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
+import { useState, useEffect, useRef, useCallback, useId, forwardRef, useImperativeHandle } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, FileText, Download, Loader2, Upload, Link2 } from 'lucide-react'
+import { ArrowLeft, FileText, Download, Loader2, Upload, Link2, AlertTriangle, Trash2, Check } from 'lucide-react'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { renderAsync } from 'docx-preview'
+import { unzipSync, strFromU8 } from 'fflate'
 import { ROUTES } from '../lib/routes'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth-context'
 import { calcPrice, formatBRL } from '../lib/pricing'
 import type { ServiceKey } from '../lib/pricing'
 import { decodeFilename } from '../lib/filename'
-import { formatPageRanges } from '../lib/format'
 import { normalizeStatus, STATUS_BADGE_VARIANT } from '../lib/status'
 import { sliceDocxByLaudas, getDocxBlocks } from '../lib/docx-slice'
 import { analyzeDocument, uploadKeepSet } from '../lib/laudas'
@@ -19,6 +19,7 @@ import type { GuidelineId } from '../lib/guidelines'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
@@ -48,10 +49,12 @@ interface ProjectDetail {
   pending_inputs: PendingInputFE[] | null
 }
 
+/** Fixed dd/mm/yyyy — Brazil-first, so this doesn't vary with the browser's locale. */
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, {
-    day: '2-digit', month: 'short', year: 'numeric',
-  })
+  const d = new Date(iso)
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  return `${dd}/${mm}/${d.getFullYear()}`
 }
 
 // ── PDF page component ───────────────────────────────────────────────────────
@@ -342,11 +345,6 @@ const DOCX_RENDER_OPTIONS = {
 }
 
 const DOCX_PAGE_STYLES = `
-  /* Reset the page counter on the body container, NOT on .docx-wrapper:
-     docx-preview puts its list-numbering counter-reset on .docx-wrapper, and
-     counter-reset is a single non-merging property — setting it here too would
-     clobber the list counters and make every list item render as "1". */
-  .docx-body { counter-reset: docx-page; }
   /* Clamp images to the page width so an absolutely-sized author image never
      overflows the rendered page (looked oversized on narrow / laptop columns). */
   .docx-wrapper img { max-width: 100% !important; height: auto !important; }
@@ -362,23 +360,12 @@ const DOCX_PAGE_STYLES = `
     margin-right: auto !important;
   }
   .docx-wrapper > section.docx {
-    counter-increment: docx-page;
     border-radius: 12px !important;
     box-shadow: 0 1px 3px rgba(0,0,0,0.10), 0 1px 2px rgba(0,0,0,0.06) !important;
     margin-top: 22px !important;
     margin-bottom: 24px !important;
     position: relative !important;
     overflow: visible !important;
-  }
-  .docx-wrapper > section.docx::before {
-    content: counter(docx-page);
-    position: absolute;
-    top: -20px;
-    left: 2px;
-    font-size: 14px;
-    font-weight: 500;
-    color: rgba(26, 26, 24, 0.6);
-    line-height: 1.2;
   }
   .docx-page-break-divider {
     align-self: stretch;
@@ -419,6 +406,53 @@ const PLACEHOLDER_TEXTS = new Set([
   '[inserir fonte]',
   '[inserir legenda da tabela]',
 ])
+
+/**
+ * Whether `applyAbntPageNumbering` (server side) ran on this document — it stamps
+ * `<w:pgNumType w:start="…">` on the body section whenever a pré-textual region was
+ * split off. Its header carries a real Word `PAGE` field, but the field's cached
+ * display run is a static placeholder: Word/LibreOffice recompute it at render
+ * time (that's how the exported PDF and the sumário always show the right, per-page
+ * numbers), but docx-preview has no field engine and renders that cached run
+ * literally on every page. Worse, docx-preview only splits the preview into a new
+ * card at explicit hard page breaks, not at every real printed page — so even a
+ * per-card counter can't reconstruct the true number whenever one card's content
+ * actually spans more than one real page (any figure/table can trigger that).
+ * There is no reliable way to show a correct number here, so the preview hides the
+ * stamp instead of guessing — the exported PDF and the sumário remain the source
+ * of truth for exact page numbers; this preview is Lauda-scoped, not page-scoped.
+ */
+function hasAbntPageNumbering(buf: ArrayBuffer): boolean {
+  try {
+    const zip = unzipSync(new Uint8Array(buf))
+    const docXml = zip['word/document.xml']
+    return !!docXml && /<w:pgNumType\b[^>]*\bw:start="\d+"/.test(strFromU8(docXml))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Blank the header's PAGE-field placeholder digit on every rendered page (see
+ * `hasAbntPageNumbering`). docx-preview renders a DOCX header as a literal
+ * `<header>` element inside each page's `section.docx` (own subtree per page, not
+ * a shared reference), so this only touches the browser preview — never the
+ * underlying file.
+ */
+function hidePageNumberStamps(sections: Element[]): void {
+  for (const section of sections) {
+    const header = section.querySelector(':scope > header')
+    if (!header) continue
+    const walker = document.createTreeWalker(header, NodeFilter.SHOW_TEXT)
+    let node: Node | null
+    while ((node = walker.nextNode())) {
+      if (/\S/.test(node.textContent ?? '')) {
+        node.textContent = ''
+        break
+      }
+    }
+  }
+}
 
 export interface DocxViewerHandle {
   scrollToPlaceholder(allPending: PendingInputFE[], target: PendingInputFE): void
@@ -488,17 +522,25 @@ const DocxViewer = forwardRef<DocxViewerHandle, {
         await new Promise<void>(res => requestAnimationFrame(() => requestAnimationFrame(() => res())))
         if (cancelled) return
         const tRender = performance.now()
-        await renderAsync(blob, body, style, DOCX_RENDER_OPTIONS)
+        const [, hasPageNumbering] = await Promise.all([
+          renderAsync(blob, body, style, DOCX_RENDER_OPTIONS),
+          blob.arrayBuffer().then(hasAbntPageNumbering),
+        ])
         console.log(`[DocxViewer timing] renderAsync: ${Math.round(performance.now() - tRender)}ms`)
+        return hasPageNumbering
       })
-      .then(() => {
+      .then((hasPageNumbering) => {
         if (cancelled) return
         body.querySelectorAll('section.docx').forEach((section) => {
           if ((section as HTMLElement).innerText.trim() === '') section.remove()
         })
+        const sections = Array.from(body.querySelectorAll('section.docx'))
+        // The header's PAGE field is a static placeholder in this preview (see
+        // `hasAbntPageNumbering`) — hide it rather than show a number that can't be
+        // made reliably correct. The exported PDF and the sumário stay accurate.
+        if (hasPageNumbering) hidePageNumberStamps(sections)
         // Insert "Page break" dividers between sections — a dashed rule on each
         // side of a badge label, so the gap reads as an intentional break.
-        const sections = Array.from(body.querySelectorAll('section.docx'))
         sections.slice(0, -1).forEach((section) => {
           const divider = document.createElement('div')
           divider.className = 'docx-page-break-divider'
@@ -556,6 +598,190 @@ const DocxViewer = forwardRef<DocxViewerHandle, {
     </div>
   )
 })
+
+// ── Pending inputs panel ─────────────────────────────────────────────────────
+
+const DONT_ASK_BLANK_INPUT_KEY = 'formatexto.dontAskBlankInput'
+
+/** Groups pending inputs so the panel can separate tables from figures with a group title. */
+const PENDING_INPUT_CATEGORY: Record<PendingInputFE['kind'], 'table' | 'figure'> = {
+  table_caption: 'table',
+  table_source: 'table',
+  figure_caption: 'figure',
+  figure_source: 'figure',
+}
+function groupPendingInputsByCategory(
+  inputs: PendingInputFE[]
+): { category: 'table' | 'figure'; items: PendingInputFE[] }[] {
+  const groups: { category: 'table' | 'figure'; items: PendingInputFE[] }[] = []
+  for (const input of inputs) {
+    const category = PENDING_INPUT_CATEGORY[input.kind]
+    const last = groups[groups.length - 1]
+    if (last?.category === category) last.items.push(input)
+    else groups.push({ category, items: [input] })
+  }
+  return groups
+}
+
+/** A section title separating one content type's group of pending inputs from the next. */
+function CategoryTitle({ children }: { children: React.ReactNode }) {
+  return <h3 className="text-sm font-semibold text-ink -mb-1">{children}</h3>
+}
+
+/** Small square checkbox matching the app's hand-rolled checkbox look (see PageSelectionPage). */
+const MiniCheckbox = forwardRef<HTMLButtonElement, {
+  checked: boolean
+  onChange: (v: boolean) => void
+  children: React.ReactNode
+}>(function MiniCheckbox({ checked, onChange, children }, ref) {
+  return (
+    <button
+      ref={ref}
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="flex items-center gap-2 text-left w-full"
+    >
+      <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
+        checked ? 'bg-forest border-forest' : 'border-border'
+      }`}>
+        {checked && <Check size={8} className="text-white" strokeWidth={3} aria-hidden="true" />}
+      </div>
+      <span className="text-xs text-muted leading-snug">{children}</span>
+    </button>
+  )
+})
+
+/**
+ * The "Deixar em branco" trigger + its confirmation popover. An `alertdialog` (not a
+ * plain `dialog`) since it's an interruptive warning-plus-confirm prompt — per ARIA
+ * authoring practices, focus opens on the least-destructive action (Cancel), Tab is
+ * trapped inside while open, and focus returns to the trigger on every close path.
+ */
+function BlankConfirmButton({ fieldLabel, guidelineName, onConfirm }: {
+  fieldLabel: string
+  guidelineName: string
+  onConfirm: () => void
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const [rememberChoice, setRememberChoice] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  const confirmRef = useRef<HTMLButtonElement>(null)
+  const checkboxRef = useRef<HTMLButtonElement>(null)
+  const warningId = useId()
+
+  const close = () => {
+    setOpen(false)
+    triggerRef.current?.focus()
+  }
+
+  useEffect(() => {
+    if (!open) return
+    cancelRef.current?.focus()
+
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        close()
+        return
+      }
+      if (e.key !== 'Tab') return
+      // Trap focus inside the popover — cycle Cancel → Confirm → checkbox → Cancel.
+      const focusable = [cancelRef.current, confirmRef.current, checkboxRef.current].filter(
+        (el): el is HTMLButtonElement => !!el
+      )
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last?.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first?.focus()
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleClick)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open])
+
+  const handleTriggerClick = () => {
+    if (localStorage.getItem(DONT_ASK_BLANK_INPUT_KEY) === 'true') {
+      onConfirm()
+      return
+    }
+    setOpen(true)
+  }
+
+  const handleConfirm = () => {
+    if (rememberChoice) localStorage.setItem(DONT_ASK_BLANK_INPUT_KEY, 'true')
+    close()
+    onConfirm()
+  }
+
+  return (
+    <div className="relative shrink-0" ref={ref}>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`${t('project.inputs.blank')}: ${fieldLabel}`}
+        onClick={handleTriggerClick}
+        className="flex items-center gap-1.5 text-xs font-medium text-amber-700 hover:text-amber-800 transition-colors"
+      >
+        <Trash2 size={13} aria-hidden="true" />
+        {t('project.inputs.blank')}
+      </button>
+
+      {open && (
+        <div
+          role="alertdialog"
+          aria-label={`${t('project.inputs.blank')}: ${fieldLabel}`}
+          aria-describedby={warningId}
+          className="absolute right-0 top-full mt-2 w-72 bg-white border border-border rounded-xl shadow-md p-4 z-50 flex flex-col gap-3"
+        >
+          <div className="flex flex-col items-center gap-2 text-center">
+            <AlertTriangle size={18} className="text-amber-600 shrink-0" aria-hidden="true" />
+            <p id={warningId} className="text-xs text-ink leading-relaxed text-balance">
+              {t('project.inputs.blankWarning', { guideline: guidelineName })}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              ref={cancelRef}
+              type="button"
+              onClick={close}
+              className="flex-1 text-xs font-medium text-muted hover:text-ink transition-colors px-3 py-1.5 rounded-lg hover:bg-[#F0EEE8]"
+            >
+              {t('project.inputs.blankCancel')}
+            </button>
+            <button
+              ref={confirmRef}
+              type="button"
+              onClick={handleConfirm}
+              className="flex-1 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 transition-colors px-3 py-1.5 rounded-lg"
+            >
+              {t('project.inputs.blankConfirm')}
+            </button>
+          </div>
+          <MiniCheckbox ref={checkboxRef} checked={rememberChoice} onChange={setRememberChoice}>
+            {t('project.inputs.blankDontAskAgain')}
+          </MiniCheckbox>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
@@ -852,7 +1078,6 @@ export default function ProjectDetailPage() {
   const previewUrl = canSeeProcessed ? processedFileUrl : fileUrl
   const pdfDownloadName = project.original_file_name.replace(/\.docx$/i, '') + '.pdf'
   const selectedPages = project.selected_pages ?? []
-  const referencesPages = project.references_pages ?? []
 
   return (
     <>
@@ -932,90 +1157,100 @@ export default function ProjectDetailPage() {
 
       {/* Details panel */}
       <div className="w-80 border-l border-border bg-white flex flex-col overflow-y-auto">
-        <div className="px-6 py-5 border-b border-border shrink-0">
-          <h1 className="text-base font-semibold text-ink leading-snug mb-1">
-            {project.title || project.original_file_name}
-          </h1>
-          {project.title && (
-            <p className="text-xs text-muted truncate mb-3">{project.original_file_name}</p>
-          )}
-          <Badge role="status" variant={STATUS_BADGE_VARIANT[status]}>
-            {t(`dashboard.status.${status}`)}
-          </Badge>
-        </div>
-
-        <div className="px-6 py-5 flex flex-col gap-4">
-          {project.services.map((service) => (
-            <DetailRow key={service} label={t('project.service')}>
-              <span className="text-sm text-ink font-medium">
-                {t(`dashboard.service.${service}`)}
-                {project.guideline && (
-                  <span className="text-muted font-normal">
-                    {' · '}{t(`services.guidelines.${project.guideline}.name`)}
-                  </span>
-                )}
-              </span>
-            </DetailRow>
-          ))}
+        <div className="px-6 py-5 border-b border-border shrink-0 flex flex-col gap-4">
+          <div>
+            <h1 className="text-base font-semibold text-ink leading-snug mb-1">
+              {project.title || project.original_file_name}
+            </h1>
+            {project.title && (
+              <p className="text-xs text-muted truncate mb-3">{project.original_file_name}</p>
+            )}
+            <Badge role="status" variant={STATUS_BADGE_VARIANT[status]}>
+              {t(`dashboard.status.${status}`)}
+            </Badge>
+          </div>
+          <DetailRow label={t('project.service')}>
+            <div className="flex flex-col gap-0.5">
+              {project.services.map((service) => (
+                <span key={service} className="text-sm text-ink font-medium">
+                  {t(`dashboard.service.${service}`)}
+                  {/* Guideline only applies to formatting — proofreading has none. */}
+                  {service === 'formatting' && project.guideline && (
+                    <span className="text-muted font-normal">
+                      {' · '}{t(`services.guidelines.${project.guideline}.name`)}
+                    </span>
+                  )}
+                </span>
+              ))}
+            </div>
+          </DetailRow>
           <DetailRow label={isDocx ? t('laudas.totalLaudas') : t('project.pageCount')}>
             <span className="text-sm text-ink">{project.page_count}</span>
           </DetailRow>
-          {referencesPages.length > 0 && (
-            <DetailRow label={t('project.referencesPages')}>
-              <span className="text-sm text-ink">{formatPageRanges(referencesPages)}</span>
+          <div className="grid grid-cols-2 gap-4">
+            <DetailRow label={t('project.cost')}>
+              <span className="text-sm text-ink font-medium">{formatBRL(totalCost)}</span>
             </DetailRow>
-          )}
-          <DetailRow label={t('project.cost')}>
-            <span className="text-sm text-ink font-medium">{formatBRL(totalCost)}</span>
-          </DetailRow>
-          <DetailRow label={t('project.createdAt')}>
-            <span className="text-sm text-ink">{formatDate(project.created_at)}</span>
-          </DetailRow>
-          <DetailRow label={t('project.fileName')}>
-            <span className="text-sm text-ink break-all">{project.original_file_name}</span>
-          </DetailRow>
+            <DetailRow label={t('project.createdAt')}>
+              <span className="text-sm text-ink">{formatDate(project.created_at)}</span>
+            </DetailRow>
+          </div>
         </div>
 
         {hasNeedsInput && (
           <div className="px-6 py-5 border-t border-border shrink-0 flex flex-col gap-4">
             <h2 className="text-sm font-semibold text-ink">{t('project.inputs.title')}</h2>
-            {pendingInputs.map((p) => {
-              const isRemoved = removals.has(p.id)
-              const labelKey = `project.inputs.${p.kind}` as const
-              const placeholderKey = `project.inputs.placeholder_${p.kind}` as const
-              return (
-                <div key={p.id} className={`flex flex-col gap-1.5 ${isRemoved ? 'opacity-50' : ''}`}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium text-muted uppercase tracking-wider">
-                      {t(labelKey, { n: p.ordinal })}
-                    </span>
-                    <button
-                      className="text-xs text-muted hover:text-ink transition-colors shrink-0"
-                      onClick={() => {
-                        if (isRemoved) {
-                          setRemovals(prev => { const s = new Set(prev); s.delete(p.id); return s })
-                        } else {
-                          setRemovals(prev => new Set([...prev, p.id]))
-                          setFills(prev => { const m = new Map(prev); m.delete(p.id); return m })
-                        }
-                      }}
-                    >
-                      {isRemoved ? t('project.inputs.restore') : t('project.inputs.remove')}
-                    </button>
-                  </div>
-                  {!isRemoved && (
-                    <textarea
-                      className="w-full text-sm text-ink border border-border rounded-xl px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-forest/30 focus:border-forest-light transition-colors bg-white placeholder:text-muted/50"
-                      rows={2}
-                      placeholder={t(placeholderKey)}
-                      value={fills.get(p.id) ?? ''}
-                      onChange={e => setFills(prev => new Map([...prev, [p.id, e.target.value]]))}
-                      onFocus={() => docxViewerRef.current?.scrollToPlaceholder(pendingInputs, p)}
-                    />
-                  )}
-                </div>
-              )
-            })}
+            {groupPendingInputsByCategory(pendingInputs).map((group) => (
+              <div key={group.category} className="flex flex-col gap-4">
+                <CategoryTitle>
+                  {t(group.category === 'table' ? 'project.inputs.groupTable' : 'project.inputs.groupFigure')}
+                </CategoryTitle>
+                {group.items.map((p) => {
+                  const isRemoved = removals.has(p.id)
+                  const labelKey = `project.inputs.${p.kind}` as const
+                  const placeholderKey = `project.inputs.placeholder_${p.kind}` as const
+                  const fieldLabel = t(labelKey, { n: p.ordinal })
+                  const labelId = `pending-input-label-${p.id}`
+                  return (
+                    <div key={p.id} className={`flex flex-col gap-1.5 ${isRemoved ? 'opacity-50' : ''}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span id={labelId} className="text-xs font-medium text-muted uppercase tracking-wider">
+                          {fieldLabel}
+                        </span>
+                        {isRemoved ? (
+                          <button
+                            aria-label={`${t('project.inputs.restore')}: ${fieldLabel}`}
+                            className="text-xs font-medium text-forest hover:text-forest-mid transition-colors shrink-0"
+                            onClick={() => setRemovals(prev => { const s = new Set(prev); s.delete(p.id); return s })}
+                          >
+                            {t('project.inputs.restore')}
+                          </button>
+                        ) : (
+                          <BlankConfirmButton
+                            fieldLabel={fieldLabel}
+                            guidelineName={project.guideline ? t(`services.guidelines.${project.guideline}.name`) : ''}
+                            onConfirm={() => {
+                              setRemovals(prev => new Set([...prev, p.id]))
+                              setFills(prev => { const m = new Map(prev); m.delete(p.id); return m })
+                            }}
+                          />
+                        )}
+                      </div>
+                      {!isRemoved && (
+                        <Textarea
+                          rows={3}
+                          aria-labelledby={labelId}
+                          placeholder={t(placeholderKey)}
+                          value={fills.get(p.id) ?? ''}
+                          onChange={e => setFills(prev => new Map([...prev, [p.id, e.target.value]]))}
+                          onFocus={() => docxViewerRef.current?.scrollToPlaceholder(pendingInputs, p)}
+                        />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
             {finalizeError && (
               <p className="text-xs text-red-600">{t('project.inputs.finalizeError')}</p>
             )}
