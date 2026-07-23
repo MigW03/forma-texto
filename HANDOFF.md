@@ -243,6 +243,17 @@ Full breakdown: [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md). Su
 > Older entries are compressed to a one-line index — see `git log -p -- HANDOFF.md` for full narrative
 > detail on any of them.
 
+### 2026-07-23 — Pré-textual preview: separate page cards (branch `pretextual-preview-redesign`)
+
+The page-selection preview now renders each detected pré-textual element (capa, folha de rosto,
+resumo, sumário, …) as its own content-height page card with an amber pill label above it — matching
+the per-page card language of the processed-file preview — instead of in-flow dividers inside one
+continuous page. Only `PageSelectionPage.tsx` changed: post-render, the pré-textual blocks are MOVED
+into new `section.docx pretextual-page` cards (geometry copied from the rendered section, min-height
+cleared), so the lauda machinery (absolute indices + element refs) is untouched — body flow, green
+lauda dividers, dimming, and billing all verified unchanged in-browser. Cards carry `role="group"` +
+`aria-labelledby`; all DOM built via `createElement`/`textContent`. 52 web tests + tsc clean.
+
 ### 2026-07-22 — Launch guide + marketing playbook (no app code)
 
 Deployment/infra walkthrough delivered in-session: static frontend (Vercel-class, free) + a single

@@ -20,7 +20,7 @@ const LAUDA_PREVIEW_STYLES = `
   .docx-wrapper > section.docx {
     box-shadow: 0 1px 3px rgba(0,0,0,0.10), 0 1px 2px rgba(0,0,0,0.06) !important;
     border-radius: 8px !important;
-    margin: 0 auto !important;
+    margin: 0 auto 24px !important;
   }
   .lauda-divider {
     display: flex; align-items: center; gap: 14px; margin: 16px -9999px;
@@ -35,22 +35,70 @@ const LAUDA_PREVIEW_STYLES = `
     border-radius: 9999px; white-space: nowrap;
   }
   .lauda-disabled { opacity: 0.38; filter: grayscale(0.45); transition: opacity 0.15s, filter 0.15s; }
-  /* Pré-textual section divider — amber, to read as "not a lauda" at a glance. */
-  .pretextual-divider .lauda-divider-label {
-    background: rgba(146,112,42,0.10); border-color: rgba(146,112,42,0.28); color: #92702A;
+  /* Pré-textual cards inherit the document's real page margins (~3cm top) via the
+     copied section geometry — with content-height cards that reads as dead space, so
+     trim the vertical padding. Horizontal padding stays (matches the body pages). */
+  .docx-wrapper > section.docx.pretextual-page {
+    padding-top: 32px !important;
+    padding-bottom: 32px !important;
   }
-  .pretextual-divider .lauda-divider-line { border-top-color: rgba(146,112,42,0.30); }
+  /* Pré-textual page label — amber pill centered above each element's page card,
+     to read as "not a lauda" at a glance. */
+  .pretextual-page-label {
+    display: flex; justify-content: center; margin: 8px 0 10px;
+    pointer-events: none; user-select: none;
+  }
+  .pretextual-page-label > span {
+    display: inline-flex; align-items: center;
+    background: rgba(146,112,42,0.10); border: 1px solid rgba(146,112,42,0.28); color: #92702A;
+    font-size: 12px; font-weight: 600; font-family: Inter, system-ui, sans-serif;
+    letter-spacing: 0.04em; text-transform: uppercase; padding: 4px 11px;
+    border-radius: 9999px; white-space: nowrap;
+  }
 `
 
-/** Build a divider (dashed rule on each side of a badge). `variant` recolors it. */
-function buildDivider(labelText: string, variant: 'lauda' | 'pretextual' = 'lauda'): HTMLDivElement {
+/** Build a lauda divider (dashed rule on each side of a badge). */
+function buildDivider(labelText: string): HTMLDivElement {
   const div = document.createElement('div')
-  div.className = variant === 'pretextual' ? 'lauda-divider pretextual-divider' : 'lauda-divider'
+  div.className = 'lauda-divider'
   const l1 = document.createElement('span'); l1.className = 'lauda-divider-line'
   const label = document.createElement('span'); label.className = 'lauda-divider-label'; label.textContent = labelText
   const l2 = document.createElement('span'); l2.className = 'lauda-divider-line'
   div.append(l1, label, l2)
   return div
+}
+
+/**
+ * Build a standalone page card for one pré-textual element (labeled pill above a
+ * page-styled section), mirroring the per-page cards of the processed-file preview.
+ * Page geometry (width, padding) is copied from the rendered template section so the
+ * card matches docx-preview's page styling; min-height is cleared so the card wraps
+ * its content instead of forcing a full blank page.
+ */
+function buildPretextualPage(
+  labelText: string,
+  templateSection: HTMLElement,
+  index: number,
+): { label: HTMLDivElement; page: HTMLElement; article: HTMLElement } {
+  const labelId = `pretextual-page-label-${index}`
+  const label = document.createElement('div')
+  label.className = 'pretextual-page-label'
+  const pill = document.createElement('span')
+  pill.id = labelId
+  pill.textContent = labelText
+  label.appendChild(pill)
+
+  const page = document.createElement('section')
+  page.className = `${templateSection.className} pretextual-page`
+  page.style.cssText = templateSection.style.cssText
+  page.style.minHeight = ''
+  page.setAttribute('role', 'group')
+  page.setAttribute('aria-labelledby', labelId)
+
+  const article = document.createElement('article')
+  page.appendChild(article)
+
+  return { label, page, article }
 }
 
 /**
@@ -131,10 +179,32 @@ function LaudaPreview({
       }
       blockToLaudaRef.current = map
 
-      // Label each detected pré-textual section in the flow (badge before its start).
-      for (const section of pretextual.sections) {
-        const anchor = blocks[section.blockStart]
-        if (anchor) anchor.before(buildDivider(pretextualLabelFor(section), 'pretextual'))
+      // Split each detected pré-textual section into its own labeled page card,
+      // inserted before the body pages. Blocks are MOVED (same element references),
+      // so the lauda index/element machinery below is unaffected.
+      const wrapper = el.querySelector('.docx-wrapper')
+      const originalSections = Array.from(el.querySelectorAll('section.docx'))
+      const firstSection = originalSections[0]
+      if (wrapper && firstSection instanceof HTMLElement && pretextual.sections.length > 0) {
+        pretextual.sections.forEach((section, i) => {
+          const { label, page, article } = buildPretextualPage(
+            pretextualLabelFor(section), firstSection, i
+          )
+          for (let b = section.blockStart; b <= section.blockEnd; b++) {
+            const block = blocks[b]
+            if (block) article.appendChild(block)
+          }
+          firstSection.before(label, page)
+        })
+        // Drop any original section left empty after the move (e.g. a document
+        // that is entirely pré-textual, or a multi-section front matter).
+        for (const section of originalSections) {
+          const container = section.querySelector(':scope > article') ?? section
+          const hasBlocks = Array.from(container.children).some(
+            c => c instanceof HTMLElement && c.tagName !== 'STYLE'
+          )
+          if (!hasBlocks) section.remove()
+        }
       }
       // "Lauda 1" divider where the body begins (after the pré-textual region).
       if (pretextual.bodyStart > 0 && laudas.length > 0) {
