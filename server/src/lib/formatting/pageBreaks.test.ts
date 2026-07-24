@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { suppressFirstHeadingPageBreak, removeRedundantChapterPageBreaks } from './pageBreaks'
+import { suppressFirstHeadingPageBreak, removeRedundantChapterPageBreaks, removeTrailingBlankPages } from './pageBreaks'
 import { getBlocks } from './blocks'
 
 const DOC = (body: string) =>
@@ -9,6 +9,8 @@ const DOC = (body: string) =>
 
 const h1 = (text: string, extraPPr = '') =>
   `<w:p><w:pPr><w:pStyle w:val="Heading1"/>${extraPPr}</w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`
+const referencesHeading = (text: string) =>
+  `<w:p><w:pPr><w:pStyle w:val="ReferencesHeading"/></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`
 const body = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`
 
 const hasBreakDisabled = (b: string) => /<w:pageBreakBefore w:val="false"\/>/.test(b)
@@ -83,5 +85,71 @@ describe('removeRedundantChapterPageBreaks', () => {
   it('leaves a document with no redundant breaks unchanged', () => {
     const doc = DOC(body('text') + h1('2 Desenvolvimento'))
     expect(removeRedundantChapterPageBreaks(doc)).toBe(doc)
+  })
+
+  it('removes a redundant manual break before REFERÊNCIAS the same way it does for a chapter', () => {
+    const doc = DOC(body('closing paragraph') + pageBreakPara() + referencesHeading('REFERÊNCIAS'))
+    const blocks = getBlocks(removeRedundantChapterPageBreaks(doc))
+    expect(hasPageBreak(blocks[1])).toBe(false)
+  })
+
+  it('strips the tab-wrapped manual break shape a Google Docs export produces before REFERÊNCIAS', () => {
+    // The exact shape found in a real exported .docx: a tab, then the page break, then
+    // another tab, with no `<w:t>` text anywhere in the paragraph.
+    const tabBreakTab = '<w:p><w:r><w:tab/></w:r><w:r><w:br w:type="page"/></w:r><w:r><w:tab/></w:r></w:p>'
+    const doc = DOC(body('closing paragraph') + tabBreakTab + referencesHeading('REFERÊNCIAS'))
+    const blocks = getBlocks(removeRedundantChapterPageBreaks(doc))
+    expect(hasPageBreak(blocks[1])).toBe(false)
+    expect(blocks[1]).toContain('<w:tab/>') // the tabs themselves are harmless, left alone
+  })
+})
+
+const blank = () => '<w:p/>'
+const blankHeading = () => '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr></w:p>'
+const image = () => '<w:p><w:r><w:drawing><wp:inline/></w:drawing></w:r></w:p>'
+
+describe('removeTrailingBlankPages', () => {
+  it('drops a manual page break trailing the last real content', () => {
+    const doc = DOC(body('last paragraph') + pageBreakPara())
+    const blocks = getBlocks(removeTrailingBlankPages(doc))
+    expect(blocks).toHaveLength(1)
+    expect(hasPageBreak(blocks[0])).toBe(false)
+    expect(blocks[0]).toContain('last paragraph')
+  })
+
+  it('strips a page break trailing the last paragraph\'s own text', () => {
+    const doc = DOC(bodyThenBreak('last paragraph'))
+    const blocks = getBlocks(removeTrailingBlankPages(doc))
+    expect(hasPageBreak(blocks[0])).toBe(false)
+    expect(blocks[0]).toContain('last paragraph')
+  })
+
+  it('removes trailing blank spacer paragraphs after the last content', () => {
+    const doc = DOC(body('last paragraph') + blank() + blank())
+    const blocks = getBlocks(removeTrailingBlankPages(doc))
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]).toContain('last paragraph')
+  })
+
+  it('removes a trailing empty paragraph even when styled Heading1 (forces its own blank page)', () => {
+    const doc = DOC(body('last paragraph') + blankHeading())
+    const blocks = getBlocks(removeTrailingBlankPages(doc))
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]).toContain('last paragraph')
+  })
+
+  it('never removes a trailing image paragraph', () => {
+    const doc = DOC(body('caption above') + image())
+    expect(removeTrailingBlankPages(doc)).toBe(doc)
+  })
+
+  it('leaves a document with no trailing blank run unchanged', () => {
+    const doc = DOC(body('text') + h1('1 Introdução') + body('more text'))
+    expect(removeTrailingBlankPages(doc)).toBe(doc)
+  })
+
+  it('never touches a wholly blank document', () => {
+    const doc = DOC(blank() + blank())
+    expect(removeTrailingBlankPages(doc)).toBe(doc)
   })
 })

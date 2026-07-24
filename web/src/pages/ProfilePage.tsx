@@ -1,9 +1,20 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CreditCard } from 'lucide-react'
 import { useAuth } from '../lib/auth-context'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { ROUTES } from '../lib/routes'
+
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
+
+interface SavedCard {
+  id: string
+  brand: string
+  last4: string
+  expMonth: number | null
+  expYear: number | null
+}
 
 export default function ProfilePage() {
   const { t } = useTranslation()
@@ -19,6 +30,7 @@ export default function ProfilePage() {
   const userInitial = user?.user_metadata?.full_name?.[0]?.toUpperCase()
     ?? user?.email?.[0]?.toUpperCase()
     ?? '?'
+  const avatarUrl = user?.user_metadata?.avatar_url ?? user?.user_metadata?.picture
 
   // Full name edit
   const [fullName, setFullName] = useState(user?.user_metadata?.full_name ?? '')
@@ -44,6 +56,54 @@ export default function ProfilePage() {
   // Notification preferences
   const [notifPrefs, setNotifPrefs] = useState({ project_ready: true, file_expiry: true })
   const [notifSaved, setNotifSaved] = useState(false)
+
+  // Saved payment methods
+  const [paymentMethods, setPaymentMethods] = useState<SavedCard[]>([])
+  const [paymentMethodsLoading, setPaymentMethodsLoading] = useState(true)
+  const [paymentMethodsError, setPaymentMethodsError] = useState('')
+  const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null)
+  const [removingId, setRemovingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (cancelled) return
+      if (!session?.access_token) { setPaymentMethodsLoading(false); return }
+      try {
+        const res = await fetch(`${API_URL}/api/checkout/payment-methods`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        })
+        const data = await res.json()
+        if (!cancelled) setPaymentMethods(data.paymentMethods ?? [])
+      } catch {
+        if (!cancelled) setPaymentMethodsError(t('profile.paymentMethods.loadError'))
+      } finally {
+        if (!cancelled) setPaymentMethodsLoading(false)
+      }
+    })
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user])
+
+  const handleRemovePaymentMethod = async (id: string) => {
+    setRemovingId(id)
+    setPaymentMethodsError('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`${API_URL}/api/checkout/payment-methods/${id}/detach`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
+      })
+      if (!res.ok) throw new Error()
+      setPaymentMethods(prev => prev.filter(pm => pm.id !== id))
+    } catch {
+      setPaymentMethodsError(t('profile.paymentMethods.removeError'))
+    } finally {
+      setRemovingId(null)
+      setConfirmingRemoveId(null)
+    }
+  }
 
   // Load notification preferences from user_profiles
   useEffect(() => {
@@ -183,8 +243,12 @@ export default function ProfilePage() {
     <div className="max-w-3xl mx-auto px-6 py-12">
       {/* Header */}
       <div className="flex items-center gap-5 mb-10">
-        <div className="w-16 h-16 rounded-full bg-forest flex items-center justify-center flex-shrink-0">
-          <span className="text-white text-2xl font-semibold">{userInitial}</span>
+        <div className="w-16 h-16 rounded-full bg-forest flex items-center justify-center flex-shrink-0 overflow-hidden">
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+          ) : (
+            <span className="text-white text-2xl font-semibold">{userInitial}</span>
+          )}
         </div>
         <div>
           <h1 className="text-2xl font-semibold text-ink">
@@ -272,6 +336,68 @@ export default function ProfilePage() {
             </div>
           </div>
         )}
+
+        {/* Saved payment methods */}
+        <div className="bg-white rounded-2xl border border-border px-6 py-5">
+          <h2 className="text-sm font-semibold text-ink mb-4">{t('profile.paymentMethods.title')}</h2>
+          {paymentMethodsLoading ? (
+            <div className="flex justify-center py-4">
+              <div className="w-5 h-5 border-2 border-forest/30 border-t-forest rounded-full animate-spin" />
+            </div>
+          ) : paymentMethods.length === 0 ? (
+            <p className="text-sm text-muted">{t('profile.paymentMethods.empty')}</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {paymentMethods.map(pm => (
+                <div
+                  key={pm.id}
+                  className="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl border border-border"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <CreditCard size={16} className="text-muted shrink-0" aria-hidden="true" />
+                    <div>
+                      <p className="text-sm text-ink">•••• {pm.last4}</p>
+                      <p className="text-xs text-muted">
+                        {pm.brand.toUpperCase()}
+                        {pm.expMonth && pm.expYear
+                          ? ` · ${String(pm.expMonth).padStart(2, '0')}/${pm.expYear}`
+                          : ''}
+                      </p>
+                    </div>
+                  </div>
+                  {confirmingRemoveId === pm.id ? (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => handleRemovePaymentMethod(pm.id)}
+                        disabled={removingId === pm.id}
+                        className="text-xs font-medium text-white bg-red-600 hover:bg-red-700 transition-colors px-3 py-1.5 rounded-lg disabled:opacity-50"
+                      >
+                        {removingId === pm.id ? t('profile.paymentMethods.removing') : t('profile.paymentMethods.confirmRemove')}
+                      </button>
+                      <button
+                        onClick={() => setConfirmingRemoveId(null)}
+                        disabled={removingId === pm.id}
+                        className="text-xs text-muted hover:text-ink transition-colors px-2 py-1.5"
+                      >
+                        {t('profile.cancel')}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmingRemoveId(pm.id)}
+                      className="text-xs font-medium text-red-600 hover:text-red-700 transition-colors shrink-0"
+                    >
+                      {t('profile.paymentMethods.remove')}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {paymentMethodsError && (
+            <p className="text-xs text-red-500 mt-3">{paymentMethodsError}</p>
+          )}
+        </div>
 
         {/* Notification preferences */}
         <div className="bg-white rounded-2xl border border-border px-6 py-5">

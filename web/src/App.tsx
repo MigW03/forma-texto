@@ -12,6 +12,7 @@ import PrivacyPage from './pages/PrivacyPage'
 import ProfilePage from './pages/ProfilePage'
 import { AuthProvider, useAuth } from './lib/auth-context'
 import { ROUTES } from './lib/routes'
+import { HERO_HANDOFF_KEY } from './lib/file-store'
 import './index.css'
 
 // Heavy routes (pdfjs / docx-preview / pdf-lib) are code-split so the initial
@@ -31,7 +32,12 @@ function PageLoader() {
 function HomeRoute() {
   const { user, loading } = useAuth()
   if (loading) return null
-  return user ? <Navigate to={ROUTES.dashboard} replace /> : <LandingPage />
+  if (!user) return <LandingPage />
+  // Google OAuth's redirectTo always lands back here — a pending Hero handoff means the
+  // user was headed to /get-started, not the dashboard (mirrors AuthPage's own check for
+  // the email/password path, which never routes through HomeRoute).
+  const dest = sessionStorage.getItem(HERO_HANDOFF_KEY) ? ROUTES.getStarted : ROUTES.dashboard
+  return <Navigate to={dest} replace />
 }
 
 export default function App() {

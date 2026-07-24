@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { FileText, Plus, ChevronRight } from 'lucide-react'
 import { ROUTES } from '../lib/routes'
 import { SESSION_KEY } from './GetStartedPage'
+import { clearHeroHandoff } from '../lib/file-store'
 import { useAuth } from '../lib/auth-context'
 import { supabase } from '../lib/supabase'
 import { toTimeAgo, type TimeAgo } from '../lib/format'
@@ -16,6 +17,7 @@ import { Card } from '@/components/ui/card'
 
 function clearGetStartedSession() {
   sessionStorage.removeItem(SESSION_KEY)
+  clearHeroHandoff()
 }
 
 

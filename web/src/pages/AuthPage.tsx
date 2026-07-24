@@ -5,6 +5,13 @@ import { useTranslation } from 'react-i18next'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth-context'
 import { ROUTES } from '../lib/routes'
+import { HERO_HANDOFF_KEY } from '../lib/file-store'
+
+/** A pending Hero handoff (file/link dropped on the landing page pre-auth) means the
+ *  user was headed to /get-started, not the dashboard — land them back there instead. */
+function postAuthDestination(): string {
+  return sessionStorage.getItem(HERO_HANDOFF_KEY) ? ROUTES.getStarted : ROUTES.dashboard
+}
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -18,6 +25,7 @@ export default function AuthPage({ mode }: AuthPageProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -28,15 +36,22 @@ export default function AuthPage({ mode }: AuthPageProps) {
 
   const isSignUp = mode === 'sign-up'
   const ns = isSignUp ? 'auth.signUp' : 'auth.signIn'
+  const passwordMismatch = isSignUp && confirmPassword.length > 0 && password !== confirmPassword
 
   useEffect(() => {
-    if (user) navigate(ROUTES.dashboard, { replace: true })
+    if (user) navigate(postAuthDestination(), { replace: true })
   }, [user, navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
+
+    if (isSignUp && password !== confirmPassword) {
+      // Shown inline under the confirm-password field instead — see `passwordMismatch` below.
+      setLoading(false)
+      return
+    }
 
     if (isSignUp) {
       const { data, error } = await supabase.auth.signUp({
@@ -50,7 +65,7 @@ export default function AuthPage({ mode }: AuthPageProps) {
       if (error) {
         setError(error.message)
       } else if (data.session) {
-        navigate(ROUTES.dashboard, { replace: true })
+        navigate(postAuthDestination(), { replace: true })
       } else {
         setCheckEmail(true)
       }
@@ -62,7 +77,7 @@ export default function AuthPage({ mode }: AuthPageProps) {
       if (error) {
         setError(error.message)
       } else {
-        navigate(ROUTES.dashboard, { replace: true })
+        navigate(postAuthDestination(), { replace: true })
       }
     }
   }
@@ -183,6 +198,37 @@ export default function AuthPage({ mode }: AuthPageProps) {
                   </button>
                 </div>
               </div>
+
+              {isSignUp && (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="confirm-password">{t('auth.confirmPassword')}</Label>
+                  <div className="relative">
+                    <Input
+                      id="confirm-password"
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      placeholder={t('auth.confirmPasswordPlaceholder')}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      required
+                      minLength={8}
+                      aria-invalid={passwordMismatch}
+                      className={`pr-11 ${passwordMismatch ? 'border-red-400 focus:ring-red-400/30' : ''}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-ink transition-colors"
+                      aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  {passwordMismatch && (
+                    <p className="text-xs text-red-600">{t('auth.passwordMismatch')}</p>
+                  )}
+                </div>
+              )}
 
               <Button
                 type="submit"

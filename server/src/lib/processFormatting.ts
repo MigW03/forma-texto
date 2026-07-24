@@ -15,6 +15,7 @@ import {
   setHeadingRunProps,
   suppressFirstHeadingPageBreak,
   removeRedundantChapterPageBreaks,
+  removeTrailingBlankPages,
   normalizeNumberingXml,
   locateReferences,
   autoLocateReferences,
@@ -497,6 +498,14 @@ export async function processFormatting(projectId: string): Promise<void> {
       // per-level look directly on heading runs. Must follow setRunFonts (keeps rPr
       // order valid). Formatting only.
       workingDocXml = setHeadingRunProps(workingDocXml, getGuideline(guideline))
+    }
+
+    // Blank-page cleanup: drop a trailing manual page break / stray blank paragraph
+    // run at the very end of the document (nothing renders after them, so nothing is
+    // lost). Must run BEFORE `paginateSumario` below — it changes the page count that
+    // render reads, so doing it after would stale the sumário's stamped numbers.
+    if (doFormatting) {
+      workingDocXml = removeTrailingBlankPages(workingDocXml)
     }
 
     // Sumário pagination + ABNT header page-number resolution — THE LAST content

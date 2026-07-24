@@ -1,8 +1,9 @@
 import { useState, useRef } from 'react'
-import { Upload, Link } from 'lucide-react'
+import { Upload, Link, GraduationCap } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ROUTES } from '../../lib/routes'
+import { storeFile, HERO_UPLOAD_KEY, HERO_HANDOFF_KEY } from '../../lib/file-store'
 
 type Tab = 'upload' | 'link'
 
@@ -27,7 +28,22 @@ export default function Hero() {
     if (selected) setFile(selected)
   }
 
-  const handleStartEditing = () => {
+  const handleStartEditing = async () => {
+    // Hero only ever renders for a logged-out visitor (HomeRoute sends signed-in users
+    // straight to /dashboard), so this always hits ProtectedRoute's redirect to
+    // /sign-in — which drops `location.state` entirely. Persist through the durable
+    // handoff channel GetStartedPage reads on mount instead: IndexedDB for the File
+    // (sessionStorage can't hold one), a dedicated sessionStorage key for the rest —
+    // both survive the sign-in/sign-up round trip. Written unconditionally (even with
+    // no file/link yet) so its mere presence signals AuthPage/HomeRoute to land the
+    // user back on /get-started instead of /dashboard after they authenticate.
+    if (tab === 'upload' && file) {
+      await storeFile(file, HERO_UPLOAD_KEY)
+    }
+    sessionStorage.setItem(HERO_HANDOFF_KEY, JSON.stringify({
+      inputTab: tab,
+      pasteUrl: tab === 'link' ? pasteUrl : '',
+    }))
     navigate(ROUTES.getStarted)
   }
 
@@ -35,12 +51,10 @@ export default function Hero() {
     <section className="max-w-6xl mx-auto px-6 pt-20 pb-28 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
       {/* Left copy */}
       <div>
-        <div className="flex items-center gap-2 mb-6">
-          <span className="w-2 h-2 rounded-full bg-forest-light inline-block" />
-          <span className="text-xs font-medium tracking-widest text-muted uppercase">
-            {t('hero.tagline')}
-          </span>
-        </div>
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-forest bg-forest/10 border border-forest/20 rounded-full px-2.5 py-1 mb-6">
+          <GraduationCap size={12} aria-hidden="true" />
+          {t('hero.tagline')}
+        </span>
 
         <h1 className="text-5xl lg:text-6xl font-semibold text-ink leading-tight tracking-tight mb-4">
           {t('hero.title1')}

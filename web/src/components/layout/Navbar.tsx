@@ -19,6 +19,7 @@ export default function Navbar() {
   const userInitial = user?.user_metadata?.full_name?.[0]?.toUpperCase()
     ?? user?.email?.[0]?.toUpperCase()
     ?? '?'
+  const avatarUrl = user?.user_metadata?.avatar_url ?? user?.user_metadata?.picture
 
   return (
     <nav className="sticky top-0 z-50 bg-[#F0EEE8]/90 backdrop-blur-sm border-b border-[#DDDBD3]">
@@ -37,8 +38,12 @@ export default function Navbar() {
           <div className="flex items-center gap-3">
             <LanguageSwitcher />
             <div className="flex items-center gap-2">
-              <Link to={ROUTES.profile} className="w-8 h-8 rounded-full bg-forest flex items-center justify-center hover:opacity-80 transition-opacity">
-                <span className="text-white text-xs font-semibold">{userInitial}</span>
+              <Link to={ROUTES.profile} className="w-8 h-8 rounded-full bg-forest flex items-center justify-center hover:opacity-80 transition-opacity overflow-hidden">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  <span className="text-white text-xs font-semibold">{userInitial}</span>
+                )}
               </Link>
               <Button
                 variant="ghost"

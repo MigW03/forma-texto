@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express'
 import { stripe } from '../lib/stripe'
 import { supabase } from '../lib/supabase'
-import { checkoutLimiter } from '../lib/rateLimit'
+import { checkoutLimiter, sensitiveLimiter } from '../lib/rateLimit'
+import { getOrCreateStripeCustomerId, getStripeCustomerId } from '../lib/stripeCustomer'
 
 export type ServiceKey = 'formatting' | 'proofreading'
 
@@ -109,9 +110,20 @@ router.post('/create-payment-intent', checkoutLimiter, async (req: Request, res:
     : 0
   const totalCentavos = Math.max(fullCentavos - discountCentavos, 0)
 
+  // Attach the user's Stripe Customer so a card can be saved for reuse — but only when
+  // the user explicitly opts in via the checkbox on the client. That decision is sent
+  // per-confirm as `payment_method_options.card.setup_future_usage`, not set here on the
+  // intent, so a card is never saved without consent. Which saved card (if any) the user
+  // picks is decided entirely client-side at confirm time by passing `payment_method`
+  // directly to `stripe.confirmPayment` — Stripe itself rejects the confirm if that
+  // payment method doesn't belong to this customer, so there's nothing for this endpoint
+  // to validate up front.
+  const customerId = await getOrCreateStripeCustomerId(userId)
+
   const paymentIntent = await stripe.paymentIntents.create({
     amount: totalCentavos,
     currency: 'brl',
+    customer: customerId,
     metadata: {
       services: services.join(','),
       pageCount: String(pageCount),
@@ -202,6 +214,76 @@ router.post('/complete-free-order', checkoutLimiter, async (req: Request, res: R
 
   await consumeTrial(userId)
   res.json({ success: true, orderId: orderData.id })
+})
+
+// ── Saved payment methods ──────────────────────────────────────────────────────
+
+router.get('/payment-methods', checkoutLimiter, async (req: Request, res: Response) => {
+  const userId = await getUserIdFromRequest(req)
+  if (!userId) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return
+  }
+
+  const customerId = await getStripeCustomerId(userId)
+  if (!customerId) {
+    // Never paid before (or the very first checkout hasn't created a Customer yet) —
+    // an empty list, not an error.
+    res.json({ paymentMethods: [] })
+    return
+  }
+
+  const methods = await stripe.paymentMethods.list({ customer: customerId, type: 'card' })
+  res.json({
+    // Only ever hand the client the minimum needed to render "•••• 4242, exp 12/28" —
+    // never anything else Stripe's object carries (billing address, fingerprint, …).
+    paymentMethods: methods.data.map(pm => ({
+      id: pm.id,
+      brand: pm.card?.brand ?? 'card',
+      last4: pm.card?.last4 ?? '',
+      expMonth: pm.card?.exp_month ?? null,
+      expYear: pm.card?.exp_year ?? null,
+    })),
+  })
+})
+
+router.post('/payment-methods/:id/detach', sensitiveLimiter, async (req: Request, res: Response) => {
+  const userId = await getUserIdFromRequest(req)
+  if (!userId) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return
+  }
+
+  const pmId = req.params.id
+  if (typeof pmId !== 'string' || !/^pm_\w+$/.test(pmId)) {
+    res.status(400).json({ error: 'Invalid payment method id' })
+    return
+  }
+
+  const customerId = await getStripeCustomerId(userId)
+  if (!customerId) {
+    res.status(404).json({ error: 'Not found' })
+    return
+  }
+
+  // Ownership check: the payment method must belong to THIS user's Stripe customer.
+  // Never trust the :id path param alone — any authenticated caller could otherwise
+  // detach an arbitrary payment method (someone else's saved card) just by knowing or
+  // guessing its id. A 404 either way (missing vs. not-yours) avoids confirming to a
+  // non-owner that a given id even exists.
+  try {
+    const method = await stripe.paymentMethods.retrieve(pmId)
+    if (method.customer !== customerId) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+  } catch {
+    res.status(404).json({ error: 'Not found' })
+    return
+  }
+
+  await stripe.paymentMethods.detach(pmId)
+  res.json({ success: true })
 })
 
 // ── Notify internal webhook after order complete ──────────────────────────────

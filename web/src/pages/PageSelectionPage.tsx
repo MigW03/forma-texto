@@ -628,8 +628,8 @@ export default function PageSelectionPage() {
             size="lg"
             disabled={!canContinue}
             className="w-full font-semibold"
-            onClick={() => {
-              if (state.file) storeFile(state.file)
+            onClick={async () => {
+              if (state.file) await storeFile(state.file)
               navigate(ROUTES.checkout, {
                 state: {
                   services: Array.from(activeServices),

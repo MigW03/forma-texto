@@ -5,6 +5,12 @@
     "newService": "New service",
     "signOut": "Sign out"
   },
+  "footer": {
+    "tagline": "AI-assisted academic formatting and proofreading, built for academic papers.",
+    "terms": "Terms",
+    "privacy": "Privacy",
+    "rights": "All rights reserved."
+  },
   "languageSwitcher": {
     "label": "Language",
     "english": "English",
@@ -12,15 +18,15 @@
     "portuguesePT": "Português (Portugal)"
   },
   "hero": {
-    "tagline": "Made for thesis writers",
-    "title1": "Make your thesis",
+    "tagline": "Made for academic writers",
+    "title1": "Make your paper",
     "title2": "committee‑ready.",
-    "description": "FormaTexto proofreads in academic tone and formats your manuscript to your school's official guidelines. Two services, no learning curve, no rewrites you didn't ask for.",
-    "guidelinesList": "ABNT, APA, MLA, Chicago",
+    "description": "FormaTexto uses AI to proofread and format your work, following the guidelines you choose. Our service is faster and cheaper than traditional human proofreading, giving you more time to focus on the content.",
+    "guidelinesList": "ABNT formatting",
     "yourTextStays": "Your text stays your text",
     "uploadTab": "Upload file",
     "linkTab": "Paste link",
-    "dropPrompt": "Drop your thesis, or click to browse",
+    "dropPrompt": "Drop your paper, or click to browse",
     "fileLimit": "Up to 50MB. Your file is encrypted in transit.",
     "documentUrl": "Document URL",
     "linksSupported": "Google Docs, OneDrive, or Dropbox links are supported.",
@@ -29,59 +35,59 @@
   },
   "services": {
     "kicker": "Two services",
-    "title1": "Pick what your thesis needs",
+    "title1": "Pick what your paper needs",
     "title2": "today.",
+    "subtitle": "Pick one, or run both — they're priced and delivered independently.",
     "proofreading": {
       "label": "Proofreading",
       "title1": "Grammar and clarity in",
       "title2": "academic tone.",
-      "description": "We catch typos, awkward phrasing, and tense slips. Suggestions stay scholarly: no overconfident rewrites, no voice changes you didn't ask for.",
+      "description": "We use our own AI pipeline — built and tuned in-house — to catch typos, awkward phrasing, and tense slips. Suggestions stay scholarly: no overconfident rewrites, no voice changes you didn't ask for.",
       "stats": {
         "corrections": "corrections",
-        "tone": "tone refinement",
         "rewrites": "rewrites"
       },
-      "cta": "Correct my thesis"
+      "cta": "Correct my paper"
     },
     "formatting": {
       "label": "Formatting",
       "title1": "Match your school's",
       "title2": "guideline.",
       "description": "Margins, headings, citations, references. We restructure your document to the standard your committee expects.",
-      "cta": "Format my thesis"
+      "cta": "Format my paper"
     },
     "guidelines": {
       "abnt": { "name": "ABNT NBR 14724", "description": "Brazilian academic standard" },
       "apa": { "name": "APA 7th edition", "description": "Social sciences, psychology" },
       "mla": { "name": "MLA 9th edition", "description": "Humanities, literature" },
       "chicago": { "name": "Chicago 17th edition", "description": "History, arts" }
+    },
+    "comingSoon": {
+      "label": "Coming soon"
     }
   },
   "pricing": {
     "kicker": "Pricing",
-    "title1": "Pay once,",
-    "title2": "per thesis.",
-    "free": {
-      "label": "Free trial",
-      "subtitle": "One lauda on us. First and only.",
+    "title1": "Pay per lauda,",
+    "title2": "not per month.",
+    "subtitle": "No subscription, no hidden fees. You pay once, only for the pages you submit.",
+    "laudaNote": "A lauda is the standard ~300-word unit used for academic pricing.",
+    "trialBanner": "Your first lauda is completely free — either service, one-time trial, no card required.",
+    "perLauda": "/ lauda",
+    "minimum": "{{amount}} minimum per document",
+    "formatting": {
       "features": [
-        "One free lauda — one time, either service",
-        "No credit card required",
-        "Side-by-side preview"
-      ],
-      "cta": "Try one lauda free"
+        "Margins, headings, citations restructured",
+        "ABNT NBR 14724 — more guidelines coming soon",
+        "Auto-paginated table of contents"
+      ]
     },
-    "paid": {
-      "label": "Per thesis",
-      "perDocument": "/ document",
-      "subtitle": "One payment, full thesis.",
+    "proofreading": {
       "features": [
-        "Up to 200 laudas",
-        "Both services included",
-        "Three guideline switches",
-        "Export .docx"
-      ],
-      "cta": "Submit my thesis"
+        "Grammar and clarity corrections",
+        "Academic tone preserved",
+        "No unsolicited rewrites"
+      ]
     }
   },
   "auth": {
@@ -104,6 +110,9 @@
     "password": "Password",
     "passwordPlaceholderSignUp": "At least 8 characters",
     "passwordPlaceholderSignIn": "••••••••",
+    "confirmPassword": "Confirm password",
+    "confirmPasswordPlaceholder": "Retype your password",
+    "passwordMismatch": "Passwords don't match.",
     "forgotPassword": "Forgot password?",
     "showPassword": "Show password",
     "hidePassword": "Hide password",
@@ -150,14 +159,14 @@
   },
   "getStarted": {
     "title": "New service",
-    "subtitle": "What does your thesis need today?",
+    "subtitle": "What does your paper need today?",
     "backToDashboard": "Back to documents",
     "stepService": "Choose a service",
     "stepDocument": "Add your document",
     "guidelineLabel": "Choose a guideline",
     "freeBadge": "Free trial",
     "firstPage": "first lauda only",
-    "perThesis": "per thesis",
+    "perThesis": "per paper",
     "submit": "Submit document",
     "fetchingDocument": "Fetching document…",
     "ctaSubtitle": "One-time trial — your first lauda is on us.",
@@ -269,6 +278,15 @@
     "changePassword": "Password",
     "changePasswordHint": "Set a new password for your account.",
     "changePasswordBtn": "Change password",
+    "paymentMethods": {
+      "title": "Saved payment methods",
+      "empty": "No saved cards yet.",
+      "remove": "Remove",
+      "confirmRemove": "Confirm removal",
+      "removing": "Removing…",
+      "loadError": "Could not load your saved cards.",
+      "removeError": "Could not remove the card — please try again."
+    },
     "passwordModalTitle": "Change your password",
     "passwordModalSubtitle": "Enter your current password to confirm your identity, then choose a new one.",
     "currentPassword": "Current password",

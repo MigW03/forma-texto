@@ -7,11 +7,11 @@ import {
   useStripe,
   useElements,
 } from '@stripe/react-stripe-js'
-import { Check, ArrowLeft, Gift, Clock, Loader2 } from 'lucide-react'
+import { Check, ArrowLeft, Gift, Clock, Loader2, CreditCard, AlertTriangle } from 'lucide-react'
 import { calcPrice, trialDiscountBRL, formatBRL, type ServiceKey } from '../lib/pricing'
 import { useAuth } from '../lib/auth-context'
 import { supabase } from '../lib/supabase'
-import { getStoredFile } from '../lib/file-store'
+import { getStoredFile, clearStoredFile } from '../lib/file-store'
 import { sliceDocxByLaudas, getDocxBlocks } from '../lib/docx-slice'
 import { uploadKeepSet } from '../lib/laudas'
 import { ROUTES } from '../lib/routes'
@@ -61,26 +61,95 @@ function SavingScreen() {
   )
 }
 
+// ── Missing-file screen (payment succeeded, upload didn't survive the flow) ────
+
+function MissingFileScreen({ projectId }: { projectId: string }) {
+  return (
+    <div className="flex flex-col items-center gap-4 py-10 text-center">
+      <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center">
+        <AlertTriangle size={26} className="text-amber-600" aria-hidden="true" />
+      </div>
+      <p className="text-base font-semibold text-ink">Pagamento confirmado!</p>
+      <p className="text-sm text-muted max-w-sm">
+        Mas não conseguimos localizar seu arquivo — isso pode acontecer se a página foi
+        recarregada durante o pagamento. Você não será cobrado novamente: só precisa
+        reenviar o mesmo documento para iniciar o processamento.
+      </p>
+      <Link
+        to={ROUTES.project.replace(':id', projectId)}
+        className="mt-2 inline-flex items-center justify-center py-3 px-6 rounded-xl text-sm font-semibold bg-forest text-white hover:bg-forest-mid transition-colors"
+      >
+        Reenviar arquivo
+      </Link>
+    </div>
+  )
+}
+
+// ── Saved payment method ────────────────────────────────────────────────────────
+
+export interface SavedCard {
+  id: string
+  brand: string
+  last4: string
+  expMonth: number | null
+  expYear: number | null
+}
+
 // ── Payment form (needs Elements context) ─────────────────────────────────────
 
 function PaymentForm({
+  clientSecret,
   totalBRL,
+  savedMethods,
   onSuccess,
 }: {
+  clientSecret: string
   totalBRL: number
+  savedMethods: SavedCard[]
   onSuccess: () => void
 }) {
   const stripe = useStripe()
   const elements = useElements()
+  // Default to the first saved card (one click, no re-typing) when there is one;
+  // 'new' shows the full card form instead.
+  const [selectedId, setSelectedId] = useState<string>(savedMethods[0]?.id ?? 'new')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Opt-in only — never save the card unless the user explicitly checks this.
+  const [saveCard, setSaveCard] = useState(false)
+
+  const usingSaved = selectedId !== 'new'
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!stripe || !elements) return
+    if (!stripe) return
 
     setSubmitting(true)
     setError(null)
+
+    // Confirming with a saved card needs no mounted PaymentElement at all — Stripe
+    // confirms directly against the client secret. Stripe itself rejects this if
+    // `selectedId` doesn't actually belong to the PaymentIntent's customer, so there's
+    // nothing for the client (or our server) to double-check beforehand.
+    if (usingSaved) {
+      const { error: confirmError } = await stripe.confirmPayment({
+        clientSecret,
+        confirmParams: {
+          payment_method: selectedId,
+          return_url: `${window.location.origin}${ROUTES.checkout}`,
+        },
+        redirect: 'if_required',
+      })
+      if (confirmError) {
+        setError(confirmError.message ?? 'Erro no pagamento')
+        setSubmitting(false)
+        return
+      }
+      onSuccess()
+      return
+    }
+
+    if (!elements) return
 
     const { error: submitError } = await elements.submit()
     if (submitError) {
@@ -91,7 +160,10 @@ function PaymentForm({
 
     const { error: confirmError } = await stripe.confirmPayment({
       elements,
-      confirmParams: { return_url: `${window.location.origin}${ROUTES.checkout}` },
+      confirmParams: {
+        return_url: `${window.location.origin}${ROUTES.checkout}`,
+        ...(saveCard ? { payment_method_options: { card: { setup_future_usage: 'off_session' } } } : {}),
+      },
       redirect: 'if_required',
     })
 
@@ -105,8 +177,81 @@ function PaymentForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      <PaymentElement options={{ layout: 'tabs', paymentMethodOrder: ['card'] }} />
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      {savedMethods.length > 0 && (
+        <div role="radiogroup" aria-label="Forma de pagamento" className="flex flex-col gap-2">
+          {savedMethods.map(m => {
+            const selected = selectedId === m.id
+            return (
+              <button
+                key={m.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setSelectedId(m.id)}
+                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl border transition-colors text-left ${
+                  selected ? 'border-forest bg-forest/[0.04]' : 'border-border hover:border-forest-mid/40'
+                }`}
+              >
+                <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                  selected ? 'border-forest' : 'border-border'
+                }`}>
+                  {selected && <div className="w-1.5 h-1.5 rounded-full bg-forest" />}
+                </div>
+                <CreditCard size={15} className="text-muted shrink-0" aria-hidden="true" />
+                <span className="text-sm text-ink">
+                  •••• {m.last4}
+                  <span className="text-muted">
+                    {' '}({m.brand}){m.expMonth && m.expYear
+                      ? ` · ${String(m.expMonth).padStart(2, '0')}/${m.expYear}`
+                      : ''}
+                  </span>
+                </span>
+              </button>
+            )
+          })}
+          <button
+            type="button"
+            role="radio"
+            aria-checked={selectedId === 'new'}
+            onClick={() => setSelectedId('new')}
+            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl border transition-colors text-left ${
+              selectedId === 'new' ? 'border-forest bg-forest/[0.04]' : 'border-border hover:border-forest-mid/40'
+            }`}
+          >
+            <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+              selectedId === 'new' ? 'border-forest' : 'border-border'
+            }`}>
+              {selectedId === 'new' && <div className="w-1.5 h-1.5 rounded-full bg-forest" />}
+            </div>
+            <span className="text-sm text-ink">Usar novo cartão</span>
+          </button>
+        </div>
+      )}
+
+      {!usingSaved && (
+        <>
+          {/* Our own checkbox is the consent UI for saving a card — suppress Stripe's
+              own auto-generated notice (`terms: 'auto'` shows it by default whenever a
+              customer is attached to the intent, which we always do for saved-card list). */}
+          <PaymentElement options={{ layout: 'tabs', paymentMethodOrder: ['card'], terms: { card: 'never' } }} />
+          <label className="flex items-center gap-3 cursor-pointer group select-none">
+            <div className="relative shrink-0">
+              <input
+                type="checkbox"
+                checked={saveCard}
+                onChange={(e) => setSaveCard(e.target.checked)}
+                className="peer sr-only"
+              />
+              <div className="w-4 h-4 rounded border border-border bg-white peer-checked:bg-forest peer-checked:border-forest transition-colors group-hover:border-forest-mid/60" />
+              {saveCard && (
+                <Check size={10} className="absolute inset-0 m-auto text-white pointer-events-none" aria-hidden="true" />
+              )}
+            </div>
+            <span className="text-sm text-ink">Salvar cartão para futuras compras</span>
+          </label>
+        </>
+      )}
 
       {error && (
         <p role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
@@ -218,7 +363,7 @@ type IntentResponse =
   | { clientSecret: string; orderId?: string; isTrial: boolean; discountBRL: number }
   | { error: string }
 
-type PageStatus = 'idle' | 'saving' | 'done'
+type PageStatus = 'idle' | 'saving' | 'done' | 'file-missing'
 
 export default function CheckoutPage() {
   const location = useLocation()
@@ -241,6 +386,8 @@ export default function CheckoutPage() {
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [pageStatus, setPageStatus] = useState<PageStatus>('idle')
   const [isFreeOrder, setIsFreeOrder] = useState(false)
+  const [savedMethods, setSavedMethods] = useState<SavedCard[]>([])
+  const [missingFileProjectId, setMissingFileProjectId] = useState<string | null>(null)
 
   const services = state?.services ?? []
   const pageCount = state?.pageCount ?? 0
@@ -300,14 +447,38 @@ export default function CheckoutPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Saved cards, so a returning user isn't asked to retype one every checkout.
+  // Independent of the intent fetch above — a free/trial order never needs this,
+  // but fetching it unconditionally is harmless and keeps this effect simple.
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled || !session?.access_token) return undefined
+      return fetch(`${API_URL}/api/checkout/payment-methods`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+    })
+      .then(r => r?.json())
+      .then((data?: { paymentMethods?: SavedCard[] }) => {
+        if (cancelled || !data) return
+        setSavedMethods(data.paymentMethods ?? [])
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [user])
+
   // ── Post-payment: upload file + create project ──────────────────────────────
 
   async function handleSuccess(orderId?: string) {
     if (!user) return
     setPageStatus('saving')
 
+    let fileMissing = false
+    let createdProjectId: string | null = null
+
     try {
-      const rawFile = getStoredFile()
+      const rawFile = await getStoredFile()
       const selectedLaudas = state?.selectedLaudas ?? []
       const laudaCount = state?.laudaCount ?? 0
       const projectId = crypto.randomUUID()
@@ -383,6 +554,13 @@ export default function CheckoutPage() {
       if (projectError) {
         console.error('Project creation failed:', projectError)
       } else {
+        createdProjectId = projectId
+        // Surfaced to the user below instead of silently showing "Pagamento confirmado!"
+        // as if the file made it — the project still gets created (and processing still
+        // triggered, next) so the payment is never orphaned; the pipeline itself would
+        // otherwise flag this `missing_file` anyway, just without the user knowing yet.
+        if (!storagePath) fileMissing = true
+
         // 5. Trigger processing (fire-and-forget). Formatting and proofreading both
         //    run on our server's pipeline now (proofreading is no longer on n8n).
         if (services.includes('formatting') || services.includes('proofreading')) {
@@ -401,8 +579,14 @@ export default function CheckoutPage() {
       console.error('Post-payment error:', err)
     }
 
+    await clearStoredFile()
     sessionStorage.removeItem(SESSION_KEY)
-    setPageStatus('done')
+    if (fileMissing && createdProjectId) {
+      setMissingFileProjectId(createdProjectId)
+      setPageStatus('file-missing')
+    } else {
+      setPageStatus('done')
+    }
   }
 
   // ── Guard: no state ─────────────────────────────────────────────────────────
@@ -451,6 +635,14 @@ export default function CheckoutPage() {
     return (
       <div className="max-w-lg mx-auto px-6 py-12 pt-32">
         <SuccessScreen free={isFreeOrder} />
+      </div>
+    )
+  }
+
+  if (pageStatus === 'file-missing' && missingFileProjectId) {
+    return (
+      <div className="max-w-lg mx-auto px-6 py-12 pt-32">
+        <MissingFileScreen projectId={missingFileProjectId} />
       </div>
     )
   }
@@ -576,7 +768,9 @@ export default function CheckoutPage() {
         ) : clientSecret ? (
           <Elements stripe={stripePromise} options={{ clientSecret, appearance }}>
             <PaymentForm
+              clientSecret={clientSecret}
               totalBRL={finalTotal}
+              savedMethods={savedMethods}
               onSuccess={() => handleSuccess(paidOrderId)}
             />
           </Elements>

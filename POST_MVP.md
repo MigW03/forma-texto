@@ -10,6 +10,25 @@
 
 ---
 
+## Web / Checkout
+
+- [ ] `ProjectDetailPage.tsx`'s `handleRecoverUpload` silently no-ops if `session` is stale/missing —
+  no error shown, the re-upload just appears to do nothing. Surfaced 2026-07-24 when a real recovery
+  retry looked "stuck" for several minutes; a hard refresh (which re-fetches a fresh session) fixed it.
+  Fix: show an explicit error (e.g. "sessão expirada — atualize a página") instead of the silent no-op.
+- [ ] Hero pre-auth handoff (`HERO_HANDOFF_KEY`/`HERO_UPLOAD_KEY` in `file-store.ts`) isn't scoped to
+  the session that created it. Flagged by security review 2026-07-24: if a visitor drops a file/link on
+  the landing-page Hero card, gets redirected to `/sign-in`, and abandons the flow there without signing
+  in, the file/link stays in sessionStorage/IndexedDB indefinitely — `signOut()` never clears it, and
+  `AuthPage`/`HomeRoute` check only whether the handoff key *exists*, not who wrote it. On a shared
+  computer (plausible for this product's audience — university/library labs), whoever next signs into
+  *any* account in that same browser tab gets auto-routed to `/get-started` with the abandoned file
+  restored, giving them a content preview of a stranger's document. Fix: clear both keys on
+  `ProtectedRoute`'s redirect-away / on `signOut()`, add a short TTL and reject stale entries, and/or
+  stamp the handoff with a per-drop token so an unrelated auth completion can't consume it.
+
+---
+
 ## Backend / AI Pipeline
 
 - [ ] Table formatting refinement (ABNT)

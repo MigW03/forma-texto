@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase'
 import { PRICING, formatBRL, type ServiceKey } from '../lib/pricing'
 import { getLaudas } from '../lib/laudas'
 import { decodeFilename } from '../lib/filename'
+import { getStoredFile, clearStoredFile, HERO_UPLOAD_KEY, HERO_HANDOFF_KEY } from '../lib/file-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useGuidelines, localizedDescription } from '../lib/guidelines'
@@ -59,6 +60,19 @@ function loadSession() {
   }
 }
 
+/** Reads the one-shot Hero handoff (see `HERO_HANDOFF_KEY` in file-store.ts) and
+ *  consumes it immediately so it isn't re-applied on a later, unrelated mount. */
+function loadHeroHandoff() {
+  try {
+    const raw = sessionStorage.getItem(HERO_HANDOFF_KEY)
+    if (!raw) return null
+    sessionStorage.removeItem(HERO_HANDOFF_KEY)
+    return JSON.parse(raw) as { inputTab: InputTab; pasteUrl: string }
+  } catch {
+    return null
+  }
+}
+
 type RestoredState = {
   file: File | null
   pasteUrl: string
@@ -74,13 +88,15 @@ export default function GetStartedPage() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  // Navigation state (coming back from PageSelectionPage) takes priority over sessionStorage
+  // Navigation state (coming back from PageSelectionPage) takes priority, then a pending
+  // Hero handoff, then a resumed in-progress session.
   const navState = location.state as RestoredState | null
+  const heroHandoff = navState ? null : loadHeroHandoff()
   const saved = navState ? null : loadSession()
 
   const initServices = navState?.services ?? saved?.services ?? []
   const initGuideline = (navState?.guideline ?? saved?.guideline ?? 'abnt') as GuidelineId
-  const initTab = (navState?.inputTab ?? saved?.inputTab ?? 'upload') as InputTab
+  const initTab = (navState?.inputTab ?? heroHandoff?.inputTab ?? saved?.inputTab ?? 'upload') as InputTab
 
   const [selectedServices, setSelectedServices] = useState<Set<ServiceKey>>(
     () => new Set(initServices)
@@ -117,12 +133,30 @@ export default function GetStartedPage() {
   const [fileTypeError, setFileTypeError] = useState<'doc' | 'invalid' | null>(null)
   const [pageCount, setPageCount] = useState<number | null>(navState?.pageCount ?? null)
   const [pageCountLoading, setPageCountLoading] = useState(false)
-  const [pasteUrl, setPasteUrl] = useState(navState?.pasteUrl ?? saved?.pasteUrl ?? '')
+  const [pasteUrl, setPasteUrl] = useState(navState?.pasteUrl ?? heroHandoff?.pasteUrl ?? saved?.pasteUrl ?? '')
   const [agreedToTerms, setAgreedToTerms] = useState(saved?.agreedToTerms ?? false)
   const [title, setTitle] = useState(navState?.title ?? saved?.title ?? '')
   const [fetchingLink, setFetchingLink] = useState(false)
   const [linkError, setLinkError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Restore a file dropped on the landing page's Hero card before the user
+  // authenticated. ProtectedRoute drops `location.state` on the redirect to sign-in, so
+  // Hero persists the file via IndexedDB instead (sessionStorage can't hold a File) —
+  // pick it up once here and clear it so a later, unrelated visit doesn't reuse it.
+  // Skipped when `navState.file` is already present (e.g. back-navigation from
+  // PageSelectionPage), which always wins.
+  useEffect(() => {
+    if (navState?.file) return
+    let cancelled = false
+    getStoredFile(HERO_UPLOAD_KEY).then(stored => {
+      if (cancelled || !stored) return
+      setFile(stored)
+      clearStoredFile(HERO_UPLOAD_KEY)
+    })
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Persist serializable state on every change
   useEffect(() => {

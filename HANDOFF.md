@@ -138,6 +138,11 @@ Full breakdown: [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md). Su
 > — it's the priority order. Feature-level checklist lives in `PLAN.md`; this section is the
 > launch-critical / cross-cutting set.
 
+> **Pending migration (not yet run on Supabase):** the saved-payment-methods feature (2026-07-24) needs
+> `ALTER TABLE user_profiles ADD COLUMN stripe_customer_id text UNIQUE;` — see `supabase_tables.md`.
+> Until this runs, `/api/checkout/payment-methods` and `create-payment-intent`'s customer attachment
+> will error (column doesn't exist).
+
 ### Needs code — sorted by priority (work this list top to bottom)
 
 1. [ ] **PDF export / LibreOffice has no production home.** Not just the "download PDF" button — the
@@ -242,6 +247,86 @@ Full breakdown: [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md). Su
 
 > Older entries are compressed to a one-line index — see `git log -p -- HANDOFF.md` for full narrative
 > detail on any of them.
+
+### 2026-07-24 — Landing page overhaul + Hero pre-auth file/link persistence
+
+Content audit found the landing page overstating reality: Pricing showed fabricated flat USD tiers with
+features that don't exist in the app (fixed to real per-lauda BRL pricing from `pricing.ts`); guideline
+mentions implied APA/MLA/Chicago support when only `specs/abnt.md` exists (Services now sources its
+active guideline from `useGuidelines()`, the same live catalog `GetStartedPage` uses, plus an honest "Em
+breve" panel); the proofreading mock diff implied word-choice/register rewriting the pipeline doesn't do
+(replaced with mechanical-only corrections, dropped the fabricated "tone adjustment" stat). Added AI
+disclosure copy (framed around "our own pipeline, tuned in-house" rather than a bare "AI-powered" claim)
+and a Footer (previously nonexistent). Renamed "tese" → "trabalho"/"paper" sitewide (all 3 locales) with
+the Portuguese gender-agreement fixes that come with it (`pronta`→`pronto`). Added a confirm-password
+field to sign-up with inline (not banner) mismatch validation.
+
+Separately, fixed a real bug: dropping a file or pasting a link on Hero's inline upload card, then
+signing in from the resulting `/sign-in` redirect, lost the file/link entirely (`ProtectedRoute` drops
+`location.state` on that redirect) — and even the sessionStorage fallback for the link case was getting
+wiped by Dashboard's "New service" button clearing `GetStartedPage`'s `SESSION_KEY` before it was ever
+read. Fixed with a dedicated one-shot handoff channel in `file-store.ts` (`HERO_HANDOFF_KEY` +
+`HERO_UPLOAD_KEY`, separate from both `SESSION_KEY` and the checkout flow's own IndexedDB slot) and wired
+`AuthPage`/`HomeRoute` to land the user back on `/get-started` instead of `/dashboard` post-auth when a
+handoff is pending — covers email/password, immediate-session signup, and Google OAuth (whose
+`redirectTo` always lands on `HomeRoute`).
+
+### 2026-07-24 — Fix: durable file persistence across checkout (`missing_file` root cause)
+
+A real user hit `missing_file` in dev: paid, but the project got created with no file. Root cause —
+**not** related to the same-day saved-payment-methods work (verified: that diff never touches
+`handleSuccess`'s upload block or `file-store.ts`; the `missing_file` comment in
+`processFormatting.ts` documenting this exact gap predates it by a month, 2026-06-21). `file-store.ts`
+held the selected file in a **plain in-memory JS variable** — any same-origin reload between file
+selection and payment confirmation (a refresh, a payment redirect, a backgrounded mobile tab) silently
+wiped it, and `handleSuccess` shipped the project anyway with `original_file_path: null`. Rewrote
+`file-store.ts` to persist via IndexedDB (Files/Blobs are structured-cloneable — no serialization
+needed), verified in-browser that it survives a full reload both at the raw API level and through the
+real `PageSelectionPage` → `CheckoutPage` flow. Also added a fallback for whatever residual loss
+remains (private-browsing modes that block IndexedDB, etc.): `CheckoutPage` now detects a still-missing
+file after upload and shows a distinct, honest screen with a direct link to re-upload, instead of the
+generic "Pagamento confirmado!" as if the file made it. Separately confirmed (via `processing_started_at`
++ a real recovery run) that `/api/processing/recover-file` correctly re-triggers the pipeline — the
+recovery flow itself was never broken, just occasionally hard to trigger (see below).
+
+> Smaller, related bug **not yet fixed**: `ProjectDetailPage.tsx`'s `handleRecoverUpload` silently
+> no-ops if `session` is stale/missing (no error shown) — this is what made a recovery retry look
+> "stuck" for several minutes in the same incident; a hard refresh fixed it. Worth a follow-up: show an
+> explicit error instead of no-op-ing.
+
+### 2026-07-24 — Saved payment methods (save + remove)
+
+Cards can now be saved at checkout and reused, and removed from Profile. `create-payment-intent`
+attaches a lazily-created Stripe Customer (`getOrCreateStripeCustomerId`, new
+`server/src/lib/stripeCustomer.ts`, id cached on `user_profiles.stripe_customer_id` — **migration not
+yet run, see Open work**) + `setup_future_usage: 'off_session'`, so `PaymentElement` shows its own native
+"save for future purchases" checkbox with no custom consent UI needed. Two new endpoints:
+`GET /api/checkout/payment-methods` (lists only brand/last4/exp — never anything else Stripe carries)
+and `POST /api/checkout/payment-methods/:id/detach` (verifies the payment method's `.customer` actually
+matches the caller's stored customer id before detaching — 404 either way so a non-owner can't probe
+whether an id exists). `CheckoutPage.tsx` shows saved cards as selectable rows above "Usar novo cartão"
+and confirms directly against `clientSecret` (no mounted `PaymentElement` needed for that path — Stripe
+itself rejects a `payment_method` that doesn't belong to the PaymentIntent's customer, so there's nothing
+extra for us to validate at confirm time). `ProfilePage.tsx` gets a new card listing saved cards with an
+inline two-step "Remover"/"Confirmar remoção" per row. `stripe_customer_id` is server-managed only —
+no client-side Supabase query ever selects it (same treatment as `trial_used_at`).
+
+### 2026-07-23 — Checkout race fix, pending-inputs redesign, project detail cleanup
+
+`CheckoutPage.tsx`'s create-payment-intent effect had no StrictMode double-invoke guard: two
+PaymentIntents/orders could be created per checkout, and since `<Elements>` only binds to whichever
+`clientSecret` was set first, a later response could silently overwrite `intentData` with an order the
+payment form was never shown for — the project then got stamped with an unpaid order and the payment
+gate blocked processing forever. Fixed with the same `cancelled`-flag pattern already used elsewhere.
+Also: the processed-file preview's header page-number stamp (and the cosmetic top-left page-count badge)
+are hidden rather than shown wrong — docx-preview can't recompute `PAGE` fields or do true pagination, so
+any number it showed there was unreliable; the PDF/sumário remain the source of truth. `ProjectDetailPage.tsx`'s
+pending-inputs panel now groups items by content type (Tabelas/Figuras) and replaces the bare "Remover"
+with an amber "Deixar em branco" + accessible confirm popover (focus trap, `alertdialog`, remembered via
+`localStorage`); new `Textarea` primitive (`components/ui/textarea.tsx`). Sidebar cleanup: merged
+title/detail sections, dropped the redundant file-name and references-pages rows, compact `dd/mm/yyyy`
+dates, price+date as matched columns, merged duplicate "Serviço" rows (guideline shown only for
+formatting), clarified the docx download button's label.
 
 ### 2026-07-23 — Pré-textual preview: separate page cards (branch `pretextual-preview-redesign`)
 

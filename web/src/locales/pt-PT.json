@@ -5,6 +5,12 @@
     "newService": "Novo serviço",
     "signOut": "Terminar sessão"
   },
+  "footer": {
+    "tagline": "Formatação académica e revisão com IA, feita para trabalhos académicos.",
+    "terms": "Termos de utilização",
+    "privacy": "Privacidade",
+    "rights": "Todos os direitos reservados."
+  },
   "languageSwitcher": {
     "label": "Idioma",
     "english": "English",
@@ -12,15 +18,15 @@
     "portuguesePT": "Português (Portugal)"
   },
   "hero": {
-    "tagline": "Feito para quem escreve uma tese",
-    "title1": "Tenha a sua tese",
-    "title2": "pronta para o júri.",
-    "description": "O FormaTexto faz a revisão em tom académico e formata o seu manuscrito segundo as normas oficiais da sua instituição. Dois serviços, sem curva de aprendizagem, sem reescritas que não pediu.",
-    "guidelinesList": "ABNT, APA, MLA, Chicago",
+    "tagline": "Feito para quem escreve um trabalho académico",
+    "title1": "Tenha o seu trabalho",
+    "title2": "pronto para o júri.",
+    "description": "O FormaTexto usa inteligência artificial para rever e formatar o seu trabalho, de acordo com as normas que escolher. O nosso serviço é mais rápido e mais barato do que a revisão humana tradicional, dando-lhe mais tempo para se focar no conteúdo.",
+    "guidelinesList": "Formatação ABNT",
     "yourTextStays": "O seu texto continua seu",
     "uploadTab": "Enviar ficheiro",
     "linkTab": "Colar ligação",
-    "dropPrompt": "Largue a sua tese aqui, ou clique para escolher",
+    "dropPrompt": "Largue o seu trabalho aqui, ou clique para escolher",
     "fileLimit": "Até 50MB. O ficheiro é encriptado durante o envio.",
     "documentUrl": "URL do documento",
     "linksSupported": "Suportamos ligações do Google Docs, OneDrive ou Dropbox.",
@@ -29,59 +35,59 @@
   },
   "services": {
     "kicker": "Dois serviços",
-    "title1": "Escolha o que a sua tese precisa",
+    "title1": "Escolha o que o seu trabalho precisa",
     "title2": "hoje.",
+    "subtitle": "Escolha um, ou os dois — são cobrados e entregues de forma independente.",
     "proofreading": {
       "label": "Revisão",
       "title1": "Gramática e clareza em",
       "title2": "tom académico.",
-      "description": "Identificamos gralhas, frases desajeitadas e falhas de tempo verbal. As sugestões mantêm o tom académico: sem reescritas excessivas, sem alterações de voz que não pediu.",
+      "description": "Usamos um pipeline de IA próprio — desenvolvido e ajustado por nós — para identificar gralhas, frases desajeitadas e falhas de tempo verbal. As sugestões mantêm o tom académico: sem reescritas excessivas, sem alterações de voz que não pediu.",
       "stats": {
         "corrections": "correções",
-        "tone": "ajuste de tom",
         "rewrites": "reescritas"
       },
-      "cta": "Rever a minha tese"
+      "cta": "Rever o meu trabalho"
     },
     "formatting": {
       "label": "Formatação",
       "title1": "Adapte ao padrão da",
       "title2": "sua instituição.",
       "description": "Margens, títulos, citações, referências. Reestruturamos o seu documento conforme o padrão exigido pelo júri.",
-      "cta": "Formatar a minha tese"
+      "cta": "Formatar o meu trabalho"
     },
     "guidelines": {
       "abnt": { "name": "ABNT NBR 14724", "description": "Padrão académico brasileiro" },
       "apa": { "name": "APA 7.ª edição", "description": "Ciências sociais, psicologia" },
       "mla": { "name": "MLA 9.ª edição", "description": "Humanidades, literatura" },
       "chicago": { "name": "Chicago 17.ª edição", "description": "História, artes" }
+    },
+    "comingSoon": {
+      "label": "Brevemente"
     }
   },
   "pricing": {
     "kicker": "Preços",
-    "title1": "Pague uma vez,",
-    "title2": "por tese.",
-    "free": {
-      "label": "Avaliação grátis",
-      "subtitle": "Uma lauda por nossa conta. Só uma vez.",
+    "title1": "Pague por lauda,",
+    "title2": "sem mensalidade.",
+    "subtitle": "Sem subscrição, sem taxas escondidas. Paga uma vez, só pelas páginas que enviar.",
+    "laudaNote": "Uma lauda é a unidade padrão de ~300 palavras usada na precificação académica.",
+    "trialBanner": "A sua primeira lauda é totalmente grátis — qualquer serviço, avaliação única, sem cartão.",
+    "perLauda": "/ lauda",
+    "minimum": "mínimo de {{amount}} por documento",
+    "formatting": {
       "features": [
-        "Uma lauda grátis, uma vez, em qualquer serviço",
-        "Sem cartão de crédito",
-        "Pré-visualização lado a lado"
-      ],
-      "cta": "Experimentar uma lauda grátis"
+        "Margens, títulos e citações reestruturados",
+        "ABNT NBR 14724 — mais normas brevemente",
+        "Índice paginado automaticamente"
+      ]
     },
-    "paid": {
-      "label": "Por tese",
-      "perDocument": "/ documento",
-      "subtitle": "Pagamento único, tese inteira.",
+    "proofreading": {
       "features": [
-        "Até 200 laudas",
-        "Ambos os serviços incluídos",
-        "Três trocas de norma",
-        "Exportação .docx"
-      ],
-      "cta": "Enviar a minha tese"
+        "Correções de gramática e clareza",
+        "Tom académico preservado",
+        "Sem reescritas não solicitadas"
+      ]
     }
   },
   "auth": {
@@ -104,6 +110,9 @@
     "password": "Palavra-passe",
     "passwordPlaceholderSignUp": "Pelo menos 8 caracteres",
     "passwordPlaceholderSignIn": "••••••••",
+    "confirmPassword": "Confirmar palavra-passe",
+    "confirmPasswordPlaceholder": "Introduza a palavra-passe novamente",
+    "passwordMismatch": "As palavras-passe não coincidem.",
     "forgotPassword": "Esqueceu-se da palavra-passe?",
     "showPassword": "Mostrar palavra-passe",
     "hidePassword": "Ocultar palavra-passe",
@@ -150,14 +159,14 @@
   },
   "getStarted": {
     "title": "Novo serviço",
-    "subtitle": "Do que a sua tese precisa hoje?",
+    "subtitle": "Do que o seu trabalho precisa hoje?",
     "backToDashboard": "Voltar para documentos",
     "stepService": "Escolha um serviço",
     "stepDocument": "Adicione o seu documento",
     "guidelineLabel": "Escolha uma norma",
     "freeBadge": "Avaliação grátis",
     "firstPage": "só a 1.ª lauda",
-    "perThesis": "por tese",
+    "perThesis": "por trabalho",
     "submit": "Enviar documento",
     "fetchingDocument": "A obter documento…",
     "ctaSubtitle": "Avaliação única — a sua primeira lauda é por nossa conta.",
@@ -269,6 +278,15 @@
     "changePassword": "Palavra-passe",
     "changePasswordHint": "Defina uma nova palavra-passe para a sua conta.",
     "changePasswordBtn": "Alterar palavra-passe",
+    "paymentMethods": {
+      "title": "Formas de pagamento guardadas",
+      "empty": "Ainda não há cartões guardados.",
+      "remove": "Remover",
+      "confirmRemove": "Confirmar remoção",
+      "removing": "A remover…",
+      "loadError": "Não foi possível carregar os seus cartões guardados.",
+      "removeError": "Não foi possível remover o cartão — tente novamente."
+    },
     "passwordModalTitle": "Alterar a sua palavra-passe",
     "passwordModalSubtitle": "Introduza a sua palavra-passe atual para confirmar a identidade e escolha uma nova.",
     "currentPassword": "Palavra-passe atual",

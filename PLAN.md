@@ -69,8 +69,8 @@
 
 ## Pages & Legal
 
-- [ ] Landing page redesign (unauthenticated)
-  - Full visual overhaul of `LandingPage.tsx` and its sections (`Hero.tsx`, `Services.tsx`, `Pricing.tsx`) targeting non-logged-in visitors; stronger value proposition, social proof, conversion-focused layout.
+- [ ] Landing page: social proof
+  - Content accuracy pass + AI/value-prop messaging done (2026-07-24, see HANDOFF.md). Still no testimonials, usage numbers, or other trust signals — nothing genuine to show yet at this stage, but worth adding once there's real user/usage data to draw on.
 
 ---
 
