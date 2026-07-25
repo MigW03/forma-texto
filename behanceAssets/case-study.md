@@ -73,7 +73,11 @@ The part of this process worth showing a hiring manager isn't the screens themse
 
 ### Landing
 `01-landing.png`
-Leads with the upload zone itself, not a hero image — you can start the real task (drop a file or paste a Google Docs link) before creating an account. This exists because the trust problem starts immediately: if the first thing a visitor sees is a sign-up wall, they've already left to go compare against the human service they know.
+Leads with the upload zone itself, not a hero image — you can start the real task (drop a file or paste a Google Docs link) before creating an account. This exists because the trust problem starts immediately: if the first thing a visitor sees is a sign-up wall, they've already left to go compare against the human service they know. A minimal footer (tagline, Terms, Privacy) closes the page instead of trailing off into whitespace — nothing new is being pitched down there, it just gives the scroll a floor.
+
+### Account creation
+`03-sign-up.png`
+Sign-up asks for the password twice and flags a mismatch inline, next to the field, before the form is ever submitted. Small on its own, but on a page whose entire job is lowering the friction to trust a tool with an academic document, a rejected-after-submit password error is an unnecessary stumble at the worst possible moment — right before someone was about to commit.
 
 ### New service — services, guideline, upload
 `09-get-started-filled.png`
@@ -81,14 +85,17 @@ One scrolling page instead of a multi-step wizard, because splitting "pick a ser
 
 ### Lauda selection
 `11-page-selection.png`
-The screen that does the most work against the trust problem. The left rail lists every lauda for one-click include/exclude — the "granularity, not all-or-nothing" principle made concrete. The center pane renders the actual document, so a user is looking at *their* pages, not a generic preview. The right rail keeps the price summary live as selections change, so the number never lags behind the decision that produced it.
+The screen that does the most work against the trust problem. The left rail lists every lauda for one-click include/exclude — the "granularity, not all-or-nothing" principle made concrete. The center pane renders the actual document, so a user is looking at *their* pages, not a generic preview: pré-textual pages (cover, title page, abstract, table of contents) get pulled out into their own labeled cards ahead of the numbered laudas, so nobody is left wondering why "Lauda 1" doesn't start on page 1. The right rail keeps the price summary live as selections change, so the number never lags behind the decision that produced it.
 
 ### Checkout
 `12-checkout.png`
-Deliberately boring: a line-item summary that matches the previous screen exactly, a restated retention notice, then payment. If this screen introduced any new information the user hadn't already seen, it would break the first design principle.
+Deliberately boring: a line-item summary that matches the previous screen exactly, a restated retention notice, then payment. If this screen introduced any new information the user hadn't already seen, it would break the first design principle. A returning user with a saved card pays in one click instead of retyping it every time; "Usar novo cartão" stays visible as an explicit escape hatch, and saving a new card for next time is an opt-in checkbox on Stripe's own payment element, never assumed on the user's behalf.
 
 ### Project detail — original vs. processed
-Not pictured yet (see `README.md`) — this is where "show the work" matters most. The finished project renders original and processed documents side by side rather than only offering a download, so the user can verify the result before trusting it, and any `needs_input` gaps surface as a short, specific list rather than a vague "action required" flag.
+Not pictured yet (see `README.md`) — this is where "show the work" matters most. The finished project renders original and processed documents side by side rather than only offering a download, so the user can verify the result before trusting it. Any `needs_input` gap surfaces grouped by type — tables, then figures — each with a field to type the missing caption or source directly, or an amber "deixar em branco" action that requires a separate confirmation before it's accepted. Skipping a caption is a deliberate choice the interface makes you confirm, not an accidental empty field you might not notice until the banca does.
+
+### Account settings — saved payment methods
+Not pictured yet — added since the last capture of this flow. A returning user's saved cards are listed by brand/last-four/expiry, with an inline two-step "Remover" → "Confirmar remoção" per row instead of a modal, so removing a card doesn't interrupt the rest of the page. Nothing beyond what Stripe already exposes for that purpose is ever stored or shown.
 
 ---
 
