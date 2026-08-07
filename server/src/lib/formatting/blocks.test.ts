@@ -76,6 +76,33 @@ describe('blockText', () => {
     const doc = `<w:document><w:body><w:p><w:r><w:t>CESAR &amp; LOIS</w:t></w:r></w:p></w:body></w:document>`
     expect(blockText(getBlocks(doc)[0])).toBe('CESAR & LOIS')
   })
+
+  it('does not mistake the <w:tabs> tab-stop container for a <w:t> run', () => {
+    // `<w:tabs>` and `<w:tab w:val=…/>` both start with the literal 4 chars `<w:t`, so a
+    // naive /<w:t[^>]*>/ opens on the tab-stop container and swallows everything up to the
+    // next real </w:t> as if it were paragraph text. Right-tab stops appear on nearly every
+    // sumário entry (including the ones `buildTocEntry` generates), so this corrupts text
+    // extraction wherever blockText runs over one.
+    const doc =
+      `<w:document><w:body><w:p><w:pPr><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="8306"/></w:tabs></w:pPr>` +
+      `<w:r><w:t>INTRODUÇÃO</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>12</w:t></w:r></w:p></w:body></w:document>`
+    expect(blockText(getBlocks(doc)[0])).toBe('INTRODUÇÃO 12')
+  })
+
+  it('keeps a field code out of the extracted text', () => {
+    // A Google Docs auto-TOC stores its field code in <w:instrText>. The tab-stop bug let
+    // that leak into the "extracted text" of a real document.
+    const doc =
+      `<w:document><w:body><w:p><w:pPr><w:tabs><w:tab w:val="right" w:pos="8306"/></w:tabs></w:pPr>` +
+      `<w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" \\h \\z \\u </w:instrText></w:r>` +
+      `<w:r><w:t>SUMÁRIO</w:t></w:r></w:p></w:body></w:document>`
+    expect(blockText(getBlocks(doc)[0])).toBe('SUMÁRIO')
+  })
+
+  it('still reads a <w:t> that carries attributes', () => {
+    const doc = `<w:document><w:body><w:p><w:r><w:t xml:space="preserve">  spaced  </w:t></w:r></w:p></w:body></w:document>`
+    expect(blockText(getBlocks(doc)[0])).toBe('spaced')
+  })
 })
 
 describe('blockDescriptor', () => {

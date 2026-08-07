@@ -147,7 +147,7 @@ describe('detectPretextual + buildSumario — Word/Google-Docs automatic TOC (re
     expect(out).not.toContain('instrText')
     // Trailing "—" on the rebuilt entry is the page-number placeholder
     // (SUMARIO_PAGE_PLACEHOLDER) — pagination hasn't run on this doc yet.
-    expect(getBlocks(out).map(blockText)).toEqual(['SUMÁRIO', 'Capítulo Um—', 'Capítulo Um', 'Texto do capítulo.'])
+    expect(getBlocks(out).map(blockText)).toEqual(['SUMÁRIO', 'Capítulo Um —', 'Capítulo Um', 'Texto do capítulo.'])
   })
 })
 

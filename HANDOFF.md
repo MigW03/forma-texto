@@ -138,10 +138,10 @@ Full breakdown: [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md). Su
 > — it's the priority order. Feature-level checklist lives in `PLAN.md`; this section is the
 > launch-critical / cross-cutting set.
 
-> **Pending migration (not yet run on Supabase):** the saved-payment-methods feature (2026-07-24) needs
-> `ALTER TABLE user_profiles ADD COLUMN stripe_customer_id text UNIQUE;` — see `supabase_tables.md`.
-> Until this runs, `/api/checkout/payment-methods` and `create-payment-intent`'s customer attachment
-> will error (column doesn't exist).
+> **Schema is fully migrated** (verified against the live schema 2026-08-07): every column the code
+> expects exists, and the dead `projects.removed_inputs` has been dropped. No `ALTER TABLE` is
+> outstanding. What's left on the database side is the two cron jobs under `server/sql/`, which can't
+> be scheduled until the backend has a public URL — see Deploy steps below.
 
 ### Needs code — sorted by priority (work this list top to bottom)
 
@@ -224,8 +224,8 @@ Full breakdown: [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md). Su
 
 ### Deploy steps (when going to production)
 
-- [ ] Run the `processing_attempts` AND `processing_started_at` migrations (`supabase_tables.md`) and the
-      retry cron (`server/sql/retry_pending_cron.sql`). **Leave the retry cron OFF during free-tier
+- [ ] Schedule the retry cron (`server/sql/retry_pending_cron.sql`) — its `processing_attempts`
+      prerequisite is already live. **Leave the retry cron OFF during free-tier
       testing** — it would consume fresh daily quota on old jobs; the manual `POST /api/processing/start`
       retry is what to use while testing. Note: `recoverStuckJobs()` (crash recovery, no AI calls) also
       runs on every server boot regardless of the cron, so orphaned `processing` jobs still self-heal on

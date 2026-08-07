@@ -141,7 +141,9 @@ describe('applySumarioPageNumbers', () => {
     expect(blocks[3]).toContain('<w:t>5</w:t>')
     // blockText drops the standalone tab run, so title and number concatenate here;
     // in Word/PDF the tab separates them visually.
-    expect(blockText(blocks[1])).toBe('1 INTRODUÇÃO3')
+    // The space is the entry's tab separator — `blockText` emits one per tab so the page
+    // number never merges into the section name (`isTocEntry` keys on that separator).
+    expect(blockText(blocks[1])).toBe('1 INTRODUÇÃO 3')
   })
 
   it('stamps entries whose tab run carries an rPr from the explicit-font pass', () => {
@@ -156,7 +158,9 @@ describe('applySumarioPageNumbers', () => {
     const blocks = getBlocks(documentXml)
     // number stamped after the font-carrying tab run, and it reuses that same rPr
     expect(blocks[1]).toContain(`<w:tab/></w:r><w:r>${font}<w:t>3</w:t></w:r></w:p>`)
-    expect(blockText(blocks[1])).toBe('1 INTRODUÇÃO3')
+    // The space is the entry's tab separator — `blockText` emits one per tab so the page
+    // number never merges into the section name (`isTocEntry` keys on that separator).
+    expect(blockText(blocks[1])).toBe('1 INTRODUÇÃO 3')
     // idempotent on the font-stamped shape too
     expect(applySumarioPageNumbers(documentXml, PAGES).documentXml).toBe(documentXml)
   })

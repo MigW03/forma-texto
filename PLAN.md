@@ -48,8 +48,6 @@
 
 ## Backend / AI Pipeline
 
-- [ ] `blockText()` regex matches `<w:tabs>`/`<w:tab …/>` as if they were `<w:t>` (server, `blocks.ts`)
-  - `/<w:t[^>]*>([\s\S]*?)<\/w:t>/g` also matches the tab-stop container `<w:tabs>` (present on nearly every right-tab-stopped paragraph, including the server's own generated sumário entries via `buildTocEntry`) and the attributed `<w:tab w:val="…"/>` inside it, since both start with the literal 4 chars `<w:t`. The regex then greedily swallows everything up to the next real `</w:t>` as if it were paragraph text — confirmed corrupting text extraction on a real document (a Google Docs auto-TOC's `<w:instrText>` field code leaked into the "extracted text"). `sumarioPagination.ts`'s `findSumarioEntries` already has the correct fix (`<w:t(?:\s[^>]*)?>`, word-boundary-safe) — `blocks.ts`'s `blockText` needs the same. Didn't end up mattering for the pré-textual/sumário bug fixed 2026-07-21 (that path gates on `isParagraph` before calling `blockText`, so an `<w:sdt>` block never reaches it), but is a live correctness risk wherever else `blockText` runs over a paragraph with a tab stop (heading detection, captions, …).
 - [ ] Guideline isolation — every formatting pass scoped strictly to the active guideline (post-MVP)
   - Audit that no ABNT-specific behavior leaks into APA/MLA/Chicago (and vice versa) as the app expands past Brazil-only ABNT. Post-MVP — launching ABNT-only first — but worth doing now in a separate branch if it doesn't cost quality or the launch timeline, since the pipeline was built ABNT-first and may have implicit ABNT assumptions baked into passes that are meant to be guideline-generic.
 - [ ] Surface `validateOutput` failures instead of only logging them; consider a narrow repair path

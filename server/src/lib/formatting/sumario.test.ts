@@ -74,7 +74,7 @@ describe('buildSumario', () => {
     const result = buildSumario(doc, pretextualWith(0, 1, 2))
     const entry = getBlocks(result)[1]
     expect(entry).toContain(`<w:r><w:tab/></w:r><w:r><w:t>${SUMARIO_PAGE_PLACEHOLDER}</w:t></w:r></w:p>`)
-    expect(blockText(entry)).toBe(`1 INTRODUÇÃO${SUMARIO_PAGE_PLACEHOLDER}`)
+    expect(blockText(entry)).toBe(`1 INTRODUÇÃO ${SUMARIO_PAGE_PLACEHOLDER}`)
   })
 
   it('indents H2 and H3 entries', () => {
@@ -189,7 +189,7 @@ describe('buildSumario', () => {
     const entryTexts = [blocks[1], blocks[2]].map(blockText)
     // Trailing "—" is the page-number placeholder (SUMARIO_PAGE_PLACEHOLDER) — real
     // pagination hasn't run on this doc yet.
-    expect(entryTexts).toEqual(['BEATRIZ MILHAZES—', '1 INTRO—'])
+    expect(entryTexts).toEqual(['BEATRIZ MILHAZES —', '1 INTRO —'])
     // The long paragraph stays in the body (untouched) but must not be duplicated as a TOC entry.
     expect(blockText(blocks[1])).not.toContain('Milhazes, 1960')
     expect(blockText(blocks[2])).not.toContain('Milhazes, 1960')

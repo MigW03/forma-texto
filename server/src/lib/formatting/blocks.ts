@@ -134,11 +134,28 @@ export const isStructuredDocTag = (b: string) => /^<w:sdt\b/.test(b)
 /** True when the paragraph belongs to a numbered/bulleted list (`<w:numPr>` in its pPr). */
 export const isListItem = (b: string) => /<w:numPr\b/.test(b)
 
-/** Visible text of a block (all `<w:t>` runs concatenated, tags stripped, entities decoded, trimmed). Tab elements emit a space so Word auto-TOC page numbers don't merge into the section name. */
+/**
+ * Visible text of a block (all `<w:t>` runs concatenated, tags stripped, entities decoded,
+ * trimmed). A tab character emits a space so Word auto-TOC page numbers don't merge into
+ * the section name — `isTocEntry` in `preTextual.ts` keys on that separator.
+ *
+ * The `<w:t` match must be anchored on a word boundary: `<w:tabs>` (the tab-stop container,
+ * present on nearly every right-tab-stopped paragraph) and the attributed `<w:tab w:val=…/>`
+ * inside it BOTH start with the literal four characters `<w:t`. A looser `/<w:t[^>]*>/` opens
+ * on those and greedily swallows everything up to the next real `</w:t>` as paragraph text —
+ * confirmed leaking a Google Docs auto-TOC field code into the extracted text of a real
+ * document. Runs are matched in document order alongside tabs (rather than collecting `<w:t>`
+ * spans and separately replacing tabs) because a tab lives *between* runs, so a replacement
+ * outside the captured spans is dropped before it can act as a separator.
+ */
 export const blockText = (b: string) => {
-  const withTabs = b.replace(/<w:tab\/>/g, ' ')
-  const raw = (withTabs.match(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g) ?? []).map(t => t.replace(/<[^>]+>/g, '')).join('').trim()
-  return decodeXmlEntities(raw)
+  const parts: string[] = []
+  const re = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>|<w:tab\s*\/>/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(b)) !== null) {
+    parts.push(m[1] === undefined ? ' ' : m[1].replace(/<[^>]+>/g, ''))
+  }
+  return decodeXmlEntities(parts.join('').trim())
 }
 
 /** Top-level body blocks (paragraphs / tables / sdt), in document order. */
