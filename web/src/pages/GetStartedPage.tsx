@@ -41,7 +41,7 @@ async function getLaudaCount(file: File): Promise<number | null> {
 type GuidelineId = string
 type InputTab = 'upload' | 'link'
 
-export const SESSION_KEY = 'forma-texto-get-started'
+export const SESSION_KEY = 'scriba-get-started'
 
 function loadSession() {
   try {

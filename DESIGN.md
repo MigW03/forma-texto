@@ -1,4 +1,4 @@
-# FormaTexto — Design System
+# scriba — Design System
 
 > Source of truth for all frontend visual decisions. Follow strictly. Shadcn integration must map to these tokens — do not introduce new visual values.
 

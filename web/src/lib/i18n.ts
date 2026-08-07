@@ -24,7 +24,7 @@ i18n
     detection: {
       order: ['localStorage', 'navigator'],
       caches: ['localStorage'],
-      lookupLocalStorage: 'formatexto.lang',
+      lookupLocalStorage: 'scriba.lang',
       convertDetectedLanguage: (lng: string) => {
         if (lng === 'pt-BR' || lng === 'pt-PT') return lng
         if (lng.toLowerCase().startsWith('pt')) return 'pt-BR'

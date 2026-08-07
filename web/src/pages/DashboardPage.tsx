@@ -144,35 +144,37 @@ function ProjectRow({ project }: { project: Project }) {
   return (
     <Link
       to={ROUTES.project.replace(':id', project.id)}
-      className="bg-white rounded-2xl border border-border px-6 py-5 flex items-center gap-4 hover:border-forest-mid/40 transition-colors group"
+      className="bg-white rounded-2xl border border-border px-6 py-5 flex items-start gap-4 hover:border-forest-mid/40 transition-colors group"
     >
       <div className="shrink-0 w-10 h-10 rounded-xl bg-sand flex items-center justify-center">
         <FileText size={18} className="text-muted" aria-hidden="true" />
       </div>
 
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-ink truncate">
-          {project.title || project.fileName}
-        </p>
-        {project.title && (
-          <p className="text-xs text-muted truncate">{project.fileName}</p>
-        )}
-        <p className="text-xs text-muted mt-0.5">{formatTime(t, project.submittedAt)}</p>
-      </div>
+      <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-ink truncate">
+            {project.title || project.fileName}
+          </p>
+          {project.title && (
+            <p className="text-xs text-muted truncate">{project.fileName}</p>
+          )}
+          <p className="text-xs text-muted mt-0.5">{formatTime(t, project.submittedAt)}</p>
+        </div>
 
-      <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-        {SERVICE_ORDER.filter(s => project.services.includes(s)).map(service => (
-          <ServiceBadge
-            key={service}
-            service={service}
-            // The academic guideline only qualifies the formatting service.
-            guideline={service === 'formatting' ? project.guideline : undefined}
-          />
-        ))}
-        <Badge role="status" variant={STATUS_BADGE_VARIANT[project.status]}>
-          {t(`dashboard.status.${project.status}`)}
-        </Badge>
-        <ChevronRight size={14} aria-hidden="true" className="text-muted/40 group-hover:text-muted transition-colors ml-1" />
+        <div className="flex items-center gap-2 shrink-0 flex-wrap sm:justify-end">
+          {SERVICE_ORDER.filter(s => project.services.includes(s)).map(service => (
+            <ServiceBadge
+              key={service}
+              service={service}
+              // The academic guideline only qualifies the formatting service.
+              guideline={service === 'formatting' ? project.guideline : undefined}
+            />
+          ))}
+          <Badge role="status" variant={STATUS_BADGE_VARIANT[project.status]}>
+            {t(`dashboard.status.${project.status}`)}
+          </Badge>
+          <ChevronRight size={14} aria-hidden="true" className="text-muted/40 group-hover:text-muted transition-colors ml-1" />
+        </div>
       </div>
     </Link>
   )

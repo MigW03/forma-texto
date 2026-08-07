@@ -1,8 +1,8 @@
-# FormaTexto
+# scriba
 
 ## What Is This
 
-FormaTexto is an AI-powered document formatting and proofreading service. Users upload a `.docx` or `.pdf`, choose services (academic formatting and/or grammatical revision/correction), select which pages to process, and pay. The backend processes the file using a multi-model AI pipeline — making the service faster and cheaper than traditional human-based alternatives.
+scriba is an AI-powered document formatting and proofreading service. Users upload a `.docx` or `.pdf`, choose services (academic formatting and/or grammatical revision/correction), select which pages to process, and pay. The backend processes the file using a multi-model AI pipeline — making the service faster and cheaper than traditional human-based alternatives.
 
 ## Repository Layout
 
@@ -309,7 +309,7 @@ Trial: 1 free page per user. Gate: `user_profiles.trial_used_at` is null → eli
 
 ## i18n
 
-Languages: `en`, `pt-BR`, `pt-PT`. Detection: `localStorage` key `formatexto.lang`, fallback browser.
+Languages: `en`, `pt-BR`, `pt-PT`. Detection: `localStorage` key `scriba.lang`, fallback browser.
 
 ```tsx
 const { t } = useTranslation()

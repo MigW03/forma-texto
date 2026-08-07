@@ -21,7 +21,7 @@
     "tagline": "Feito para quem escreve um trabalho académico",
     "title1": "Tenha o seu trabalho",
     "title2": "pronto para o júri.",
-    "description": "O FormaTexto usa inteligência artificial para rever e formatar o seu trabalho, de acordo com as normas que escolher. O nosso serviço é mais rápido e mais barato do que a revisão humana tradicional, dando-lhe mais tempo para se focar no conteúdo.",
+    "description": "O scriba usa inteligência artificial para rever e formatar o seu trabalho, de acordo com as normas que escolher. O nosso serviço é mais rápido e mais barato do que a revisão humana tradicional, dando-lhe mais tempo para se focar no conteúdo.",
     "guidelinesList": "Formatação ABNT",
     "yourTextStays": "O seu texto continua seu",
     "uploadTab": "Enviar ficheiro",
@@ -93,7 +93,7 @@
   "auth": {
     "signIn": {
       "title": "Bem-vindo de volta",
-      "subtitle": "Inicie sessão para continuar no FormaTexto.",
+      "subtitle": "Inicie sessão para continuar no scriba.",
       "submit": "Iniciar sessão"
     },
     "signUp": {
@@ -247,9 +247,9 @@
       "pagesLabel": "Páginas das referências",
       "pagesPlaceholder": "Ex: 45-60 ou 45, 46, 47",
       "disclaimer": "As referências não serão revistas gramaticalmente. A secção será apenas formatada conforme as normas. As citações no corpo do texto continuam a ser corrigidas.",
-      "accuracyDisclaimer": "O FormaTexto não verifica a exatidão das referências. Autores, títulos, datas, números de página e demais campos são formatados como estão — a correção das informações é da sua responsabilidade.",
+      "accuracyDisclaimer": "O scriba não verifica a exatidão das referências. Autores, títulos, datas, números de página e demais campos são formatados como estão — a correção das informações é da sua responsabilidade.",
       "formatChoice": {
-        "label": "Quero que o FormaTexto formate as minhas referências",
+        "label": "Quero que o scriba formate as minhas referências",
         "yes": "Sim",
         "no": "Não"
       },

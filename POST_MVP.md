@@ -1,4 +1,4 @@
-# FormaTexto — Post-MVP Backlog
+# scriba — Post-MVP Backlog
 
 > Features and refinements deliberately deferred until **after** the first launch — not because they're
 > unimportant, but because they're not required to ship a trustworthy first version. `PLAN.md` tracks what's

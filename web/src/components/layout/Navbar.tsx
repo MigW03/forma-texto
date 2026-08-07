@@ -4,6 +4,7 @@ import { ROUTES } from '../../lib/routes'
 import { useAuth } from '../../lib/auth-context'
 import LanguageSwitcher from './LanguageSwitcher'
 import { Button } from '@/components/ui/button'
+import Logo from '@/components/Logo'
 
 export default function Navbar() {
   useLocation()
@@ -26,12 +27,9 @@ export default function Navbar() {
       <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
         <Link
           to={user ? ROUTES.dashboard : ROUTES.home}
-          className="flex items-center gap-2"
+          className="flex items-center text-ink"
         >
-          <div className="w-7 h-7 bg-ink rounded-md flex items-center justify-center">
-            <span className="text-[#F0EEE8] font-semibold text-sm">F</span>
-          </div>
-          <span className="font-semibold text-ink text-[15px]">FormaTexto</span>
+          <Logo className="h-5 w-auto" />
         </Link>
 
         {user ? (

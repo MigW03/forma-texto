@@ -1,4 +1,4 @@
-# FormaTexto — Case Study Content
+# scriba — Case Study Content
 
 Written to be pasted into Behance's project editor, section by section. Screenshot references point to files in `screenshots/`.
 
@@ -8,7 +8,7 @@ This version leads with problem, users, and reasoning — not framework choices.
 
 ## Cover / one-liner
 
-**FormaTexto — why does formatting a thesis cost a week and an opaque quote?**
+**scriba — why does formatting a thesis cost a week and an opaque quote?**
 
 A case study in designing for trust: getting a student to hand their thesis to an AI, and to a price they can't see coming, in a market where the only alternative is a slow human and a vague invoice.
 

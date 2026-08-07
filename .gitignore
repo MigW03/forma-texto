@@ -20,6 +20,9 @@ dist-ssr
 .claude/settings.local.json
 .claire/
 
+# Social media content drafts (not app code, not shared)
+socialAssets/
+
 
 # Editor directories and files
 .vscode/*

@@ -6,13 +6,13 @@
 > bottom, and adjust **Open work** as things land. Keep it short and current —
 > deep reference lives in the docs linked below and in `git log`, not here.
 
-**Last updated:** 2026-07-22
+**Last updated:** 2026-08-07
 
 ---
 
 ## What this is
 
-FormaTexto — an AI-powered academic document formatting and proofreading service
+scriba (formerly FormaTexto) — an AI-powered academic document formatting and proofreading service
 (Brazil-first, ABNT). Users upload a `.docx`/`.pdf`, pick services and pages, pay,
 and the backend formats/corrects the file with a multi-model AI pipeline.
 
@@ -247,6 +247,58 @@ Full breakdown: [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md). Su
 
 > Older entries are compressed to a one-line index — see `git log -p -- HANDOFF.md` for full narrative
 > detail on any of them.
+
+### 2026-08-07 — Rename: FormaTexto → scriba, then logo + lowercase pass
+
+User picked "scriba" as the new product name (see `PLAN.md` for how it was shortlisted). First pass
+renamed everywhere text-only: locale files, navbar/footer wordmark, page `<title>`, legal pages
+(Terms/Privacy, all 3 locales), email templates + sender identity, client-side storage keys (`i18n.ts`'s
+`lookupLocalStorage`, `file-store.ts`'s IndexedDB name + hero-handoff key, `CheckoutPage`/
+`GetStartedPage`'s session keys, `ProjectDetailPage`'s dont-ask key — no migration, pre-launch so no
+real users to preserve state for), `package.json`/lockfile `name` fields (web: `scriba`, server:
+`scriba-server`), `.claude/launch.json`, all docs (`CLAUDE.md`, `DESIGN.md`, `POST_MVP.md`,
+`web/README.md`, `docs/formatting-pipeline.md`, `guides/TEMPLATE.md`), and the lower-priority
+`business_decisions/`/`behanceAssets/` copy. No real domain exists yet, so `legal@formatexto.com` and
+the password-reset email link now read `scriba.com` as a placeholder — swap once a domain is registered
+and verified in Resend (same blocker as the existing "verified domain" item in Open work below).
+
+Same-day follow-up: user supplied the real wordmark logo (`scriba.svg`, saved at repo root; canonical
+copy now at `web/src/assets/scriba-logo.svg`). Built `web/src/components/Logo.tsx` (inline SVG, `fill`
+swapped to `currentColor` so it inherits `text-ink`) and swapped it in for the old icon-box+text lockup
+in `Navbar.tsx`/`Footer.tsx` — the placeholder "F" square is gone. Emails keep plain bold text
+(`scriba`, no image) instead of the SVG, since inline SVG support in email clients (Outlook especially)
+is unreliable. User also confirmed the brand is lowercase everywhere, not just the logo graphic — every
+remaining "Scriba" mention (locale strings, legal text, docs, sender identity, business_decisions/
+behanceAssets copy) was lowercased to match.
+
+Verified: `tsc` clean on both `web`/`server`, full test suites green (52 web / 508 server), and the
+running app checked in-browser (navbar, hero copy, footer, tab title all read "scriba").
+
+**Still not touched:** the repo folder (`forma-texto`) — renaming it mid-session risks breaking open
+tooling/git state, left for the user to do manually.
+
+### 2026-08-07 — Dashboard row wrap fix, email font correction, Vercel/CORS prep
+
+**Dashboard responsiveness**: `ProjectRow` (`DashboardPage.tsx`) overflowed on narrow viewports — the
+service/status badges sat in a `shrink-0 flex-wrap` block, but its parent `Link` was a plain `flex`
+(no wrap), so the badge group had nowhere to wrap TO and just got clipped off-screen. Restructured so
+title and badges live in a `flex-col sm:flex-row` wrapper: badges drop to their own line under the
+title below the `sm` breakpoint, sit inline to the right above it. Verified at 375px (badges wrap,
+nothing clipped) and 1280px (matches the original single-line layout) via an injected-markup harness
+against the real compiled CSS (couldn't log in as the real user to hit the live route).
+
+**Email font**: templates were on a bare `sans-serif` fallback. Corrected per the user's direction —
+body copy uses the app's real stack (`'Inter',-apple-system,...`), and only the `scriba` header text
+(the logo's stand-in, since inline SVG in email is unreliable) uses `'Figtree','Inter',...`, matching
+the wordmark's actual source typeface without changing the app's own Inter-based UI font.
+
+**Vercel/CORS prep**: added `web/vercel.json` (SPA rewrite — all paths fall back to `index.html`, so
+React Router routes like `/projects/:id` survive a hard refresh once deployed). Backend CORS
+(`server/src/index.ts`) was a single static `FRONTEND_URL` origin, which can't cover Vercel's
+per-branch preview URLs. Now: `FRONTEND_URL` accepts a comma-separated list of exact origins, plus any
+`https://scriba-*.vercel.app` origin is allowed via regex — covers preview deployments without a config
+change per branch. No deploy host chosen for the backend itself yet (still needed: LibreOffice-capable
+persistent host, per Open work above).
 
 ### 2026-07-24 — Landing page overhaul + Hero pre-auth file/link persistence
 

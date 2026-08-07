@@ -35,7 +35,7 @@
 ## Notifications
 
 - [ ] Improve email HTML templates
-  - Templates live in `server/src/emails/`. Improve visual design: better spacing, branded header, footer with unsubscribe/legal note, responsive layout. Consider extracting a shared `layout.ts` wrapper. Currently using `onboarding@resend.dev` — swap `from` address to `noreply@formatexto.com` once domain is verified in Resend.
+  - Templates live in `server/src/emails/`. Improve visual design: better spacing, branded header, footer with unsubscribe/legal note, responsive layout. Consider extracting a shared `layout.ts` wrapper. Currently using `onboarding@resend.dev` — swap `from` address to `noreply@scriba.com` once domain is verified in Resend.
 - [ ] Welcome email on sign-up
   - Triggered by Supabase auth webhook on new user creation. Brief onboarding email: explains the service, links to `/get-started`, reminds user of the free first page. Template in `server/src/emails/welcome.ts`.
 - [ ] Order confirmation / receipt email
@@ -91,3 +91,5 @@
 
 - [ ] New branding and color system
   - Define new brand identity: logo, color palette, typography scale. Update `tailwind.config.js` tokens (currently `sand`, `forest`, `ink`, etc.) and propagate across all components. Update `DESIGN.md` to match.
+- [ ] Repo folder name still `forma-texto` (parent `formaTexto`)
+  - Rename from FormaTexto → scriba is otherwise done: text everywhere (lowercase, per user decision), plus the real wordmark logo wired into `Navbar`/`Footer` via `Logo.tsx` (`web/src/assets/scriba-logo.svg`). Only the working-directory name itself is untouched — renaming it mid-session risks breaking open tooling/git state. Rename manually when convenient.

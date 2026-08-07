@@ -1,6 +1,6 @@
-# Behance Assets — FormaTexto
+# Behance Assets — scriba
 
-This folder holds everything needed to publish a Behance case study for FormaTexto. It was assembled by driving the real, running app end-to-end (not mockups) so every screen reflects actual product behavior.
+This folder holds everything needed to publish a Behance case study for scriba. It was assembled by driving the real, running app end-to-end (not mockups) so every screen reflects actual product behavior.
 
 ## Contents
 

@@ -1,6 +1,6 @@
 # DOCX Formatting Pipeline
 
-How FormaTexto turns an uploaded `.docx` into an academically formatted one. This
+How scriba turns an uploaded `.docx` into an academically formatted one. This
 describes the system as it works **today**, built server-side in
 `server/src/lib/formatting/`. (The pipeline was originally prototyped in n8n; that
 is gone. Older `formattingPlan*.md` files have been retired in favour of this doc.)

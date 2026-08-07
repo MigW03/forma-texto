@@ -21,7 +21,7 @@
     "tagline": "Feito para quem escreve um trabalho acadêmico",
     "title1": "Deixe seu trabalho",
     "title2": "pronto para a banca.",
-    "description": "O FormaTexto usa inteligência artificial para revisar e formatar seu trabalho, de acordo com as normas que você escolher. Nosso serviço é mais rápido e mais barato que a revisão humana tradicional, te dando mais tempo para focar no conteúdo.",
+    "description": "O scriba usa inteligência artificial para revisar e formatar seu trabalho, de acordo com as normas que você escolher. Nosso serviço é mais rápido e mais barato que a revisão humana tradicional, te dando mais tempo para focar no conteúdo.",
     "guidelinesList": "Formatação ABNT",
     "yourTextStays": "Seu texto continua sendo seu",
     "uploadTab": "Enviar arquivo",
@@ -93,7 +93,7 @@
   "auth": {
     "signIn": {
       "title": "Bem-vindo de volta",
-      "subtitle": "Entre para continuar no FormaTexto.",
+      "subtitle": "Entre para continuar no scriba.",
       "submit": "Entrar"
     },
     "signUp": {
@@ -247,9 +247,9 @@
       "pagesLabel": "Páginas das referências",
       "pagesPlaceholder": "Ex: 45-60 ou 45, 46, 47",
       "disclaimer": "As referências não serão revisadas gramaticalmente. A seção será apenas formatada conforme as normas. Citações no corpo do texto continuam sendo corrigidas.",
-      "accuracyDisclaimer": "O FormaTexto não verifica a exatidão das referências. Autores, títulos, datas, números de página e demais campos são formatados como estão — a correção das informações é de sua responsabilidade.",
+      "accuracyDisclaimer": "O scriba não verifica a exatidão das referências. Autores, títulos, datas, números de página e demais campos são formatados como estão — a correção das informações é de sua responsabilidade.",
       "formatChoice": {
-        "label": "Quero que o FormaTexto formate minhas referências",
+        "label": "Quero que o scriba formate minhas referências",
         "yes": "Sim",
         "no": "Não"
       },

@@ -601,7 +601,7 @@ const DocxViewer = forwardRef<DocxViewerHandle, {
 
 // ── Pending inputs panel ─────────────────────────────────────────────────────
 
-const DONT_ASK_BLANK_INPUT_KEY = 'formatexto.dontAskBlankInput'
+const DONT_ASK_BLANK_INPUT_KEY = 'scriba.dontAskBlankInput'
 
 /** Groups pending inputs so the panel can separate tables from figures with a group title. */
 const PENDING_INPUT_CATEGORY: Record<PendingInputFE['kind'], 'table' | 'figure'> = {

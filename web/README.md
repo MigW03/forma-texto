@@ -1,6 +1,6 @@
-# FormaTexto — Web Frontend
+# scriba — Web Frontend
 
-React + TypeScript + Vite frontend for FormaTexto, an AI-powered document
+React + TypeScript + Vite frontend for scriba, an AI-powered document
 formatting and proofreading service for academic documents (Brazil-first, ABNT).
 
 For architecture, design system, routes, and conventions, see **[`../CLAUDE.md`](../CLAUDE.md)**.

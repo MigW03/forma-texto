@@ -2,7 +2,7 @@
 
 > **Canonical, machine- and AI-readable specification for the ABNT academic formatting standard.**
 > This is the single source of truth consumed by BOTH the deterministic XML passes
-> (Step A/B) and the AI passes (Step C/D) of the FormaTexto formatting pipeline.
+> (Step A/B) and the AI passes (Step C/D) of the scriba formatting pipeline.
 > It is the **template** for all other guideline spec files (APA, MLA, Chicago).
 
 - **Standard:** ABNT (Associação Brasileira de Normas Técnicas)

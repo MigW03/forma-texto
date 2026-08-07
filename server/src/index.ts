@@ -47,7 +47,26 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') res.set('Access-Control-Allow-Private-Network', 'true')
   next()
 })
-app.use(cors({ origin: process.env.FRONTEND_URL ?? 'http://localhost:5173' }))
+// Vercel gives every branch/PR its own unique preview URL, so a single static origin can't
+// cover them all. FRONTEND_URL (comma-separated) covers exact origins — production domain,
+// custom domain, local dev — and any *.vercel.app origin prefixed with the project name is
+// also allowed, so preview deployments can call the API without a config change per branch.
+const exactOrigins = (process.env.FRONTEND_URL ?? 'http://localhost:5173')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean)
+const vercelPreviewOrigin = /^https:\/\/scriba(-[a-z0-9-]+)*\.vercel\.app$/
+
+app.use(cors({
+  origin(origin, callback) {
+    // No Origin header (server-to-server calls, curl, health checks) — allow.
+    if (!origin) return callback(null, true)
+    if (exactOrigins.includes(origin) || vercelPreviewOrigin.test(origin)) {
+      return callback(null, true)
+    }
+    callback(new Error(`Origin not allowed: ${origin}`))
+  },
+}))
 // Cap JSON body size — finalize-inputs/recover-file bodies are small; the large payloads
 // (documents) travel as multipart to Supabase Storage directly, not through this API.
 app.use(express.json({ limit: '1mb' }))

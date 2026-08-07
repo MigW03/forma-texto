@@ -12,7 +12,7 @@
  * (e.g. a private-browsing mode that blocks IndexedDB entirely).
  */
 
-const DB_NAME = 'formatexto-file-store'
+const DB_NAME = 'scriba-file-store'
 const STORE_NAME = 'files'
 const KEY = 'current-upload'
 
@@ -80,7 +80,7 @@ export async function clearStoredFile(key: string = KEY): Promise<void> {
  * AuthPage/HomeRoute to land the user back on /get-started instead of /dashboard after
  * they authenticate — see those files.
  */
-export const HERO_HANDOFF_KEY = 'forma-texto-hero-handoff'
+export const HERO_HANDOFF_KEY = 'scriba-hero-handoff'
 
 /** Clears any pending Hero handoff (marker + the file in IndexedDB) — used wherever a
  *  "start a brand-new service" action happens, so a leftover from an abandoned session

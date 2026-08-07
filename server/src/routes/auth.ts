@@ -25,7 +25,7 @@ router.post('/notify-password-change', sensitiveLimiter, async (req: Request, re
   const name = (user.user_metadata?.full_name as string | undefined) ?? user.email
 
   const { error } = await resend.emails.send({
-    from: 'FormaTexto <onboarding@resend.dev>',
+    from: 'scriba <onboarding@resend.dev>',
     to: user.email,
     subject: 'Your password was changed',
     html: passwordChangedHtml({ name }),

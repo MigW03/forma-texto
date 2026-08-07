@@ -23,7 +23,7 @@ const SERVICE_LABELS: Record<ServiceKey, string> = {
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string)
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
-const SESSION_KEY = 'forma-texto-checkout'
+const SESSION_KEY = 'scriba-checkout'
 
 // ── Success screen ─────────────────────────────────────────────────────────────
 

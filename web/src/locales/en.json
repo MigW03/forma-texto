@@ -21,7 +21,7 @@
     "tagline": "Made for academic writers",
     "title1": "Make your paper",
     "title2": "committee‑ready.",
-    "description": "FormaTexto uses AI to proofread and format your work, following the guidelines you choose. Our service is faster and cheaper than traditional human proofreading, giving you more time to focus on the content.",
+    "description": "scriba uses AI to proofread and format your work, following the guidelines you choose. Our service is faster and cheaper than traditional human proofreading, giving you more time to focus on the content.",
     "guidelinesList": "ABNT formatting",
     "yourTextStays": "Your text stays your text",
     "uploadTab": "Upload file",
@@ -93,7 +93,7 @@
   "auth": {
     "signIn": {
       "title": "Welcome back",
-      "subtitle": "Sign in to continue to FormaTexto.",
+      "subtitle": "Sign in to continue to scriba.",
       "submit": "Sign in"
     },
     "signUp": {
@@ -247,9 +247,9 @@
       "pagesLabel": "References pages",
       "pagesPlaceholder": "e.g. 45-60 or 45, 46, 47",
       "disclaimer": "References will not be proofread. Only the references section formatting will be adjusted. In-text citations will still be corrected.",
-      "accuracyDisclaimer": "FormaTexto does not verify the accuracy of your references. Authors, titles, dates, page numbers and other fields are formatted as-is — correctness is your responsibility.",
+      "accuracyDisclaimer": "scriba does not verify the accuracy of your references. Authors, titles, dates, page numbers and other fields are formatted as-is — correctness is your responsibility.",
       "formatChoice": {
-        "label": "I want FormaTexto to format my references",
+        "label": "I want scriba to format my references",
         "yes": "Yes",
         "no": "No"
       },

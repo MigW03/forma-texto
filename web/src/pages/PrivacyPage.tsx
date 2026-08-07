@@ -12,7 +12,7 @@ const content: Record<SupportedLanguage, { sections: { title: string; body: stri
       {
         title: '1. Who We Are',
         body: [
-          'FormaTexto ("we", "us", or "the Service") is an academic document processing service. This Privacy Policy sets out the personal data we collect, the purposes for which we process it, the third parties with whom we share it, and the rights available to you as a data subject.',
+          'scriba ("we", "us", or "the Service") is an academic document processing service. This Privacy Policy sets out the personal data we collect, the purposes for which we process it, the third parties with whom we share it, and the rights available to you as a data subject.',
           'By using the Service, you acknowledge that you have read and understood this Privacy Policy.',
         ],
       },
@@ -47,8 +47,8 @@ const content: Record<SupportedLanguage, { sections: { title: string; body: stri
         title: '5. File Retention and Deletion',
         body: [
           'Both your original uploaded file and the processed output file are subject to automatic, permanent deletion thirty (30) days following the date on which the relevant project is marked as completed. This deletion schedule is applied without exception and is irreversible.',
-          'You bear sole responsibility for downloading and retaining your processed document prior to the applicable deletion date. FormaTexto accepts no liability for loss of data resulting from the scheduled deletion of files in accordance with this policy.',
-          'You may request the early deletion of your files at any time by submitting a written request to legal@formatexto.com.',
+          'You bear sole responsibility for downloading and retaining your processed document prior to the applicable deletion date. scriba accepts no liability for loss of data resulting from the scheduled deletion of files in accordance with this policy.',
+          'You may request the early deletion of your files at any time by submitting a written request to legal@scriba.com.',
         ],
       },
       {
@@ -62,17 +62,17 @@ const content: Record<SupportedLanguage, { sections: { title: string; body: stri
         title: '7. Your Rights as a Data Subject',
         body: [
           'Subject to applicable law, you have the right to request access to the personal data we hold about you, to request rectification of inaccurate or incomplete data, and to request erasure of your personal data.',
-          'To exercise any of these rights, please submit a written request to legal@formatexto.com. We will acknowledge your request within five (5) business days and respond in full within fifteen (15) business days.',
+          'To exercise any of these rights, please submit a written request to legal@scriba.com. We will acknowledge your request within five (5) business days and respond in full within fifteen (15) business days.',
           'You may delete your account at any time through the Service. Account deletion results in the removal of your profile data. Uploaded files are deleted in accordance with the standard thirty-day schedule set out in Section 5, unless you submit a request for immediate deletion.',
         ],
       },
       {
         title: '8. Lei Geral de Proteção de Dados (LGPD)',
         body: [
-          'FormaTexto is subject to the Lei Geral de Proteção de Dados Pessoais (LGPD — Federal Law No. 13.709 of 14 August 2018), the Brazilian general personal data protection law.',
+          'scriba is subject to the Lei Geral de Proteção de Dados Pessoais (LGPD — Federal Law No. 13.709 of 14 August 2018), the Brazilian general personal data protection law.',
           'The legal bases on which we rely to process your personal data are: (a) performance of a contract, for the processing of your document in accordance with your order; (b) legitimate interest, for the maintenance of account security and the sending of transactional communications; and (c) compliance with a legal obligation, for the retention of payment records as required by applicable Brazilian law.',
           'Pursuant to Article 18 of the LGPD, you are entitled to: confirmation of the existence of processing activities; access to your personal data; correction of incomplete, inaccurate, or outdated data; anonymisation, blocking, or erasure of unnecessary or excessive data; portability of your data to another service or product provider; erasure of data processed on the basis of consent; information regarding the public and private entities with which we share your data; and the right to withdraw consent at any time.',
-          'To exercise any of the rights conferred by the LGPD, please contact our designated Data Protection Officer at legal@formatexto.com.',
+          'To exercise any of the rights conferred by the LGPD, please contact our designated Data Protection Officer at legal@scriba.com.',
         ],
       },
       {
@@ -84,7 +84,7 @@ const content: Record<SupportedLanguage, { sections: { title: string; body: stri
       {
         title: '10. Contact',
         body: [
-          'For enquiries relating to this Privacy Policy or to the processing of your personal data, please contact us at legal@formatexto.com.',
+          'For enquiries relating to this Privacy Policy or to the processing of your personal data, please contact us at legal@scriba.com.',
         ],
       },
     ],
@@ -94,7 +94,7 @@ const content: Record<SupportedLanguage, { sections: { title: string; body: stri
       {
         title: '1. Identificação do Controlador',
         body: [
-          'O FormaTexto ("nós", "nos" ou "o Serviço") é um serviço de processamento de documentos acadêmicos. A presente Política de Privacidade descreve as categorias de dados pessoais que coletamos, as finalidades para as quais os tratamos, os terceiros com os quais os compartilhamos e os direitos que assistem ao titular dos dados.',
+          'O scriba ("nós", "nos" ou "o Serviço") é um serviço de processamento de documentos acadêmicos. A presente Política de Privacidade descreve as categorias de dados pessoais que coletamos, as finalidades para as quais os tratamos, os terceiros com os quais os compartilhamos e os direitos que assistem ao titular dos dados.',
           'Ao utilizar o Serviço, o usuário declara ter lido e compreendido integralmente esta Política de Privacidade.',
         ],
       },
@@ -122,15 +122,15 @@ const content: Record<SupportedLanguage, { sections: { title: string; body: stri
           'O Stripe provê serviços de processamento de pagamentos. Todos os dados de cartão são tratados exclusivamente pelo Stripe e não transitam por nossos servidores em nenhum momento.',
           'O n8n provê o pipeline de processamento de documentos pelo qual o arquivo enviado pelo usuário passa durante as etapas de formatação e revisão com inteligência artificial.',
           'O Resend ou o SendGrid provê serviços de entrega de e-mails transacionais.',
-          'O FormaTexto não vende, arrenda, licencia nem divulga os dados pessoais do usuário a terceiros para fins comerciais ou de marketing.',
+          'O scriba não vende, arrenda, licencia nem divulga os dados pessoais do usuário a terceiros para fins comerciais ou de marketing.',
         ],
       },
       {
         title: '5. Retenção e Exclusão de Arquivos',
         body: [
           'O arquivo original enviado pelo usuário e o arquivo processado resultante estão sujeitos a exclusão automática e permanente trinta (30) dias após a data em que o respectivo projeto for marcado como concluído. Esse prazo é aplicado sem exceção e a exclusão é irreversível.',
-          'Incumbe exclusivamente ao usuário efetuar o download e guardar o documento processado antes da data de exclusão aplicável. O FormaTexto não se responsabiliza por perda de dados decorrente da exclusão programada de arquivos nos termos desta política.',
-          'O usuário poderá solicitar a exclusão antecipada de seus arquivos a qualquer momento, mediante solicitação escrita dirigida ao endereço legal@formatexto.com.',
+          'Incumbe exclusivamente ao usuário efetuar o download e guardar o documento processado antes da data de exclusão aplicável. O scriba não se responsabiliza por perda de dados decorrente da exclusão programada de arquivos nos termos desta política.',
+          'O usuário poderá solicitar a exclusão antecipada de seus arquivos a qualquer momento, mediante solicitação escrita dirigida ao endereço legal@scriba.com.',
         ],
       },
       {
@@ -144,17 +144,17 @@ const content: Record<SupportedLanguage, { sections: { title: string; body: stri
         title: '7. Direitos do Titular',
         body: [
           'Nos termos da legislação aplicável, o usuário tem o direito de solicitar acesso aos dados pessoais que mantemos sobre si, a retificação de dados inexatos ou incompletos e a exclusão de seus dados pessoais.',
-          'Para exercer qualquer desses direitos, o usuário deverá encaminhar solicitação escrita para legal@formatexto.com. Acusaremos o recebimento em até cinco (5) dias úteis e responderemos integralmente em até quinze (15) dias úteis.',
+          'Para exercer qualquer desses direitos, o usuário deverá encaminhar solicitação escrita para legal@scriba.com. Acusaremos o recebimento em até cinco (5) dias úteis e responderemos integralmente em até quinze (15) dias úteis.',
           'O usuário poderá excluir sua conta a qualquer momento por meio do Serviço. A exclusão da conta implica a remoção dos dados de perfil do usuário. Os arquivos são excluídos no prazo padrão de trinta dias previsto na Seção 5, salvo solicitação de exclusão imediata.',
         ],
       },
       {
         title: '8. Lei Geral de Proteção de Dados Pessoais (LGPD)',
         body: [
-          'O FormaTexto está sujeito à Lei Geral de Proteção de Dados Pessoais (LGPD — Lei nº 13.709, de 14 de agosto de 2018).',
+          'O scriba está sujeito à Lei Geral de Proteção de Dados Pessoais (LGPD — Lei nº 13.709, de 14 de agosto de 2018).',
           'As bases legais nas quais nos fundamos para o tratamento dos dados pessoais do usuário são: (a) execução de contrato, para o processamento do documento conforme o pedido realizado; (b) legítimo interesse, para a manutenção da segurança da conta e o envio de comunicações transacionais; e (c) cumprimento de obrigação legal, para a retenção de registros de pagamento nos termos da legislação aplicável.',
           'Nos termos do artigo 18 da LGPD, são assegurados ao titular dos dados os seguintes direitos: confirmação da existência de tratamento; acesso aos dados; correção de dados incompletos, inexatos ou desatualizados; anonimização, bloqueio ou eliminação de dados desnecessários, excessivos ou tratados em desconformidade com a lei; portabilidade dos dados a outro fornecedor de serviço ou produto; eliminação dos dados pessoais tratados com o consentimento do titular; informação sobre as entidades públicas e privadas com as quais compartilhamos os dados; e revogação do consentimento a qualquer tempo.',
-          'Para exercer os direitos previstos na LGPD, o titular deverá entrar em contato com nosso Encarregado pelo Tratamento de Dados Pessoais pelo endereço legal@formatexto.com.',
+          'Para exercer os direitos previstos na LGPD, o titular deverá entrar em contato com nosso Encarregado pelo Tratamento de Dados Pessoais pelo endereço legal@scriba.com.',
         ],
       },
       {
@@ -166,7 +166,7 @@ const content: Record<SupportedLanguage, { sections: { title: string; body: stri
       {
         title: '10. Contato',
         body: [
-          'Para esclarecimentos relativos à presente Política de Privacidade ou ao tratamento de seus dados pessoais, entre em contato pelo endereço legal@formatexto.com.',
+          'Para esclarecimentos relativos à presente Política de Privacidade ou ao tratamento de seus dados pessoais, entre em contato pelo endereço legal@scriba.com.',
         ],
       },
     ],
@@ -176,7 +176,7 @@ const content: Record<SupportedLanguage, { sections: { title: string; body: stri
       {
         title: '1. Identificação do Responsável pelo Tratamento',
         body: [
-          'O FormaTexto ("nós", "nos" ou "o Serviço") é um serviço de processamento de documentos académicos. A presente Política de Privacidade descreve as categorias de dados pessoais que recolhemos, as finalidades para as quais os tratamos, os terceiros com os quais os partilhamos e os direitos que assistem ao titular dos dados.',
+          'O scriba ("nós", "nos" ou "o Serviço") é um serviço de processamento de documentos académicos. A presente Política de Privacidade descreve as categorias de dados pessoais que recolhemos, as finalidades para as quais os tratamos, os terceiros com os quais os partilhamos e os direitos que assistem ao titular dos dados.',
           'Ao utilizar o Serviço, o utilizador declara ter lido e compreendido integralmente a presente Política de Privacidade.',
         ],
       },
@@ -204,15 +204,15 @@ const content: Record<SupportedLanguage, { sections: { title: string; body: stri
           'O Stripe fornece serviços de processamento de pagamentos. Todos os dados de cartão são tratados exclusivamente pelo Stripe e não transitam pelos nossos servidores em momento algum.',
           'O n8n fornece o pipeline de processamento de documentos pelo qual o ficheiro enviado pelo utilizador passa durante as etapas de formatação e revisão com inteligência artificial.',
           'O Resend ou o SendGrid fornece serviços de entrega de e-mails transacionais.',
-          'O FormaTexto não vende, arrenda, licencia nem divulga os dados pessoais do utilizador a terceiros para fins comerciais ou de marketing.',
+          'O scriba não vende, arrenda, licencia nem divulga os dados pessoais do utilizador a terceiros para fins comerciais ou de marketing.',
         ],
       },
       {
         title: '5. Retenção e Eliminação de Ficheiros',
         body: [
           'O ficheiro original enviado pelo utilizador e o ficheiro processado resultante estão sujeitos a eliminação automática e permanente trinta (30) dias após a data em que o respetivo projeto seja marcado como concluído. Este prazo é aplicado sem exceção e a eliminação é irreversível.',
-          'Incumbe exclusivamente ao utilizador efetuar o download e guardar o documento processado antes da data de eliminação aplicável. O FormaTexto não se responsabiliza pela perda de dados resultante da eliminação programada de ficheiros nos termos da presente política.',
-          'O utilizador poderá solicitar a eliminação antecipada dos seus ficheiros a qualquer momento, mediante pedido escrito dirigido ao endereço legal@formatexto.com.',
+          'Incumbe exclusivamente ao utilizador efetuar o download e guardar o documento processado antes da data de eliminação aplicável. O scriba não se responsabiliza pela perda de dados resultante da eliminação programada de ficheiros nos termos da presente política.',
+          'O utilizador poderá solicitar a eliminação antecipada dos seus ficheiros a qualquer momento, mediante pedido escrito dirigido ao endereço legal@scriba.com.',
         ],
       },
       {
@@ -226,17 +226,17 @@ const content: Record<SupportedLanguage, { sections: { title: string; body: stri
         title: '7. Direitos do Titular dos Dados',
         body: [
           'Nos termos da legislação aplicável, o utilizador tem o direito de solicitar o acesso aos dados pessoais que mantemos sobre si, a retificação de dados inexatos ou incompletos e a eliminação dos seus dados pessoais.',
-          'Para exercer qualquer destes direitos, o utilizador deverá enviar um pedido escrito para legal@formatexto.com. Acusaremos a receção no prazo de cinco (5) dias úteis e responderemos integralmente no prazo de quinze (15) dias úteis.',
+          'Para exercer qualquer destes direitos, o utilizador deverá enviar um pedido escrito para legal@scriba.com. Acusaremos a receção no prazo de cinco (5) dias úteis e responderemos integralmente no prazo de quinze (15) dias úteis.',
           'O utilizador poderá eliminar a sua conta a qualquer momento através do Serviço. A eliminação da conta implica a remoção dos dados de perfil do utilizador. Os ficheiros são eliminados no prazo padrão de trinta dias previsto na Secção 5, salvo pedido de eliminação imediata.',
         ],
       },
       {
         title: '8. Lei Geral de Proteção de Dados Pessoais (LGPD)',
         body: [
-          'O FormaTexto está sujeito à Lei Geral de Proteção de Dados Pessoais (LGPD — Lei n.º 13.709, de 14 de agosto de 2018), lei brasileira de proteção de dados pessoais.',
+          'O scriba está sujeito à Lei Geral de Proteção de Dados Pessoais (LGPD — Lei n.º 13.709, de 14 de agosto de 2018), lei brasileira de proteção de dados pessoais.',
           'As bases legais em que nos fundamos para o tratamento dos dados pessoais do utilizador são: (a) execução de contrato, para o processamento do documento conforme o pedido efetuado; (b) interesse legítimo, para a manutenção da segurança da conta e o envio de comunicações transacionais; e (c) cumprimento de obrigação legal, para a retenção de registos de pagamento nos termos da legislação aplicável.',
           'Nos termos do artigo 18.º da LGPD, são assegurados ao titular dos dados os seguintes direitos: confirmação da existência de tratamento; acesso aos dados; correção de dados incompletos, inexatos ou desatualizados; anonimização, bloqueio ou eliminação de dados desnecessários, excessivos ou tratados em desconformidade com a lei; portabilidade dos dados a outro prestador de serviço ou produto; eliminação dos dados pessoais tratados com base no consentimento do titular; informação sobre as entidades públicas e privadas com as quais partilhamos os dados; e revogação do consentimento a qualquer momento.',
-          'Para exercer os direitos previstos na LGPD, o titular deverá contactar o nosso Encarregado de Proteção de Dados através do endereço legal@formatexto.com.',
+          'Para exercer os direitos previstos na LGPD, o titular deverá contactar o nosso Encarregado de Proteção de Dados através do endereço legal@scriba.com.',
         ],
       },
       {
@@ -248,7 +248,7 @@ const content: Record<SupportedLanguage, { sections: { title: string; body: stri
       {
         title: '10. Contacto',
         body: [
-          'Para esclarecimentos relativos à presente Política de Privacidade ou ao tratamento dos seus dados pessoais, contacte-nos através do endereço legal@formatexto.com.',
+          'Para esclarecimentos relativos à presente Política de Privacidade ou ao tratamento dos seus dados pessoais, contacte-nos através do endereço legal@scriba.com.',
         ],
       },
     ],
@@ -301,7 +301,7 @@ export default function PrivacyPage() {
 
       <div className="mt-12 pt-6 border-t border-border">
         <p className="text-xs text-muted">
-          © {new Date().getFullYear()} FormaTexto. legal@formatexto.com
+          © {new Date().getFullYear()} scriba. legal@scriba.com
         </p>
       </div>
     </div>

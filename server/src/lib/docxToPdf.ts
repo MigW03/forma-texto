@@ -26,7 +26,7 @@ const CONVERT_TIMEOUT_MS = 120_000
 
 /** Convert a .docx buffer to a PDF buffer. Throws if LibreOffice is missing or conversion fails. */
 export async function docxToPdf(docx: Buffer): Promise<Buffer> {
-  const dir = await mkdtemp(join(tmpdir(), 'ft-pdf-'))
+  const dir = await mkdtemp(join(tmpdir(), 'scriba-pdf-'))
   try {
     const inPath = join(dir, 'in.docx')
     const outPath = join(dir, 'in.pdf')

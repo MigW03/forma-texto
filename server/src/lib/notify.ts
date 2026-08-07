@@ -30,7 +30,7 @@ export async function sendProjectReadyEmail(projectId: string): Promise<void> {
   const title = project.title ?? project.original_file_name ?? 'Your document'
 
   const { error: emailError } = await resend.emails.send({
-    from: 'FormaTexto <onboarding@resend.dev>',
+    from: 'scriba <onboarding@resend.dev>',
     to: email,
     subject: `${title} está pronto`,
     html: projectReadyHtml({ name, title, projectUrl }),
@@ -68,7 +68,7 @@ export async function sendReuploadNeededEmail(projectId: string): Promise<void> 
   const title = project.title ?? project.original_file_name ?? 'seu documento'
 
   const { error: emailError } = await resend.emails.send({
-    from: 'FormaTexto <onboarding@resend.dev>',
+    from: 'scriba <onboarding@resend.dev>',
     to: email,
     subject: `Precisamos do seu arquivo novamente — ${title}`,
     html: reuploadNeededHtml({ name, title, projectUrl }),
