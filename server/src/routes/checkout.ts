@@ -67,13 +67,43 @@ async function isTrialEligible(userId: string): Promise<boolean> {
   return data.trial_used_at === null
 }
 
-/** Stamp trial as used */
-async function consumeTrial(userId: string): Promise<void> {
+/**
+ * Atomically claim the trial. Stamps `trial_used_at` only if it is still null and reports
+ * whether this caller is the one that set it — Postgres evaluates the filter and the write
+ * as a single row-level operation, so of N concurrent claims exactly one can win.
+ *
+ * Checking eligibility with a separate SELECT first would leave a read-then-write window:
+ * concurrent requests all read `trial_used_at IS NULL`, all pass the check, and each gets
+ * its own free order (confirmed reproducible — see `trialAbuse.test.ts`).
+ */
+async function claimTrial(userId: string): Promise<string | null> {
+  const claimedAt = new Date().toISOString()
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .update({ trial_used_at: claimedAt })
+    .eq('id', userId)
+    .is('trial_used_at', null)
+    .select('id')
+  if (error) {
+    console.error('Failed to claim trial:', error)
+    return null
+  }
+  return (data?.length ?? 0) > 0 ? claimedAt : null
+}
+
+/**
+ * Give back a claim that never became an order (the insert failed), so a server-side
+ * error doesn't silently cost the user their one free page. Scoped to the exact timestamp
+ * this request wrote, so it can never clear a consumption recorded by something else in
+ * the meantime (e.g. the webhook stamping a discounted order as paid).
+ */
+async function releaseTrial(userId: string, claimedAt: string): Promise<void> {
   const { error } = await supabase
     .from('user_profiles')
-    .update({ trial_used_at: new Date().toISOString() })
+    .update({ trial_used_at: null })
     .eq('id', userId)
-  if (error) console.error('Failed to consume trial:', error)
+    .eq('trial_used_at', claimedAt)
+  if (error) console.error('Failed to release trial claim:', error)
 }
 
 const router = Router()
@@ -182,14 +212,18 @@ router.post('/complete-free-order', checkoutLimiter, async (req: Request, res: R
   }
   const { services, pageCount } = parsed
 
-  // Re-verify trial eligibility server-side — never trust the client
-  const eligible = await isTrialEligible(userId)
-  if (!eligible) {
-    res.status(403).json({ error: 'Free trial already used' })
-    return
-  }
+  // Validate the request BEFORE claiming the trial, so a rejected request never costs the
+  // user their free page.
   if (pageCount !== 1) {
     res.status(400).json({ error: 'Free order only valid for single-page documents' })
+    return
+  }
+
+  // Re-verify eligibility server-side — never trust the client — and claim it in the same
+  // operation, so concurrent requests can't each be granted a free order.
+  const claimedAt = await claimTrial(userId)
+  if (!claimedAt) {
+    res.status(403).json({ error: 'Free trial already used' })
     return
   }
 
@@ -208,11 +242,11 @@ router.post('/complete-free-order', checkoutLimiter, async (req: Request, res: R
 
   if (error || !orderData) {
     console.error('Failed to record free order:', error)
+    await releaseTrial(userId, claimedAt)
     res.status(500).json({ error: 'Failed to record order' })
     return
   }
 
-  await consumeTrial(userId)
   res.json({ success: true, orderId: orderData.id })
 })
 

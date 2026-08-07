@@ -40,7 +40,7 @@ Deeper docs (keep these as the real source of truth):
   were missing a `download` attribute their sibling "download original file" button already had. Fixed by
   wiring `download={fileName}` / `download={pdfDownloadName}` in rather than deleting the vars, which also
   fixes a small real bug (downloaded files got a random/ugly filename instead of the proper one).
-- **Tests:** server **499** passing (3 AI evals skipped); web **52** passing.
+- **Tests:** server **551** passing (3 AI evals skipped); web **52** passing.
 - **Working:** auth, onboarding flow, checkout (Stripe), dashboard, project detail/viewer, the DOCX
   formatting pipeline Steps A/B/C/D (both AI passes: reference reformatting + headings), pré-textual
   detection + formatting + sumário generation with real page numbers, ABNT header page numbering (NBR
@@ -192,10 +192,6 @@ Full breakdown: [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md). Su
       the current R$1/page (formatting) / R$2/page (proofreading) pricing hasn't been validated against a
       real document. Foundational: can't honestly test a *paid* MVP without knowing the price is right.
       The validation itself isn't code; only a trivial constant update in `pricing.ts` follows from it.
-- [ ] **Comprehensive free-trial security test.** Verify the trial can't be abused: multi-page selection
-      can't get the free discount, a second trial can't be triggered after the first is consumed, and
-      manipulating client-side `isFree`/`isTrial` flags has no effect (should already be re-verified
-      server-side in `checkout.ts` — confirm by hand). Only becomes a code task if the test finds a gap.
 - [ ] **Manual screen-reader pass through signup → upload → checkout → dashboard.** The static-analysis
       accessibility fixes are in (custom controls now carry `aria-pressed`/`aria-checked`/tab semantics,
       decorative icons are `aria-hidden`, async errors use `role="alert"`, `<html lang>` syncs to the
@@ -248,6 +244,30 @@ Full breakdown: [`docs/formatting-pipeline.md`](docs/formatting-pipeline.md). Su
 > Older entries are compressed to a one-line index — see `git log -p -- HANDOFF.md` for full narrative
 > detail on any of them.
 
+### 2026-08-07 — Free-trial abuse suite + atomic trial claim
+
+Built `server/src/routes/trialAbuse.test.ts` (43 tests), the automated version of the launch
+checklist's "comprehensive free-trial security test". It drives the real `checkout`/`processing`/
+`webhook` routers over HTTP against an in-memory Supabase/Stripe, covering identity spoofing
+(body `userId`, forged token), client flag/amount tampering, page-count abuse, trial replay on both
+the free and discounted paths, service-list tampering, concurrency, and order-coverage (a 1-page
+free order reattached to a 40-page or broader-service project).
+
+One real gap found: `complete-free-order` checked eligibility with a SELECT and stamped
+`trial_used_at` afterwards, leaving a read-then-write window — N concurrent requests each got their
+own free order (reproduced deterministically: 8 requests → 8 free orders). Replaced with an atomic
+`claimTrial()` (conditional `UPDATE … WHERE trial_used_at IS NULL` + `.select()`, so exactly one
+caller wins), plus `releaseTrial()` so a failed order insert gives the trial back. Page-count
+validation now runs before the claim, so a rejected request never costs the user their free page.
+
+Note on the test harness: two concurrent HTTP requests don't reliably interleave, so the race test
+passed in a full run while failing in isolation. The fake DB has a `holdAtTable()` barrier that pins
+N queries at the same point before releasing them, making the TOCTOU window deterministic.
+
+Still open and deliberately unchanged: the **discounted** path consumes the trial only when the
+Stripe webhook lands, so the discount repeats until it does. Locked in by a test explicitly labelled
+`KNOWN GAP` — it will fail loudly if the deferred reconciliation fallback ever ships.
+
 ### 2026-08-07 — Rename: FormaTexto → scriba, then logo + lowercase pass
 
 User picked "scriba" as the new product name (see `PLAN.md` for how it was shortlisted). First pass
@@ -299,6 +319,17 @@ per-branch preview URLs. Now: `FRONTEND_URL` accepts a comma-separated list of e
 `https://scriba-*.vercel.app` origin is allowed via regex — covers preview deployments without a config
 change per branch. No deploy host chosen for the backend itself yet (still needed: LibreOffice-capable
 persistent host, per Open work above).
+
+**Frontend is now live on Vercel** (user connected the repo, Root Directory `web`). Backend still has
+no host, so `VITE_API_URL` and any real Stripe/backend-dependent flow (checkout, processing, etc.)
+won't work end-to-end yet until that's chosen and deployed — landing/auth/dashboard UI is reachable.
+
+**Favicon**: replaced the old off-brand abstract mark (`web/public/favicon.svg` — an unrelated
+purple/blue gradient shape, no connection to the new brand) with a mark built from the actual wordmark:
+the lowercase "s" glyph's path, extracted from `scriba-logo.svg` (bbox measured in-browser via
+`getBBox()`, not eyeballed), centered on a rounded `#1A1A18` square in `#F0EEE8`. Verified legible at
+16px (real tab-icon size), 32px, and 128px before finalizing. `web/public/icons.svg` (a second, unused
+abstract mark) was left alone — nothing references it.
 
 ### 2026-07-24 — Landing page overhaul + Hero pre-auth file/link persistence
 

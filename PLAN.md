@@ -19,9 +19,6 @@
   - Stripe recommends Checkout Sessions + PaymentElement over Payment Intents for new integrations. Would simplify PIX and future local payment methods. Not worth the rewrite now — revisit if PIX setup on the live account proves painful. Server changes in `checkout.ts`; frontend changes in `CheckoutPage.tsx` (swap `Elements`+`PaymentElement` for `CheckoutElementsProvider` from `@stripe/react-stripe-js/checkout`, confirm via `checkout.confirm`).
 - [ ] PIX payment support
   - PIX removed from code (both `payment_method_types` on the server and `paymentMethodOrder` on the frontend) — needs to be enabled on the live Stripe account first (Settings → Payment methods), then re-add `payment_method_types: ['card', 'pix']` in `checkout.ts` and `'pix'` to `paymentMethodOrder` in `CheckoutPage.tsx`.
-- [ ] Comprehensive free trial security test
-  - Verify the trial cannot be abused: a user selecting multiple pages cannot get the free trial (backend must reject `pageCount > 1` on `complete-free-order`); a user cannot trigger a second free trial after the first is consumed (`trial_used_at` is stamped and re-checked server-side on every request); manipulating the client-side `isFree`/`isTrial` flags has no effect (eligibility is always re-verified in `checkout.ts`); a new account doesn't grant a second trial if the same payment method/identity is reused.
-  - Note (2026-07-15): the discounted-order path currently depends entirely on the Stripe webhook landing (`trial_used_at` is only stamped from `payment_intent.succeeded`); the 1-page fully-free path is self-contained. Worth hardening with a client-side reconciliation fallback — discussed and deliberately deferred this session.
 
 ---
 
